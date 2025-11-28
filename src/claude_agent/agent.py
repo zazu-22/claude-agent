@@ -6,6 +6,9 @@ Core agent interaction functions for running autonomous coding sessions.
 """
 
 import asyncio
+import json
+import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -20,17 +23,93 @@ from claude_agent.detection import (
 )
 from claude_agent.progress import (
     count_passing_tests,
+    get_rejection_count,
+    mark_tests_failed,
     print_session_header,
     print_progress_summary,
     print_startup_banner,
+    save_validation_attempt,
 )
 from claude_agent.prompts.loader import (
     get_initializer_prompt,
     get_coding_prompt,
     get_review_prompt,
+    get_validator_prompt,
     write_spec_to_project,
 )
 from claude_agent.security import configure_security
+
+
+@dataclass
+class ValidatorResult:
+    """Result from validator agent session."""
+
+    verdict: str  # "APPROVED", "REJECTED", "ERROR"
+    rejected_tests: list[dict]  # [{test_index: int, reason: str}, ...]
+    summary: str
+    error: Optional[str] = None
+
+
+def parse_validator_response(response: str) -> ValidatorResult:
+    """
+    Parse validator response to extract structured verdict.
+
+    Attempts multiple parsing strategies with fallback to REJECTED.
+    """
+    # Strategy 1: Look for JSON in code block
+    json_match = re.search(r"```json\s*\n(.*?)\n```", response, re.DOTALL)
+    if json_match:
+        try:
+            data = json.loads(json_match.group(1))
+            return ValidatorResult(
+                verdict=data.get("verdict", "REJECTED"),
+                rejected_tests=data.get("rejected_tests", []),
+                summary=data.get("summary", ""),
+            )
+        except json.JSONDecodeError:
+            pass
+
+    # Strategy 2: Look for plain JSON object with verdict key
+    try:
+        json_match = re.search(
+            r'\{\s*"verdict"\s*:\s*"[^"]+"\s*,.*?\}',
+            response,
+            re.DOTALL,
+        )
+        if json_match:
+            data = json.loads(json_match.group(0))
+            return ValidatorResult(
+                verdict=data.get("verdict", "REJECTED"),
+                rejected_tests=data.get("rejected_tests", []),
+                summary=data.get("summary", ""),
+            )
+    except json.JSONDecodeError:
+        pass
+
+    # Strategy 3: Look for APPROVED keyword (only if REJECTED not present)
+    upper_response = response.upper()
+    if "APPROVED" in upper_response and "REJECTED" not in upper_response:
+        return ValidatorResult(
+            verdict="APPROVED",
+            rejected_tests=[],
+            summary="Approval inferred from response keywords",
+        )
+
+    # Default: Treat as error (fail-safe)
+    return ValidatorResult(
+        verdict="ERROR",
+        rejected_tests=[],
+        summary="",
+        error="Could not parse structured output from validator",
+    )
+
+
+def print_validation_header(attempt: int) -> None:
+    """Print formatted validation phase header."""
+    print("\n" + "=" * 70)
+    print(f"  VALIDATION PHASE (Attempt {attempt})")
+    print("  Reviewing implementation against specification...")
+    print("=" * 70 + "\n")
 
 
 async def run_review_session(
@@ -176,6 +255,50 @@ async def run_agent_session(
         return "error", str(e)
 
 
+async def run_validator_session(
+    config: Config,
+    stack: str,
+    project_dir: Path,
+    init_command: str,
+    dev_command: str,
+) -> ValidatorResult:
+    """
+    Run validator agent session and parse results.
+
+    Args:
+        config: Configuration object
+        stack: Detected tech stack
+        project_dir: Project directory path
+        init_command: Command to install dependencies
+        dev_command: Command to start development server
+
+    Returns:
+        ValidatorResult with verdict and any rejected tests
+    """
+    # Create client with validator model
+    client = create_client(
+        project_dir=project_dir,
+        model=config.validator.model,
+        max_turns=config.agent.max_turns,
+        stack=stack,
+    )
+
+    # Get validator prompt
+    prompt = get_validator_prompt(
+        init_command=init_command,
+        dev_command=dev_command,
+    )
+
+    # Run session
+    async with client:
+        status, response = await run_agent_session(client, prompt, project_dir)
+
+    # Parse response
+    result = parse_validator_response(response)
+
+    return result
+
+
 async def run_autonomous_agent(config: Config) -> None:
     """
     Run the autonomous agent loop.
@@ -298,11 +421,71 @@ async def run_autonomous_agent(config: Config) -> None:
         # Check for completion
         passing, total = count_passing_tests(project_dir)
         if total > 0 and passing == total:
-            print("\n" + "=" * 70)
-            print("  ALL FEATURES COMPLETE!")
-            print("=" * 70)
-            print(f"\n{passing}/{total} features passing - project is done!")
-            break
+            # All tests pass - run validation if enabled
+            if not config.validator.enabled:
+                print("\n" + "=" * 70)
+                print("  ALL FEATURES COMPLETE!")
+                print("=" * 70)
+                print(f"\n{passing}/{total} features passing - project is done!")
+                break
+
+            # Check rejection limit
+            rejection_count = get_rejection_count(project_dir)
+            if rejection_count >= config.validator.max_rejections:
+                print("\n" + "=" * 70)
+                print(f"  MAX VALIDATION REJECTIONS ({config.validator.max_rejections}) REACHED")
+                print("=" * 70)
+                print("\nManual review recommended.")
+                print("To continue, increase max_rejections in config or disable validation.")
+                break
+
+            # Run validation phase
+            print_validation_header(rejection_count + 1)
+
+            result = await run_validator_session(
+                config=config,
+                stack=stack,
+                project_dir=project_dir,
+                init_command=init_command,
+                dev_command=dev_command,
+            )
+
+            # Save attempt to history
+            save_validation_attempt(
+                project_dir=project_dir,
+                result=result.verdict.lower(),
+                rejected_indices=[t.get("test_index", -1) for t in result.rejected_tests],
+                summary=result.summary,
+            )
+
+            if result.verdict == "APPROVED":
+                print("\n" + "=" * 70)
+                print("  VALIDATION PASSED - ALL FEATURES COMPLETE!")
+                print("=" * 70)
+                print(f"\n{passing}/{total} features validated and approved!")
+                break
+
+            # Handle rejection or error
+            if result.rejected_tests:
+                indices = [t.get("test_index") for t in result.rejected_tests if "test_index" in t]
+                reasons = {t.get("test_index"): t.get("reason", "Rejected by validator") for t in result.rejected_tests if "test_index" in t}
+                updated, errors = mark_tests_failed(project_dir, indices, reasons)
+
+                if errors:
+                    for err in errors:
+                        print(f"Warning: {err}")
+
+                print(f"\nValidation rejected {len(indices)} feature(s)")
+                print(f"Marked {updated} test(s) as needing rework")
+
+            if result.error:
+                print(f"\nValidator error: {result.error}")
+                print("Treating as rejection - will retry validation on next pass")
+
+            print("\nReturning to coding agent to address issues...")
+            await asyncio.sleep(config.agent.auto_continue_delay)
+            # Loop continues - coding agent will see the feedback in progress notes
+            continue
 
         # Handle status
         if status == "continue":

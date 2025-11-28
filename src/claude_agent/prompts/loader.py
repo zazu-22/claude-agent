@@ -96,6 +96,27 @@ def get_review_prompt(spec_content: str) -> str:
     })
 
 
+def get_validator_prompt(
+    init_command: str = "npm install",
+    dev_command: str = "npm run dev",
+) -> str:
+    """
+    Load and render the validator agent prompt.
+
+    Args:
+        init_command: Command to install dependencies
+        dev_command: Command to start development server
+
+    Returns:
+        Rendered prompt string
+    """
+    template = load_prompt("validator")
+    return render_template(template, {
+        "init_command": init_command,
+        "dev_command": dev_command,
+    })
+
+
 def write_spec_to_project(project_dir: Path, spec_content: str) -> Path:
     """
     Write spec content to project directory for agent reference.

@@ -27,6 +27,15 @@ class AgentConfig:
 
 
 @dataclass
+class ValidatorConfig:
+    """Validator agent configuration."""
+
+    model: str = "claude-opus-4-5-20251101"
+    enabled: bool = True
+    max_rejections: int = 3  # Max validation failures before stopping
+
+
+@dataclass
 class SecurityConfigOptions:
     """Security configuration options."""
 
@@ -50,6 +59,9 @@ class Config:
 
     # Security settings
     security: SecurityConfigOptions = field(default_factory=SecurityConfigOptions)
+
+    # Validator settings
+    validator: ValidatorConfig = field(default_factory=ValidatorConfig)
 
     @property
     def spec_content(self) -> Optional[str]:
@@ -148,6 +160,16 @@ def merge_config(
             if "extra_commands" in security_config:
                 config.security.extra_commands = security_config["extra_commands"]
 
+        # Validator settings
+        if "validator" in file_config:
+            validator_config = file_config["validator"]
+            if "model" in validator_config:
+                config.validator.model = validator_config["model"]
+            if "enabled" in validator_config:
+                config.validator.enabled = validator_config["enabled"]
+            if "max_rejections" in validator_config:
+                config.validator.max_rejections = validator_config["max_rejections"]
+
     # Apply CLI overrides (highest priority)
     if cli_spec is not None:
         config.spec_file = cli_spec
@@ -203,4 +225,10 @@ security:
   # extra_commands:
   #   - docker
   #   - make
+
+# Validator settings (runs after all features pass)
+validator:
+  model: claude-opus-4-5-20251101  # Recommended: use Opus for final validation
+  enabled: true
+  max_rejections: 3  # Stop after this many validation failures
 """

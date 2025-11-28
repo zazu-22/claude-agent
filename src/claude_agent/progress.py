@@ -6,6 +6,7 @@ Utilities for tracking and displaying agent progress.
 """
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -38,9 +39,10 @@ def get_session_state(project_dir: Path) -> str:
     Determine current session state.
 
     Returns:
-        One of: "fresh", "initialized", "in_progress", "complete"
+        One of: "fresh", "initialized", "in_progress", "validating", "complete"
     """
     feature_list_path = project_dir / "feature_list.json"
+    history_path = project_dir / "validation-history.json"
 
     if not feature_list_path.exists():
         return "fresh"
@@ -50,7 +52,18 @@ def get_session_state(project_dir: Path) -> str:
     if total == 0:
         return "initialized"
     elif passing == total:
-        return "complete"
+        # All tests pass - check if validation has approved
+        if history_path.exists():
+            try:
+                with open(history_path) as f:
+                    data = json.load(f)
+                attempts = data.get("attempts", [])
+                if attempts and attempts[-1].get("result") == "approved":
+                    return "complete"
+            except (json.JSONDecodeError, IOError):
+                pass
+        # All pass but not yet approved
+        return "validating"
     else:
         return "in_progress"
 
@@ -108,7 +121,141 @@ def print_startup_banner(
     elif state == "in_progress":
         passing, total = count_passing_tests(project_dir)
         print(f"\nSession:    RESUMING ({passing}/{total} features)")
+    elif state == "validating":
+        rejection_count = get_rejection_count(project_dir)
+        print(f"\nSession:    VALIDATING (attempt {rejection_count + 1})")
     elif state == "complete":
         print("\nSession:    COMPLETE (all features passing)")
 
     print()
+
+
+def load_validation_history(project_dir: Path) -> list[dict]:
+    """
+    Load validation history from validation-history.json.
+
+    Returns:
+        List of validation attempt records, or empty list if none.
+    """
+    history_path = project_dir / "validation-history.json"
+
+    if not history_path.exists():
+        return []
+
+    try:
+        with open(history_path) as f:
+            data = json.load(f)
+        return data.get("attempts", [])
+    except (json.JSONDecodeError, IOError):
+        return []
+
+
+def save_validation_attempt(
+    project_dir: Path,
+    result: str,
+    rejected_indices: list[int],
+    summary: str,
+) -> None:
+    """
+    Append a validation attempt to history file.
+
+    Args:
+        project_dir: Project directory path
+        result: "approved" or "rejected"
+        rejected_indices: List of test indices that were rejected
+        summary: Summary text from validator
+    """
+    history_path = project_dir / "validation-history.json"
+
+    # Load existing history
+    if history_path.exists():
+        try:
+            with open(history_path) as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            data = {"attempts": []}
+    else:
+        data = {"attempts": []}
+
+    # Add new attempt
+    attempt = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "result": result,
+        "rejected_indices": rejected_indices,
+        "summary": summary,
+    }
+    data["attempts"].append(attempt)
+
+    # Write back
+    with open(history_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def get_rejection_count(project_dir: Path) -> int:
+    """
+    Count how many validation rejections have occurred.
+
+    Returns:
+        Number of rejected validation attempts.
+    """
+    history = load_validation_history(project_dir)
+    return sum(1 for attempt in history if attempt.get("result") == "rejected")
+
+
+def mark_tests_failed(
+    project_dir: Path,
+    test_indices: list[int],
+    reasons: dict[int, str],
+) -> tuple[int, list[str]]:
+    """
+    Mark specific tests as passes=false in feature_list.json.
+
+    Args:
+        project_dir: Project directory path
+        test_indices: List of test indices to mark as failed
+        reasons: Dict mapping test index to rejection reason
+
+    Returns:
+        (count_updated, list_of_errors)
+    """
+    feature_list_path = project_dir / "feature_list.json"
+    temp_path = project_dir / "feature_list.json.tmp"
+
+    errors = []
+    updated = 0
+
+    if not feature_list_path.exists():
+        return 0, ["feature_list.json does not exist"]
+
+    try:
+        with open(feature_list_path) as f:
+            features = json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        return 0, [f"Failed to read feature_list.json: {e}"]
+
+    # Validate indices
+    max_index = len(features) - 1
+    valid_indices = []
+    for idx in test_indices:
+        if idx < 0 or idx > max_index:
+            errors.append(f"Invalid test index: {idx} (max: {max_index})")
+        else:
+            valid_indices.append(idx)
+
+    # Apply updates to valid indices
+    for idx in valid_indices:
+        if features[idx].get("passes", False):
+            features[idx]["passes"] = False
+            updated += 1
+
+    # Atomic write (temp file + rename)
+    try:
+        with open(temp_path, "w") as f:
+            json.dump(features, f, indent=2)
+        temp_path.rename(feature_list_path)
+    except IOError as e:
+        errors.append(f"Failed to write feature_list.json: {e}")
+        if temp_path.exists():
+            temp_path.unlink()
+
+    return updated, errors
