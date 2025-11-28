@@ -26,7 +26,17 @@ cat claude-progress.txt
 
 # 6. Check recent git history
 git log --oneline -20
+
+# 7. Check for project-specific instructions
+cat CLAUDE.md 2>/dev/null || true
+
+# 8. Check for test credentials (for login/auth testing)
+cat test-credentials.json 2>/dev/null || true
 ```
+
+If `CLAUDE.md` exists, follow any project-specific instructions it contains.
+If `test-credentials.json` exists, use those credentials when testing login
+or authentication features via browser automation.
 
 ### STEP 2: START SERVERS (IF NOT RUNNING)
 

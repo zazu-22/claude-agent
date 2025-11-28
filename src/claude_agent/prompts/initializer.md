@@ -7,6 +7,22 @@ Your job is to set up the foundation for all future coding agents.
 
 {{spec_content}}
 
+### CHECK FOR PROJECT-SPECIFIC INSTRUCTIONS
+
+Before creating the feature list, check for additional project context:
+
+```bash
+# Check for project-specific instructions
+cat CLAUDE.md 2>/dev/null || true
+
+# Check for test credentials (for login/auth testing)
+cat test-credentials.json 2>/dev/null || true
+```
+
+If `CLAUDE.md` exists, follow any project-specific instructions it contains.
+If `test-credentials.json` exists, note that test credentials are available
+for authentication testing - future agents will use these for login flows.
+
 ### CRITICAL FIRST TASK: Create feature_list.json
 
 Based on the specification above, create a file called `feature_list.json` with {{feature_count}} detailed

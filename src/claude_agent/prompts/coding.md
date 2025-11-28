@@ -28,10 +28,20 @@ git log --oneline -20
 
 # 7. Count remaining tests
 cat feature_list.json | grep '"passes": false' | wc -l
+
+# 8. Check for project-specific instructions
+cat CLAUDE.md 2>/dev/null || true
+
+# 9. Check for test credentials (for login/auth testing)
+cat test-credentials.json 2>/dev/null || true
 ```
 
 Understanding the `app_spec.txt` is critical - it contains the full requirements
 for the application you're building.
+
+If `CLAUDE.md` exists, follow any project-specific instructions it contains.
+If `test-credentials.json` exists, use those credentials when testing login
+or authentication features via browser automation.
 
 ### STEP 2: START SERVERS (IF NOT RUNNING)
 
