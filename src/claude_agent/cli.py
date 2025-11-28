@@ -29,7 +29,12 @@ from claude_agent.progress import (
 
 
 @click.group(invoke_without_command=True)
-@click.argument("project_dir", type=click.Path(path_type=Path), default=".")
+@click.option(
+    "--project-dir", "-p",
+    type=click.Path(path_type=Path),
+    default=".",
+    help="Project directory (default: current directory)",
+)
 @click.option(
     "--spec", "-s",
     type=click.Path(exists=True, path_type=Path),
@@ -92,9 +97,10 @@ def main(
 
     \b
     Examples:
-      claude-agent ./my-project --spec ./SPEC.md
-      claude-agent ./my-project --goal "Build a REST API"
-      claude-agent ./my-project  # Uses wizard if no spec
+      claude-agent -p ./my-project --spec ./SPEC.md
+      claude-agent -p ./my-project --goal "Build a REST API"
+      claude-agent -p ./my-project --review --spec ./SPEC.md
+      claude-agent  # Uses current directory + wizard if no spec
     """
     # If a subcommand was invoked, don't run the main agent
     if ctx.invoked_subcommand is not None:
@@ -151,8 +157,11 @@ def main(
 @main.command()
 @click.argument("project_dir", type=click.Path(path_type=Path), default=".")
 def init(project_dir: Path):
-    """Initialize a new project with a config file template."""
-    project_dir = project_dir.resolve()
+    """Initialize a new project with a config file template.
+
+    PROJECT_DIR is the directory to initialize (default: current directory).
+    """
+    project_dir = Path(project_dir).resolve()
     project_dir.mkdir(parents=True, exist_ok=True)
 
     config_path = project_dir / ".claude-agent.yaml"
@@ -171,8 +180,11 @@ def init(project_dir: Path):
 @main.command()
 @click.argument("project_dir", type=click.Path(exists=True, path_type=Path), default=".")
 def status(project_dir: Path):
-    """Show project status and progress."""
-    project_dir = project_dir.resolve()
+    """Show project status and progress.
+
+    PROJECT_DIR is the project to check (default: current directory).
+    """
+    project_dir = Path(project_dir).resolve()
 
     click.echo(f"\nProject: {project_dir}")
 

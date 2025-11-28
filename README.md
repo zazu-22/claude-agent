@@ -15,13 +15,16 @@ pip install -e .
 # No separate API key needed!
 
 # Run with a spec file
-claude-agent ./my-project --spec ./SPEC.md
+claude-agent -p ./my-project --spec ./SPEC.md
 
 # Run with a goal description
-claude-agent ./my-project --goal "Build a REST API with user authentication"
+claude-agent -p ./my-project --goal "Build a REST API with user authentication"
+
+# Review spec before generating features (recommended)
+claude-agent -p ./my-project --spec ./SPEC.md --review
 
 # Run interactive wizard (when no spec provided)
-claude-agent ./my-project
+claude-agent -p ./my-project
 ```
 
 ## How It Works
@@ -41,16 +44,18 @@ Progress persists through:
 
 ```bash
 # Main command
-claude-agent [PROJECT_DIR] [OPTIONS]
+claude-agent [OPTIONS]
 
 # Options
---spec, -s PATH          # Path to specification file
---goal, -g TEXT          # Short goal description (alternative to --spec)
---features, -f INT       # Number of features to generate (default: 50)
+-p, --project-dir PATH   # Project directory (default: current directory)
+-s, --spec PATH          # Path to specification file
+-g, --goal TEXT          # Short goal description (alternative to --spec)
+-f, --features INT       # Number of features to generate (default: 50)
 --stack TEXT             # Tech stack: node, python (auto-detected)
---model, -m TEXT         # Claude model (default: claude-sonnet-4-5-20250929)
---max-iterations, -n INT # Limit iterations
---config, -c PATH        # Path to config file
+-m, --model TEXT         # Claude model (default: claude-opus-4-5-20251101)
+-n, --max-iterations INT # Limit iterations
+-c, --config PATH        # Path to config file
+-r, --review             # Review spec before generating features
 
 # Subcommands
 claude-agent init [DIR]    # Create .claude-agent.yaml template
@@ -67,7 +72,7 @@ features: 75
 stack: python
 
 agent:
-  model: claude-sonnet-4-5-20250929
+  model: claude-opus-4-5-20251101
   max_iterations: 10
 
 security:

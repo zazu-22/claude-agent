@@ -20,7 +20,7 @@ CONFIG_FILENAME_ALT = ".claude-agent.yml"
 class AgentConfig:
     """Agent-specific configuration."""
 
-    model: str = "claude-sonnet-4-5-20250929"
+    model: str = "claude-opus-4-5-20251101"
     max_iterations: Optional[int] = None
     max_turns: int = 1000
     auto_continue_delay: int = 3
@@ -192,7 +192,7 @@ features: 50
 
 # Agent settings
 agent:
-  model: claude-sonnet-4-5-20250929
+  model: claude-opus-4-5-20251101
   # max_iterations: 10  # Limit iterations (default: unlimited)
   # auto_continue_delay: 3  # Seconds between sessions
 
