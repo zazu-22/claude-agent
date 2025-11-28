@@ -126,13 +126,18 @@ def main(
         cli_review=review,
     )
 
-    # Check if we have a spec - if not, run the wizard
+    # Check if we have a spec - if not, check for existing or run wizard
     if not merged_config.spec_content:
-        # Check if this is a continuation (feature_list.json exists)
         feature_list = project_dir / "feature_list.json"
+        existing_spec = project_dir / "app_spec.txt"
+
         if feature_list.exists():
             # Continuing existing project - no spec needed
             pass
+        elif existing_spec.exists():
+            # Found existing spec (e.g., from aborted review)
+            click.echo(f"Found existing spec: {existing_spec}")
+            merged_config.goal = existing_spec.read_text()
         else:
             # New project with no spec - run wizard
             from claude_agent.wizard import run_wizard
