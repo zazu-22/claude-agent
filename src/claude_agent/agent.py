@@ -19,6 +19,7 @@ from claude_agent.detection import (
     get_stack_dev_command,
 )
 from claude_agent.progress import (
+    count_passing_tests,
     print_session_header,
     print_progress_summary,
     print_startup_banner,
@@ -293,6 +294,15 @@ async def run_autonomous_agent(config: Config) -> None:
         # Run session
         async with client:
             status, response = await run_agent_session(client, prompt, project_dir)
+
+        # Check for completion
+        passing, total = count_passing_tests(project_dir)
+        if total > 0 and passing == total:
+            print("\n" + "=" * 70)
+            print("  ALL FEATURES COMPLETE!")
+            print("=" * 70)
+            print(f"\n{passing}/{total} features passing - project is done!")
+            break
 
         # Handle status
         if status == "continue":
