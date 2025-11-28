@@ -75,6 +75,11 @@ from claude_agent.progress import (
     is_flag=True,
     help="Review spec before generating features (recommended for new specs)",
 )
+@click.option(
+    "--reset",
+    is_flag=True,
+    help="Clear previous agent files and start fresh (will prompt for confirmation)",
+)
 @click.version_option(version=__version__)
 @click.pass_context
 def main(
@@ -88,6 +93,7 @@ def main(
     max_iterations: Optional[int],
     config: Optional[Path],
     review: bool,
+    reset: bool,
 ):
     """
     Claude Agent - Autonomous coding agent powered by Claude.
@@ -112,6 +118,31 @@ def main(
 
     # Resolve project directory
     project_dir = project_dir.resolve()
+
+    # Handle --reset flag
+    if reset:
+        agent_files = [
+            "feature_list.json",
+            "app_spec.txt",
+            "spec-review.md",
+            "claude-progress.txt",
+        ]
+        existing = [f for f in agent_files if (project_dir / f).exists()]
+
+        if not existing:
+            click.echo("No agent files to reset.")
+        else:
+            click.echo(f"Will delete from {project_dir}:")
+            for f in existing:
+                click.echo(f"  - {f}")
+
+            if click.confirm("\nProceed with reset?"):
+                for f in existing:
+                    (project_dir / f).unlink()
+                click.echo("Reset complete.\n")
+            else:
+                click.echo("Reset cancelled.")
+                sys.exit(0)
 
     # Merge configuration from all sources
     merged_config = merge_config(
