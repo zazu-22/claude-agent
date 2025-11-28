@@ -35,6 +35,7 @@ from claude_agent.security import configure_security
 async def run_review_session(
     config: Config,
     stack: str,
+    spec_content: str,
 ) -> bool:
     """
     Run a spec review session before generating features.
@@ -42,12 +43,12 @@ async def run_review_session(
     Args:
         config: Configuration object
         stack: Detected tech stack
+        spec_content: The specification content to review
 
     Returns:
         True if user wants to proceed, False to abort
     """
     project_dir = config.project_dir
-    spec_content = config.spec_content
 
     print("\n" + "=" * 70)
     print("  SPEC REVIEW MODE")
@@ -210,14 +211,21 @@ async def run_autonomous_agent(config: Config) -> None:
     if is_first_run:
         # Validate we have spec content
         spec_content = config.spec_content
+
+        # Check for existing app_spec.txt (e.g., from aborted review)
         if not spec_content:
-            print("Error: No spec file or goal provided.")
-            print("Use --spec PATH or --goal 'description' to specify what to build.")
-            return
+            existing_spec = project_dir / "app_spec.txt"
+            if existing_spec.exists():
+                print(f"Found existing spec: {existing_spec}")
+                spec_content = existing_spec.read_text()
+            else:
+                print("Error: No spec file or goal provided.")
+                print("Use --spec PATH or --goal 'description' to specify what to build.")
+                return
 
         # Run review session if requested
         if config.review:
-            proceed = await run_review_session(config, stack)
+            proceed = await run_review_session(config, stack, spec_content)
             if not proceed:
                 return
             print("\n" + "=" * 70)
@@ -270,7 +278,7 @@ async def run_autonomous_agent(config: Config) -> None:
         # Choose prompt based on session type
         if is_first_run:
             prompt = get_initializer_prompt(
-                spec_content=config.spec_content,
+                spec_content=spec_content,
                 feature_count=config.features,
                 init_command=init_command,
                 dev_command=dev_command,
