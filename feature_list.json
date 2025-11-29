@@ -387,7 +387,7 @@
       "Step 4: Verify spec-workflow.json exists",
       "Step 5: Verify 'create' step is recorded in history"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -399,7 +399,7 @@
       "Step 3: Call run_spec_validate_session",
       "Step 4: Verify 'validate' step is recorded with passed=true"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -411,7 +411,7 @@
       "Step 3: Call run_spec_validate_session",
       "Step 4: Verify 'validate' step is recorded with passed=false"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -424,7 +424,7 @@
       "Step 4: Verify 'decompose' step is recorded",
       "Step 5: Verify feature_count=60 is recorded in history entry"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -436,7 +436,7 @@
       "Step 3: Verify return value is False",
       "Step 4: Verify validation was not attempted"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -449,7 +449,7 @@
       "Step 4: Verify return value is False",
       "Step 5: Verify decomposition was not attempted"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -461,7 +461,7 @@
       "Step 3: Verify return value is True",
       "Step 4: Verify all three files exist (spec-draft.md, spec-validated.md, feature_list.json)"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -472,7 +472,7 @@
       "Step 2: Verify 'SPEC WORKFLOW - AUTO MODE' appears in output",
       "Step 3: Verify goal is printed"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
