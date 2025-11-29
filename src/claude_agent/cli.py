@@ -80,6 +80,11 @@ from claude_agent.progress import (
     is_flag=True,
     help="Clear previous agent files and start fresh (will prompt for confirmation)",
 )
+@click.option(
+    "--auto-spec",
+    is_flag=True,
+    help="Run spec workflow before coding (create -> validate -> decompose)",
+)
 @click.version_option(version=__version__)
 @click.pass_context
 def main(
@@ -94,6 +99,7 @@ def main(
     config: Optional[Path],
     review: bool,
     reset: bool,
+    auto_spec: bool,
 ):
     """
     Claude Agent - Autonomous coding agent powered by Claude.
@@ -160,6 +166,22 @@ def main(
         cli_config_path=config,
         cli_review=review,
     )
+
+    # Handle --auto-spec flag
+    if auto_spec:
+        if not goal:
+            click.echo("Error: --auto-spec requires --goal")
+            sys.exit(1)
+
+        from claude_agent.agent import run_spec_workflow
+        success = asyncio.run(run_spec_workflow(merged_config, goal))
+        if not success:
+            click.echo("\nSpec workflow failed. Fix issues and try again.")
+            sys.exit(1)
+
+        # After spec workflow, feature_list.json now exists
+        # Continue with normal agent (coding agent)
+        click.echo("\nSpec workflow complete. Starting coding agent...")
 
     # Check if we have a spec - if not, check for existing or run wizard
     if not merged_config.spec_content:
@@ -280,6 +302,8 @@ def spec():
 @click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
 def spec_create(goal, from_file, interactive, project_dir):
     """Create a project specification from a goal or rough idea."""
+    from claude_agent.agent import run_spec_create_session
+
     project_dir = Path(project_dir).resolve()
 
     # Get goal from file if specified
@@ -299,9 +323,8 @@ def spec_create(goal, from_file, interactive, project_dir):
         click.echo("Error: --goal or --from-file required (or use -i for interactive)")
         sys.exit(1)
 
-    click.echo(f"Creating specification for: {goal[:100]}...")
-    click.echo("Note: Full spec creation requires running the agent session.")
-    click.echo("Use 'claude-agent spec auto -g \"goal\"' for full workflow.")
+    config = merge_config(project_dir=project_dir)
+    asyncio.run(run_spec_create_session(config, goal, context))
 
 
 @spec.command("validate")
@@ -310,6 +333,8 @@ def spec_create(goal, from_file, interactive, project_dir):
 @click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
 def spec_validate(spec_file, interactive, project_dir):
     """Validate a specification for completeness and clarity."""
+    from claude_agent.agent import run_spec_validate_session
+
     project_dir = Path(project_dir).resolve()
     spec_path = Path(spec_file) if spec_file else project_dir / "spec-draft.md"
 
@@ -318,8 +343,10 @@ def spec_validate(spec_file, interactive, project_dir):
         click.echo("Run 'claude-agent spec create' first or specify a spec file")
         sys.exit(1)
 
-    click.echo(f"Validating: {spec_path}")
-    click.echo("Note: Full validation requires running the agent session.")
+    config = merge_config(project_dir=project_dir)
+    status, passed = asyncio.run(run_spec_validate_session(config, spec_path))
+
+    sys.exit(0 if passed else 1)
 
 
 @spec.command("decompose")
@@ -328,6 +355,8 @@ def spec_validate(spec_file, interactive, project_dir):
 @click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
 def spec_decompose(spec_file, features, project_dir):
     """Decompose a validated spec into a feature list."""
+    from claude_agent.agent import run_spec_decompose_session
+
     project_dir = Path(project_dir).resolve()
     spec_path = Path(spec_file) if spec_file else project_dir / "spec-validated.md"
 
@@ -343,9 +372,10 @@ def spec_decompose(spec_file, features, project_dir):
             click.echo("Run 'claude-agent spec validate' first or specify a spec file")
             sys.exit(1)
 
-    click.echo(f"Decomposing: {spec_path}")
-    click.echo(f"Target features: {features}")
-    click.echo("Note: Full decomposition requires running the agent session.")
+    config = merge_config(project_dir=project_dir, cli_features=features)
+    status, feature_path = asyncio.run(run_spec_decompose_session(config, spec_path, features))
+
+    sys.exit(0 if feature_path.exists() else 1)
 
 
 @spec.command("auto")
@@ -353,11 +383,13 @@ def spec_decompose(spec_file, features, project_dir):
 @click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
 def spec_auto(goal, project_dir):
     """Run full spec workflow (create -> validate -> decompose)."""
-    project_dir = Path(project_dir).resolve()
+    from claude_agent.agent import run_spec_workflow
 
-    click.echo(f"Running full spec workflow for: {goal[:100]}...")
-    click.echo("Note: Full workflow requires running agent sessions.")
-    click.echo("This is a placeholder - full implementation coming soon.")
+    project_dir = Path(project_dir).resolve()
+    config = merge_config(project_dir=project_dir)
+
+    success = asyncio.run(run_spec_workflow(config, goal))
+    sys.exit(0 if success else 1)
 
 
 @spec.command("status")

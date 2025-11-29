@@ -30,6 +30,7 @@ from claude_agent.progress import (
     print_session_header,
     print_progress_summary,
     print_startup_banner,
+    record_spec_step,
     save_validation_attempt,
 )
 from claude_agent.prompts.loader import (
@@ -37,6 +38,9 @@ from claude_agent.prompts.loader import (
     get_coding_prompt,
     get_review_prompt,
     get_validator_prompt,
+    get_spec_create_prompt,
+    get_spec_validate_prompt,
+    get_spec_decompose_prompt,
     write_spec_to_project,
 )
 from claude_agent.security import configure_security
@@ -649,3 +653,251 @@ async def run_autonomous_agent(config: Config) -> None:
     print("-" * 70)
 
     print("\nDone!")
+
+
+# =============================================================================
+# Spec Workflow Session Runners
+# =============================================================================
+
+
+async def run_spec_create_session(
+    config: Config,
+    goal: str,
+    context: str = "",
+) -> tuple[str, Path]:
+    """
+    Run spec creation session.
+
+    Args:
+        config: Configuration object
+        goal: The user's goal or rough idea
+        context: Optional additional context
+
+    Returns:
+        (status, spec_path) where status is "complete" or "error"
+    """
+    project_dir = config.project_dir
+    stack = config.stack or detect_stack(project_dir)
+
+    # Configure security
+    configure_security(stack=stack, extra_commands=config.security.extra_commands)
+
+    # Print header
+    print("\n" + "=" * 70)
+    print("  SPEC WORKFLOW - STEP 1: CREATE")
+    print("  Creating detailed specification from goal...")
+    print("=" * 70 + "\n")
+
+    # Create client
+    client = create_client(
+        project_dir=project_dir,
+        model=config.agent.model,
+        max_turns=config.agent.max_turns,
+        stack=stack,
+    )
+
+    # Get prompt
+    prompt = get_spec_create_prompt(goal, context)
+
+    # Run session
+    async with client:
+        status, _ = await run_agent_session(client, prompt, project_dir)
+
+    # Record step
+    spec_path = project_dir / "spec-draft.md"
+    record_spec_step(project_dir, "create", {
+        "status": "complete" if spec_path.exists() else "error",
+        "output_file": "spec-draft.md",
+        "goal": goal[:200],  # Truncate for storage
+    })
+
+    if spec_path.exists():
+        print(f"\nCreated: {spec_path}")
+        return "complete", spec_path
+    else:
+        print("\nError: spec-draft.md was not created")
+        return "error", spec_path
+
+
+async def run_spec_validate_session(
+    config: Config,
+    spec_path: Path,
+) -> tuple[str, bool]:
+    """
+    Run spec validation session.
+
+    Args:
+        config: Configuration object
+        spec_path: Path to the specification file to validate
+
+    Returns:
+        (status, passed) where passed indicates if validation succeeded
+    """
+    project_dir = config.project_dir
+    stack = config.stack or detect_stack(project_dir)
+
+    configure_security(stack=stack, extra_commands=config.security.extra_commands)
+
+    print("\n" + "=" * 70)
+    print("  SPEC WORKFLOW - STEP 2: VALIDATE")
+    print("  Validating specification for completeness...")
+    print("=" * 70 + "\n")
+
+    # Read spec content
+    spec_content = spec_path.read_text()
+
+    client = create_client(
+        project_dir=project_dir,
+        model=config.agent.model,
+        max_turns=config.agent.max_turns,
+        stack=stack,
+    )
+
+    prompt = get_spec_validate_prompt(spec_content)
+
+    async with client:
+        status, response = await run_agent_session(client, prompt, project_dir)
+
+    # Check if validation passed (spec-validated.md created)
+    validated_path = project_dir / "spec-validated.md"
+    passed = validated_path.exists()
+
+    record_spec_step(project_dir, "validate", {
+        "status": "complete",
+        "passed": passed,
+        "output_file": "spec-validated.md" if passed else None,
+        "validation_report": "spec-validation.md",
+    })
+
+    if passed:
+        print(f"\nValidation PASSED: {validated_path}")
+    else:
+        print("\nValidation FAILED: blocking issues found")
+        validation_report = project_dir / "spec-validation.md"
+        if validation_report.exists():
+            print(f"Review issues in: {validation_report}")
+
+    return status, passed
+
+
+async def run_spec_decompose_session(
+    config: Config,
+    spec_path: Path,
+    feature_count: int,
+) -> tuple[str, Path]:
+    """
+    Run spec decomposition session.
+
+    Args:
+        config: Configuration object
+        spec_path: Path to the validated specification file
+        feature_count: Target number of features to generate
+
+    Returns:
+        (status, feature_list_path)
+    """
+    project_dir = config.project_dir
+    stack = config.stack or detect_stack(project_dir)
+
+    configure_security(stack=stack, extra_commands=config.security.extra_commands)
+
+    print("\n" + "=" * 70)
+    print("  SPEC WORKFLOW - STEP 3: DECOMPOSE")
+    print(f"  Decomposing specification into ~{feature_count} features...")
+    print("=" * 70 + "\n")
+
+    spec_content = spec_path.read_text()
+
+    client = create_client(
+        project_dir=project_dir,
+        model=config.agent.model,
+        max_turns=config.agent.max_turns,
+        stack=stack,
+    )
+
+    prompt = get_spec_decompose_prompt(spec_content, feature_count)
+
+    async with client:
+        status, _ = await run_agent_session(client, prompt, project_dir)
+
+    feature_list_path = project_dir / "feature_list.json"
+
+    record_spec_step(project_dir, "decompose", {
+        "status": "complete" if feature_list_path.exists() else "error",
+        "output_file": "feature_list.json",
+        "feature_count": feature_count,
+    })
+
+    if feature_list_path.exists():
+        print(f"\nCreated: {feature_list_path}")
+    else:
+        print("\nError: feature_list.json was not created")
+
+    return status, feature_list_path
+
+
+async def run_spec_workflow(config: Config, goal: str) -> bool:
+    """
+    Run full spec workflow (auto mode).
+
+    This orchestrates the complete spec workflow:
+    1. Create: Generate detailed spec from goal
+    2. Validate: Check spec for completeness
+    3. Decompose: Break into feature list
+
+    Args:
+        config: Configuration object
+        goal: The user's goal or rough idea
+
+    Returns:
+        True if workflow completed successfully
+    """
+    print("\n" + "=" * 70)
+    print("  SPEC WORKFLOW - AUTO MODE")
+    print("=" * 70)
+    print(f"\nGoal: {goal[:100]}{'...' if len(goal) > 100 else ''}")
+    print("-" * 70)
+
+    project_dir = config.project_dir
+
+    # Step 1: Create
+    print("\nStep 1/3: Creating specification...")
+    status, spec_path = await run_spec_create_session(config, goal)
+
+    if not spec_path.exists():
+        print("\nError: Spec creation failed - spec-draft.md not created")
+        return False
+
+    # Step 2: Validate
+    print("\nStep 2/3: Validating specification...")
+    status, passed = await run_spec_validate_session(config, spec_path)
+
+    if not passed:
+        print("\nValidation failed - blocking issues found")
+        print("Review spec-validation.md and fix issues before continuing")
+        return False
+
+    validated_path = project_dir / "spec-validated.md"
+
+    # Step 3: Decompose
+    print("\nStep 3/3: Decomposing into features...")
+    status, feature_path = await run_spec_decompose_session(
+        config, validated_path, config.features
+    )
+
+    if not feature_path.exists():
+        print("\nError: Decomposition failed - feature_list.json not created")
+        return False
+
+    # Summary
+    print("\n" + "=" * 70)
+    print("  SPEC WORKFLOW COMPLETE")
+    print("=" * 70)
+    print("\nGenerated files:")
+    print("  - spec-draft.md          (initial spec)")
+    print("  - spec-validation.md     (validation report)")
+    print("  - spec-validated.md      (approved spec)")
+    print("  - feature_list.json      (implementation roadmap)")
+    print("\nReady for coding. Run 'claude-agent' to start implementation.")
+
+    return True

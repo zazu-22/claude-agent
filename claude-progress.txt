@@ -1,95 +1,47 @@
 ================================================================================
-SPEC WORKFLOW INTEGRATION - SESSION 2 SUMMARY
+SPEC WORKFLOW INTEGRATION - SESSION 3 SUMMARY
 ================================================================================
-Date: 2025-11-29
-Session: Coding Agent (Session 2)
+Date: 2025-01-15
+Session: Coding Agent (Session 3)
 Branch: feat/spec-creation-workflow
 
 OBJECTIVE:
-Implement a 4-step specification creation workflow as distinct Claude sessions
-with fresh context windows. Each step available as subcommand (spec create,
-spec validate, spec decompose, spec status), with auto mode (spec auto).
+Implement agent session runners and wire CLI commands to agent sessions.
+Complete the spec workflow integration.
 
 ================================================================================
-COMPLETED THIS SESSION (SESSION 2)
+COMPLETED THIS SESSION (SESSION 3)
 ================================================================================
 
-1. CONFIG UPDATES (config.py) - DONE
-   - Added WorkflowConfig dataclass with:
-     - default: str = "full"
-     - auto_spec_enabled: bool = False
-     - skip_if_feature_list_exists: bool = True
-   - Added workflow field to Config dataclass
-   - Updated merge_config to parse workflow section from YAML
-   - Updated generate_config_template to include workflow section
+1. AGENT SESSION RUNNERS (agent.py) - DONE
+   - Added run_spec_create_session(config, goal, context) -> (status, spec_path)
+   - Added run_spec_validate_session(config, spec_path) -> (status, passed)
+   - Added run_spec_decompose_session(config, spec_path, feature_count) -> (status, feature_list_path)
+   - Added run_spec_workflow(config, goal) -> bool
+   - All functions are async, have docstrings with Args/Returns, and use proper async patterns
 
-2. PROGRESS TRACKING (progress.py) - DONE
-   - Added SPEC_WORKFLOW_FILE constant = "spec-workflow.json"
-   - Implemented get_spec_workflow_state()
-   - Implemented save_spec_workflow_state()
-   - Implemented record_spec_step()
-   - Implemented get_spec_phase()
+2. WIRE CLI TO AGENT SESSIONS - DONE
+   - Updated spec create to call run_spec_create_session
+   - Updated spec validate to call run_spec_validate_session
+   - Updated spec decompose to call run_spec_decompose_session
+   - Updated spec auto to call run_spec_workflow
 
-3. PROMPT LOADER (prompts/loader.py) - DONE
-   - Added get_spec_create_prompt(goal, context)
-   - Added get_spec_validate_prompt(spec_content)
-   - Added get_spec_decompose_prompt(spec_content, feature_count)
+3. ADD --auto-spec FLAG TO MAIN COMMAND - DONE
+   - Added --auto-spec flag to main command
+   - Requires --goal flag
+   - Runs spec workflow before coding agent
+   - Exits with error message if workflow fails
 
-4. CLI COMMANDS (cli.py) - DONE
-   - Added spec command group
-   - Added spec create subcommand (with -g/--goal, --from-file, -i, -p)
-   - Added spec validate subcommand (with spec_file arg, -i, -p)
-   - Added spec decompose subcommand (with spec_file arg, -f/--features, -p)
-   - Added spec auto subcommand (with -g/--goal required, -p)
-   - Added spec status subcommand (with -p)
-
-   Note: --auto-spec flag on main command NOT YET IMPLEMENTED
-
-5. TESTS - ALL PASSING
+4. TESTS - ALL PASSING
    - 17/17 pytest tests pass
    - Tests cover: state tracking, phase detection, config, prompt loaders, CLI
 
-6. FEATURE LIST UPDATED
-   - Verified and marked 53 tests as passing
-   - Current status: 76/200 tests passing (38%)
-
-7. GIT COMMIT
-   - Commit: 537d9ab
-   - Message: "feat: Implement spec workflow foundation"
+5. FEATURE LIST UPDATED
+   - Verified and marked 9 additional tests as passing
+   - Current status: 85/200 tests passing (42.5%)
 
 ================================================================================
-NEXT SESSION TASKS
-================================================================================
-
-The next coding agent should implement:
-
-1. AGENT SESSION RUNNERS (agent.py) - NOT YET DONE
-   - Add run_spec_create_session() function
-   - Add run_spec_validate_session() function
-   - Add run_spec_decompose_session() function
-   - Add run_spec_workflow() function for auto mode
-
-2. WIRE CLI TO AGENT SESSIONS
-   - Update spec create to call run_spec_create_session
-   - Update spec validate to call run_spec_validate_session
-   - Update spec decompose to call run_spec_decompose_session
-   - Update spec auto to call run_spec_workflow
-
-3. ADD --auto-spec FLAG TO MAIN COMMAND
-   - Add flag to main command
-   - Wire to run spec workflow before coding agent
-
-4. ADDITIONAL FEATURES
-   - spec status suggestions for next step
-   - spec validate interactive mode
-   - spec decompose interactive mode
-
-5. VERIFY AND UPDATE FEATURE LIST
-   - Run comprehensive tests
-   - Mark additional tests as passing
-
-================================================================================
-IMPLEMENTATION STATUS
+IMPLEMENTATION STATUS - UPDATED
 ================================================================================
 
 DONE:
@@ -111,17 +63,43 @@ DONE:
 - [x] spec decompose CLI
 - [x] spec auto CLI
 - [x] spec status CLI
+- [x] run_spec_create_session() in agent.py
+- [x] run_spec_validate_session() in agent.py
+- [x] run_spec_decompose_session() in agent.py
+- [x] run_spec_workflow() in agent.py
+- [x] --auto-spec flag on main command
 
 NOT YET DONE:
-- [ ] run_spec_create_session() in agent.py
-- [ ] run_spec_validate_session() in agent.py
-- [ ] run_spec_decompose_session() in agent.py
-- [ ] run_spec_workflow() in agent.py
-- [ ] --auto-spec flag on main command
 - [ ] Interactive mode for validate
-- [ ] spec status next-step suggestions
+- [ ] spec status next-step suggestions improvements
+- [ ] spec_wizard.py interactive functions
 - [ ] README documentation update
 - [ ] AGENTS.md documentation update
+- [ ] More comprehensive test coverage for agent sessions
+
+================================================================================
+NEXT SESSION TASKS
+================================================================================
+
+The next coding agent should work on:
+
+1. INTERACTIVE MODE
+   - Implement interactive_spec_create() in spec_wizard.py
+   - Implement interactive_validation_review() in spec_wizard.py
+   - Wire interactive mode to CLI commands
+
+2. ERROR HANDLING
+   - Add more robust error handling for API errors
+   - Handle network errors gracefully
+   - Handle session timeouts
+
+3. TEST COVERAGE
+   - Add unit tests for the agent session runners
+   - Add integration tests for the full workflow
+
+4. DOCUMENTATION
+   - Update README with spec workflow examples
+   - Update AGENTS.md with new commands
 
 ================================================================================
 TESTING COMMANDS
@@ -137,6 +115,7 @@ uv run pytest tests/test_spec_workflow.py -v
 uv run pytest tests/test_spec_cli.py -v
 
 # Test CLI manually
+uv run claude-agent --help  # Shows --auto-spec flag
 uv run claude-agent spec --help
 uv run claude-agent spec status -p /tmp/test
 uv run claude-agent spec create --help
@@ -145,13 +124,16 @@ uv run claude-agent spec decompose --help
 uv run claude-agent spec auto --help
 
 ================================================================================
-NOTES FOR NEXT SESSION
+KEY CHANGES THIS SESSION
 ================================================================================
 
-- The CLI commands are implemented but currently just print messages
-- They need to be wired to actual agent sessions
-- The agent.py module needs the run_spec_*_session functions
-- These functions should use the existing create_client and run_agent_session
-- See app_spec.txt for detailed function signatures and behavior
+Files modified:
+- src/claude_agent/agent.py: Added 4 async session runner functions (~250 lines)
+- src/claude_agent/cli.py: Wired CLI commands to agent sessions (~40 lines changed)
+- feature_list.json: Updated 9 tests to passing status
+
+New imports in agent.py:
+- record_spec_step from progress.py
+- get_spec_create_prompt, get_spec_validate_prompt, get_spec_decompose_prompt from prompts/loader.py
 
 ================================================================================

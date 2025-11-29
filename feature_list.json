@@ -338,7 +338,7 @@
       "Step 3: Verify function is async",
       "Step 4: Verify return type annotation indicates tuple"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -350,7 +350,7 @@
       "Step 3: Verify function is async",
       "Step 4: Verify return type indicates tuple with bool for passed"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -362,7 +362,7 @@
       "Step 3: Verify function is async",
       "Step 4: Verify return type indicates tuple with Path for feature_list_path"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -374,7 +374,7 @@
       "Step 3: Verify function is async",
       "Step 4: Verify return type is bool"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -771,7 +771,7 @@
       "Step 2: Verify --auto-spec option is shown",
       "Step 3: Verify description mentions spec workflow"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1189,7 +1189,7 @@
       "Step 3: Verify Args section is present",
       "Step 4: Verify Returns section is present"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1200,7 +1200,7 @@
       "Step 2: Verify function parameters have type hints",
       "Step 3: Verify return types are annotated"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1245,7 +1245,7 @@
       "Step 3: Verify async with is used for clients",
       "Step 4: Verify no blocking calls in async context"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1256,7 +1256,7 @@
       "Step 2: Verify pathlib.Path is used instead of string concatenation",
       "Step 3: Verify / operator is used for path joining"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
