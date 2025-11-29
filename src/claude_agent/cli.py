@@ -141,7 +141,9 @@ def main(
             if click.confirm("\nProceed with reset?"):
                 for f in existing:
                     (project_dir / f).unlink()
-                click.echo("Reset complete.\n")
+                click.echo("Reset complete.")
+                click.echo("Run 'claude-agent' again to start fresh.")
+                sys.exit(0)
             else:
                 click.echo("Reset cancelled.")
                 sys.exit(0)
