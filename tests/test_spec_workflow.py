@@ -117,6 +117,69 @@ class TestWorkflowConfig:
         assert config.skip_if_feature_list_exists is True
 
 
+class TestConfigFileParsing:
+    """Test workflow config parsing from YAML files."""
+
+    def test_load_config_file_parses_workflow_section(self, tmp_path):
+        """
+        Purpose: Verify that load_config_file correctly reads workflow section
+        from YAML. Tests feature #3.
+        """
+        from claude_agent.config import load_config_file
+
+        config_content = """
+workflow:
+  default: spec-only
+  auto_spec:
+    enabled: true
+    skip_if_feature_list_exists: false
+"""
+        config_file = tmp_path / ".claude-agent.yaml"
+        config_file.write_text(config_content)
+
+        file_config = load_config_file(config_file)
+
+        assert "workflow" in file_config
+        assert file_config["workflow"]["default"] == "spec-only"
+        assert file_config["workflow"]["auto_spec"]["enabled"] is True
+        assert file_config["workflow"]["auto_spec"]["skip_if_feature_list_exists"] is False
+
+    def test_merge_config_applies_workflow_settings(self, tmp_path):
+        """
+        Purpose: Verify that merge_config correctly applies workflow settings
+        from config file to Config object. Tests feature #4.
+        """
+        from claude_agent.config import merge_config
+
+        config_content = """
+workflow:
+  default: code-only
+  auto_spec:
+    enabled: true
+    skip_if_feature_list_exists: false
+"""
+        config_file = tmp_path / ".claude-agent.yaml"
+        config_file.write_text(config_content)
+
+        config = merge_config(project_dir=tmp_path)
+
+        assert config.workflow.default == "code-only"
+        assert config.workflow.auto_spec_enabled is True
+        assert config.workflow.skip_if_feature_list_exists is False
+
+    def test_merge_config_workflow_defaults_without_config_file(self, tmp_path):
+        """
+        Purpose: Verify that workflow defaults are used when no config file exists.
+        """
+        from claude_agent.config import merge_config
+
+        config = merge_config(project_dir=tmp_path)
+
+        assert config.workflow.default == "full"
+        assert config.workflow.auto_spec_enabled is False
+        assert config.workflow.skip_if_feature_list_exists is True
+
+
 class TestPromptLoading:
     """Test spec prompt loader functions."""
 

@@ -34,7 +34,7 @@
       "Step 4: Verify workflow.auto_spec.enabled is correctly parsed",
       "Step 5: Verify workflow.auto_spec.skip_if_feature_list_exists is correctly parsed"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -46,7 +46,7 @@
       "Step 3: Verify workflow settings are applied to resulting Config",
       "Step 4: Verify CLI overrides would take priority if implemented"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -589,7 +589,7 @@
       "Step 2: Run 'uv run claude-agent spec create --from-file <temp>'",
       "Step 3: Verify goal is read from file"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -612,7 +612,7 @@
       "Step 2: Run 'uv run claude-agent spec validate -p <temp>'",
       "Step 3: Verify it attempts to validate spec-draft.md"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {

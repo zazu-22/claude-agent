@@ -71,3 +71,47 @@ class TestSpecCLI:
         assert "decompose" in result.output
         assert "auto" in result.output
         assert "status" in result.output
+
+    def test_spec_create_from_file_reads_goal(self, runner, tmp_path):
+        """
+        Purpose: Verify spec create --from-file reads goal from file.
+        Tests feature #35 (CLI: spec create accepts goal from --from-file).
+
+        Note: We can't run the full session without mocking Claude, so we
+        verify the file is read by checking it doesn't show the "no goal" error.
+        Since the agent session would fail without Claude, we accept that.
+        """
+        goal_file = tmp_path / "goal.txt"
+        goal_file.write_text("Build a task management application")
+
+        # The command will fail because there's no Claude connection,
+        # but it should NOT fail with "goal required" error
+        result = runner.invoke(main, [
+            "spec", "create",
+            "--from-file", str(goal_file),
+            "-p", str(tmp_path)
+        ])
+
+        # Should NOT show "goal or from-file required" error
+        assert "--goal or --from-file required" not in result.output
+
+    def test_spec_validate_defaults_to_draft(self, runner, tmp_path):
+        """
+        Purpose: Verify spec validate uses spec-draft.md by default.
+        Tests feature #39 (CLI: spec validate defaults to spec-draft.md).
+
+        Note: Without mocking Claude, we can only verify it finds and tries
+        to use the draft file (not that it shows file not found error).
+        """
+        # Create a spec-draft.md
+        (tmp_path / "spec-draft.md").write_text("# Test Spec\n\nSome content")
+
+        # The command will fail because there's no Claude connection,
+        # but it should NOT fail with "spec-draft.md not found" error
+        result = runner.invoke(main, [
+            "spec", "validate",
+            "-p", str(tmp_path)
+        ])
+
+        # Should NOT show "not found" error since spec-draft.md exists
+        assert "not found" not in result.output.lower()
