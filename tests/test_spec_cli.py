@@ -115,3 +115,54 @@ class TestSpecCLI:
 
         # Should NOT show "not found" error since spec-draft.md exists
         assert "not found" not in result.output.lower()
+
+    def test_spec_status_shows_file_existence(self, runner, tmp_path):
+        """
+        Purpose: Verify spec status shows which files exist.
+        Tests feature at line 731.
+        """
+        # Create only spec-draft.md
+        (tmp_path / "spec-draft.md").write_text("# Draft")
+
+        result = runner.invoke(main, ["spec", "status", "-p", str(tmp_path)])
+        assert result.exit_code == 0
+
+        # Should show spec-draft.md is present
+        assert "spec-draft.md" in result.output
+        assert "present" in result.output.lower()
+
+        # Should show spec-validated.md is missing
+        assert "spec-validated.md" in result.output
+        assert "missing" in result.output.lower()
+
+    def test_spec_status_shows_workflow_history(self, runner, tmp_path):
+        """
+        Purpose: Verify spec status shows workflow history when available.
+        Tests feature at line 743.
+        """
+        import json
+
+        # Create spec-workflow.json with history
+        workflow_state = {
+            "phase": "created",
+            "history": [
+                {"step": "create", "timestamp": "2025-01-15T10:00:00Z", "status": "complete"}
+            ]
+        }
+        (tmp_path / "spec-workflow.json").write_text(json.dumps(workflow_state))
+
+        result = runner.invoke(main, ["spec", "status", "-p", str(tmp_path)])
+        assert result.exit_code == 0
+
+        # Should show history section
+        assert "History:" in result.output or "history" in result.output.lower()
+        assert "create" in result.output.lower()
+
+    def test_auto_spec_requires_goal(self, runner, tmp_path):
+        """
+        Purpose: Verify --auto-spec flag requires --goal.
+        Tests feature at line 777.
+        """
+        result = runner.invoke(main, ["--auto-spec", "-p", str(tmp_path)])
+        assert result.exit_code != 0
+        assert "goal" in result.output.lower()

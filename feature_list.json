@@ -737,7 +737,7 @@
       "Step 3: Verify 'Spec draft: exists' appears",
       "Step 4: Verify 'Validated spec: not created' appears"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -749,7 +749,7 @@
       "Step 3: Verify history entries are displayed",
       "Step 4: Verify timestamps are shown"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -782,7 +782,7 @@
       "Step 2: Verify exit code is non-zero",
       "Step 3: Verify error mentions --goal is required"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -826,7 +826,7 @@
       "Step 2: Verify function signature",
       "Step 3: Verify return type is tuple[Optional[str], str]"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {

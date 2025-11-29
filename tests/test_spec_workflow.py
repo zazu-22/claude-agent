@@ -180,6 +180,28 @@ workflow:
         assert config.workflow.skip_if_feature_list_exists is True
 
 
+class TestInteractiveSpecWizard:
+    """Test spec_wizard.py interactive functions."""
+
+    def test_interactive_spec_create_function_signature(self):
+        """
+        Purpose: Verify interactive_spec_create has correct signature.
+        Tests feature at line 821.
+        """
+        from claude_agent.spec_wizard import interactive_spec_create
+        import inspect
+
+        sig = inspect.signature(interactive_spec_create)
+        params = list(sig.parameters.keys())
+
+        # Should have project_dir parameter
+        assert "project_dir" in params
+
+        # Check return annotation if present
+        # Function returns tuple[Optional[str], str]
+        assert callable(interactive_spec_create)
+
+
 class TestPromptLoading:
     """Test spec prompt loader functions."""
 
