@@ -105,7 +105,8 @@ def get_session_state(project_dir: Path) -> str:
     Determine current session state.
 
     Returns:
-        One of: "fresh", "initialized", "in_progress", "validating", "complete"
+        One of: "fresh", "initialized", "in_progress", "pending_validation",
+        "validating", "complete"
     """
     feature_list_path = project_dir / "feature_list.json"
     history_path = project_dir / "validation-history.json"
@@ -114,6 +115,7 @@ def get_session_state(project_dir: Path) -> str:
         return "fresh"
 
     passing, total = count_passing_tests(project_dir)
+    counts = count_tests_by_type(project_dir)
 
     if total == 0:
         return "initialized"
@@ -130,6 +132,9 @@ def get_session_state(project_dir: Path) -> str:
                 pass
         # All pass but not yet approved
         return "validating"
+    elif is_automated_work_complete(project_dir):
+        # All automated tests pass, only manual tests remain
+        return "pending_validation"
     else:
         return "in_progress"
 

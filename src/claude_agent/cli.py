@@ -222,6 +222,8 @@ def status(project_dir: Path):
 
     PROJECT_DIR is the project to check (default: current directory).
     """
+    from claude_agent.progress import count_tests_by_type
+
     project_dir = Path(project_dir).resolve()
 
     click.echo(f"\nProject: {project_dir}")
@@ -230,9 +232,19 @@ def status(project_dir: Path):
     stack = detect_stack(project_dir)
     click.echo(f"Stack:   {stack}")
 
-    # Get session state
+    # Get session state with descriptive output
     state = get_session_state(project_dir)
-    click.echo(f"State:   {state}")
+    counts = count_tests_by_type(project_dir)
+
+    if state == "pending_validation":
+        click.echo(f"State:   {state} (all automated tests pass, {counts['manual_total']} manual remaining)")
+        click.echo("         -> Running claude-agent will trigger validation")
+    elif state == "validating":
+        click.echo(f"State:   {state} (all tests pass, awaiting validator approval)")
+    elif state == "in_progress":
+        click.echo(f"State:   {state} ({counts['automated_passing']}/{counts['automated_total']} automated tests passing)")
+    else:
+        click.echo(f"State:   {state}")
 
     # Show progress
     print_progress_summary(project_dir)
