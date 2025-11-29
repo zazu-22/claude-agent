@@ -388,7 +388,20 @@ async def run_autonomous_agent(config: Config) -> None:
         # Write spec to project directory for agent reference
         write_spec_to_project(project_dir, spec_content)
     else:
-        print("Continuing existing project")
+        # Show detected state
+        from claude_agent.progress import get_session_state
+        state = get_session_state(project_dir)
+        counts = count_tests_by_type(project_dir)
+
+        print("\n" + "-" * 70)
+        print("PROJECT STATE DETECTED:")
+        print(f"  State: {state}")
+        print(f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}")
+        if state == "pending_validation":
+            print("  -> Will trigger VALIDATION (all automated tests pass)")
+        else:
+            print("  -> Will run CODING AGENT")
+        print("-" * 70)
         print_progress_summary(project_dir)
 
     # Get stack-specific commands
@@ -444,6 +457,12 @@ async def run_autonomous_agent(config: Config) -> None:
         automated_complete = is_automated_work_complete(project_dir)
         all_tests_pass = total > 0 and passing == total
 
+        # Show workflow decision
+        print("\n" + "-" * 70)
+        print("WORKFLOW CHECK:")
+        print(f"  Total tests: {total} | Passing: {passing}")
+        print(f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}")
+
         # Trigger validation if:
         # 1. All tests pass (including any manual tests), OR
         # 2. All automated tests pass (manual tests may remain)
@@ -453,6 +472,8 @@ async def run_autonomous_agent(config: Config) -> None:
                 trigger_reason = "all tests passing"
             else:
                 trigger_reason = f"automated work complete ({counts['manual_total']} manual tests remaining)"
+            print(f"  -> TRIGGERING VALIDATION ({trigger_reason})")
+            print("-" * 70)
 
             # Skip validation if disabled
             if not config.validator.enabled:
@@ -560,9 +581,18 @@ async def run_autonomous_agent(config: Config) -> None:
                 break  # Exit main loop - manual review needed
 
             # Otherwise (REJECTED or ERROR), return to coding agent
-            print("\nReturning to coding agent to address issues...")
+            print("\n" + "-" * 70)
+            print("WORKFLOW CHECK:")
+            print(f"  Validation result: {result.verdict}")
+            print("  -> RETURNING TO CODING AGENT (to address rejected features)")
+            print("-" * 70)
             await asyncio.sleep(config.agent.auto_continue_delay)
             continue  # Continue main loop
+
+        # Not ready for validation - continue coding
+        remaining = counts['automated_total'] - counts['automated_passing']
+        print(f"  -> CONTINUING CODING ({remaining} automated tests remaining)")
+        print("-" * 70)
 
         # Handle status
         if status == "continue":
