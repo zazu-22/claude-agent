@@ -794,7 +794,7 @@
       "Step 3: Verify spec workflow runs first",
       "Step 4: Verify coding agent starts after workflow completes"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -806,7 +806,7 @@
       "Step 3: Verify coding agent does not start",
       "Step 4: Verify error message about spec workflow failure"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {

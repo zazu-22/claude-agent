@@ -168,6 +168,84 @@ class TestSpecCLI:
         assert "goal" in result.output.lower()
 
 
+class TestAutoSpecMainCommand:
+    """Test --auto-spec flag on main command."""
+
+    @pytest.fixture
+    def runner(self):
+        return CliRunner()
+
+    def test_auto_spec_runs_workflow_before_coding_agent(self, runner, tmp_path):
+        """
+        Purpose: Verify --auto-spec runs spec workflow then coding agent.
+        Tests feature: CLI: --auto-spec runs spec workflow before coding agent
+        """
+        from unittest.mock import patch, AsyncMock
+
+        workflow_called = []
+        agent_called = []
+
+        async def mock_workflow(config, goal):
+            workflow_called.append(goal)
+            # Create the expected files so the coding agent can proceed
+            (config.project_dir / "feature_list.json").write_text("[]")
+            return True
+
+        async def mock_agent(config):
+            agent_called.append(True)
+
+        # Patch run_spec_workflow where it's defined (agent module - imported locally)
+        # Patch run_autonomous_agent at cli module level (imported at top of cli.py)
+        with patch("claude_agent.agent.run_spec_workflow", side_effect=mock_workflow):
+            with patch("claude_agent.cli.run_autonomous_agent", side_effect=mock_agent):
+                result = runner.invoke(main, [
+                    "--auto-spec",
+                    "-g", "Build a test app",
+                    "-p", str(tmp_path)
+                ])
+
+        # Workflow should have been called
+        assert len(workflow_called) == 1
+        assert "Build a test app" in workflow_called[0]
+
+        # Coding agent should have been called after workflow
+        assert len(agent_called) == 1
+
+    def test_auto_spec_exits_if_workflow_fails(self, runner, tmp_path):
+        """
+        Purpose: Verify --auto-spec exits early if spec workflow fails.
+        Tests feature: CLI: --auto-spec exits if spec workflow fails
+        """
+        from unittest.mock import patch, AsyncMock
+
+        agent_called = []
+
+        async def mock_workflow(config, goal):
+            return False  # Workflow fails
+
+        async def mock_agent(config):
+            agent_called.append(True)
+
+        # Patch run_spec_workflow where it's defined (agent module - imported locally)
+        # Patch run_autonomous_agent at cli module level (imported at top of cli.py)
+        with patch("claude_agent.agent.run_spec_workflow", side_effect=mock_workflow):
+            with patch("claude_agent.cli.run_autonomous_agent", side_effect=mock_agent):
+                result = runner.invoke(main, [
+                    "--auto-spec",
+                    "-g", "Build a test app",
+                    "-p", str(tmp_path)
+                ])
+
+        # Should exit with non-zero code
+        assert result.exit_code != 0
+
+        # Coding agent should NOT have been called
+        assert len(agent_called) == 0
+
+        # Should show error message
+        assert "failed" in result.output.lower()
+
+
 class TestSpecAutoExitCodes:
     """Test spec auto command exit codes with mocked agent sessions."""
 
