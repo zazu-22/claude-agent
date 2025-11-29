@@ -11,7 +11,7 @@ from pathlib import Path
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from claude_code_sdk.types import HookMatcher
 
-from claude_agent.security import bash_security_hook
+from claude_agent.security import bash_security_hook, validator_stop_hook
 
 
 # Puppeteer MCP tools for browser automation
@@ -41,6 +41,7 @@ def create_client(
     model: str,
     max_turns: int = 1000,
     stack: str = "node",
+    is_validator: bool = False,
 ) -> ClaudeSDKClient:
     """
     Create a Claude Agent SDK client with multi-layered security.
@@ -50,6 +51,7 @@ def create_client(
         model: Claude model to use
         max_turns: Maximum conversation turns
         stack: Tech stack for security configuration
+        is_validator: If True, adds a Stop hook to enforce verdict output
 
     Returns:
         Configured ClaudeSDKClient
@@ -90,6 +92,19 @@ def create_client(
     print(f"   - Bash commands restricted to {stack} stack allowlist")
     print()
 
+    # Build hooks configuration
+    hooks_config = {
+        "PreToolUse": [
+            HookMatcher(matcher="Bash", hooks=[bash_security_hook]),
+        ],
+    }
+
+    # Add Stop hook for validator to enforce verdict output
+    if is_validator:
+        hooks_config["Stop"] = [
+            HookMatcher(hooks=[validator_stop_hook]),
+        ]
+
     return ClaudeSDKClient(
         options=ClaudeCodeOptions(
             model=model,
@@ -101,11 +116,7 @@ def create_client(
             mcp_servers={
                 "puppeteer": {"command": "npx", "args": ["puppeteer-mcp-server"]}
             },
-            hooks={
-                "PreToolUse": [
-                    HookMatcher(matcher="Bash", hooks=[bash_security_hook]),
-                ],
-            },
+            hooks=hooks_config,
             max_turns=max_turns,
             cwd=str(project_dir.resolve()),
             settings=str(settings_file.resolve()),

@@ -294,13 +294,14 @@ async def run_validator_session(
     Returns:
         ValidatorResult with verdict and any rejected tests
     """
-    # Create client with validator model and lower max_turns
-    # Validator has fewer turns to force quicker verdict output
+    # Create client with validator model, lower max_turns, and stop hook
+    # Stop hook enforces verdict output before session ends
     client = create_client(
         project_dir=project_dir,
         model=config.validator.model,
         max_turns=config.validator.max_turns,
         stack=stack,
+        is_validator=True,
     )
 
     # Get validator prompt

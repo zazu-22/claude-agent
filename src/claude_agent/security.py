@@ -256,6 +256,36 @@ def get_command_for_validation(cmd: str, segments: list[str]) -> str:
 COMMANDS_NEEDING_EXTRA_VALIDATION = {"pkill", "chmod", "init.sh", "setup.sh"}
 
 
+async def validator_stop_hook(input_data, tool_use_id=None, context=None):
+    """
+    Stop hook for validator agent that enforces JSON verdict output.
+
+    On first stop attempt, blocks and reminds Claude to output verdict.
+    On second attempt (stop_hook_active=True), allows stop to prevent infinite loops.
+    """
+    # Check if we've already blocked once - allow stop to prevent infinite loop
+    if input_data.get("stop_hook_active", False):
+        return {}
+
+    # First stop attempt - block and require verdict
+    return {
+        "decision": "block",
+        "reason": (
+            "STOP! You have not output your JSON verdict yet. "
+            "Before ending your session, you MUST output a JSON code block with your verdict:\n\n"
+            "```json\n"
+            '{\n'
+            '  "verdict": "APPROVED",\n'
+            '  "rejected_tests": [],\n'
+            '  "tests_verified": <number>,\n'
+            '  "summary": "<what you tested>"\n'
+            '}\n'
+            "```\n\n"
+            "Output this JSON block NOW, then you may stop."
+        ),
+    }
+
+
 async def bash_security_hook(input_data, tool_use_id=None, context=None):
     """
     Pre-tool-use hook that validates bash commands using an allowlist.
