@@ -166,3 +166,51 @@ class TestSpecCLI:
         result = runner.invoke(main, ["--auto-spec", "-p", str(tmp_path)])
         assert result.exit_code != 0
         assert "goal" in result.output.lower()
+
+
+class TestSpecAutoExitCodes:
+    """Test spec auto command exit codes with mocked agent sessions."""
+
+    @pytest.fixture
+    def runner(self):
+        return CliRunner()
+
+    def test_spec_auto_exits_with_code_0_on_success(self, runner, tmp_path):
+        """
+        Purpose: Verify spec auto returns exit code 0 when workflow succeeds.
+        Tests feature: CLI: spec auto exits with code 0 on success
+        """
+        from unittest.mock import patch, AsyncMock
+
+        # Mock run_spec_workflow where it's imported from (agent module)
+        with patch("claude_agent.agent.run_spec_workflow", new_callable=AsyncMock) as mock_workflow:
+            mock_workflow.return_value = True
+
+            result = runner.invoke(main, [
+                "spec", "auto",
+                "-g", "Build a todo app",
+                "-p", str(tmp_path)
+            ])
+
+            assert result.exit_code == 0
+            mock_workflow.assert_called_once()
+
+    def test_spec_auto_exits_with_code_1_on_failure(self, runner, tmp_path):
+        """
+        Purpose: Verify spec auto returns exit code 1 when workflow fails.
+        Tests feature: CLI: spec auto exits with code 1 on failure
+        """
+        from unittest.mock import patch, AsyncMock
+
+        # Mock run_spec_workflow where it's imported from (agent module)
+        with patch("claude_agent.agent.run_spec_workflow", new_callable=AsyncMock) as mock_workflow:
+            mock_workflow.return_value = False
+
+            result = runner.invoke(main, [
+                "spec", "auto",
+                "-g", "Build a todo app",
+                "-p", str(tmp_path)
+            ])
+
+            assert result.exit_code == 1
+            mock_workflow.assert_called_once()

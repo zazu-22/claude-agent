@@ -703,7 +703,7 @@
       "Step 2: Run spec auto",
       "Step 3: Verify exit code is 0"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -714,7 +714,7 @@
       "Step 2: Run spec auto",
       "Step 3: Verify exit code is 1"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
