@@ -262,5 +262,143 @@ def status(project_dir: Path):
             click.echo(f"  {line}")
 
 
+# =============================================================================
+# Spec Command Group
+# =============================================================================
+
+
+@main.group()
+def spec():
+    """Spec creation and validation commands."""
+    pass
+
+
+@spec.command("create")
+@click.option("-g", "--goal", type=str, help="What to build")
+@click.option("--from-file", type=click.Path(exists=True), help="Read goal from file")
+@click.option("-i", "--interactive", is_flag=True, help="Interactive mode")
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+def spec_create(goal, from_file, interactive, project_dir):
+    """Create a project specification from a goal or rough idea."""
+    project_dir = Path(project_dir).resolve()
+
+    # Get goal from file if specified
+    if from_file:
+        goal = Path(from_file).read_text()
+
+    # Interactive mode
+    context = ""
+    if interactive:
+        from claude_agent.spec_wizard import interactive_spec_create
+        goal, context = interactive_spec_create(project_dir)
+        if not goal:
+            click.echo("Cancelled.")
+            sys.exit(0)
+
+    if not goal:
+        click.echo("Error: --goal or --from-file required (or use -i for interactive)")
+        sys.exit(1)
+
+    click.echo(f"Creating specification for: {goal[:100]}...")
+    click.echo("Note: Full spec creation requires running the agent session.")
+    click.echo("Use 'claude-agent spec auto -g \"goal\"' for full workflow.")
+
+
+@spec.command("validate")
+@click.argument("spec_file", type=click.Path(exists=True), required=False)
+@click.option("-i", "--interactive", is_flag=True, help="Interactive mode")
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+def spec_validate(spec_file, interactive, project_dir):
+    """Validate a specification for completeness and clarity."""
+    project_dir = Path(project_dir).resolve()
+    spec_path = Path(spec_file) if spec_file else project_dir / "spec-draft.md"
+
+    if not spec_path.exists():
+        click.echo(f"Error: {spec_path} not found")
+        click.echo("Run 'claude-agent spec create' first or specify a spec file")
+        sys.exit(1)
+
+    click.echo(f"Validating: {spec_path}")
+    click.echo("Note: Full validation requires running the agent session.")
+
+
+@spec.command("decompose")
+@click.argument("spec_file", type=click.Path(exists=True), required=False)
+@click.option("-f", "--features", type=int, default=50, help="Target feature count")
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+def spec_decompose(spec_file, features, project_dir):
+    """Decompose a validated spec into a feature list."""
+    project_dir = Path(project_dir).resolve()
+    spec_path = Path(spec_file) if spec_file else project_dir / "spec-validated.md"
+
+    if not spec_path.exists():
+        # Fall back to spec-draft.md with warning
+        draft_path = project_dir / "spec-draft.md"
+        if draft_path.exists():
+            click.echo("Warning: Using spec-draft.md (not validated)")
+            click.echo("Consider running 'claude-agent spec validate' first")
+            spec_path = draft_path
+        else:
+            click.echo(f"Error: {spec_path} not found")
+            click.echo("Run 'claude-agent spec validate' first or specify a spec file")
+            sys.exit(1)
+
+    click.echo(f"Decomposing: {spec_path}")
+    click.echo(f"Target features: {features}")
+    click.echo("Note: Full decomposition requires running the agent session.")
+
+
+@spec.command("auto")
+@click.option("-g", "--goal", type=str, required=True, help="What to build")
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+def spec_auto(goal, project_dir):
+    """Run full spec workflow (create -> validate -> decompose)."""
+    project_dir = Path(project_dir).resolve()
+
+    click.echo(f"Running full spec workflow for: {goal[:100]}...")
+    click.echo("Note: Full workflow requires running agent sessions.")
+    click.echo("This is a placeholder - full implementation coming soon.")
+
+
+@spec.command("status")
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+def spec_status(project_dir):
+    """Show spec workflow progress and status."""
+    from claude_agent.progress import get_spec_phase, get_spec_workflow_state
+
+    project_dir = Path(project_dir).resolve()
+
+    click.echo(f"\nProject: {project_dir}")
+
+    # Get phase from files
+    phase = get_spec_phase(project_dir)
+    click.echo(f"Phase: {phase}")
+
+    # Show files present
+    files = {
+        "spec-draft.md": "Draft specification",
+        "spec-validated.md": "Validated specification",
+        "spec-validation.md": "Validation report",
+        "feature_list.json": "Feature list",
+    }
+
+    click.echo("\nFiles:")
+    for filename, description in files.items():
+        path = project_dir / filename
+        status = "present" if path.exists() else "missing"
+        symbol = "+" if path.exists() else "-"
+        click.echo(f"  {symbol} {filename}: {status}")
+
+    # Show workflow state if exists
+    state = get_spec_workflow_state(project_dir)
+    if state["history"]:
+        click.echo("\nHistory:")
+        for entry in state["history"]:
+            step = entry.get("step", "unknown")
+            timestamp = entry.get("timestamp", "unknown")
+            status = entry.get("status", "unknown")
+            click.echo(f"  - {step}: {status} ({timestamp})")
+
+
 if __name__ == "__main__":
     main()

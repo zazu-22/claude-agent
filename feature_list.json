@@ -9,7 +9,7 @@
       "Step 4: Verify auto_spec_enabled field defaults to False",
       "Step 5: Verify skip_if_feature_list_exists field defaults to True"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -21,7 +21,7 @@
       "Step 3: Verify workflow field exists with type WorkflowConfig",
       "Step 4: Verify default_factory is set to WorkflowConfig"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -57,7 +57,7 @@
       "Step 2: Verify SPEC_WORKFLOW_FILE constant exists",
       "Step 3: Verify its value is 'spec-workflow.json'"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -69,7 +69,7 @@
       "Step 3: Verify returned state has phase='none'",
       "Step 4: Verify returned state has empty history list"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -82,7 +82,7 @@
       "Step 4: Verify spec-workflow.json file exists",
       "Step 5: Verify JSON content matches input state"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -95,7 +95,7 @@
       "Step 4: Verify loaded state matches original state",
       "Step 5: Verify history array is preserved exactly"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -108,7 +108,7 @@
       "Step 4: Verify history has 2 entries",
       "Step 5: Verify first entry is 'create' and second is 'validate'"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -120,7 +120,7 @@
       "Step 3: Verify timestamp field exists in history entry",
       "Step 4: Verify timestamp is valid ISO 8601 format"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -134,7 +134,7 @@
       "Step 5: Call record_spec_step with 'decompose' step",
       "Step 6: Verify phase is 'decomposed'"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -145,7 +145,7 @@
       "Step 2: Call get_spec_phase",
       "Step 3: Verify return value is 'none'"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -156,7 +156,7 @@
       "Step 2: Call get_spec_phase",
       "Step 3: Verify return value is 'created'"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -167,7 +167,7 @@
       "Step 2: Call get_spec_phase",
       "Step 3: Verify return value is 'validated'"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -178,7 +178,7 @@
       "Step 2: Call get_spec_phase",
       "Step 3: Verify return value is 'decomposed'"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -190,7 +190,7 @@
       "Step 3: Verify file contains {{goal}} placeholder",
       "Step 4: Verify file contains {{context}} placeholder"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -201,7 +201,7 @@
       "Step 2: Verify file is not empty",
       "Step 3: Verify file contains {{spec_content}} placeholder"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -213,7 +213,7 @@
       "Step 3: Verify file contains {{spec_content}} placeholder",
       "Step 4: Verify file contains {{feature_count}} placeholder"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -228,7 +228,7 @@
       "Step 6: Verify 'Out of Scope' section is mentioned",
       "Step 7: Verify 'Open Questions' section is mentioned"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -240,7 +240,7 @@
       "Step 3: Verify 'WARNING' issue category is defined",
       "Step 4: Verify 'SUGGESTION' issue category is defined"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -252,7 +252,7 @@
       "Step 3: Verify FAIL verdict is documented",
       "Step 4: Verify conditions for each verdict are explained"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -267,7 +267,7 @@
       "Step 6: Verify 'passes' field is documented",
       "Step 7: Verify 'requires_manual_testing' field is documented"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -279,7 +279,7 @@
       "Step 3: Verify 'Build a todo app' appears in returned prompt",
       "Step 4: Verify 'SPEC CREATOR' role identifier is present"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -291,7 +291,7 @@
       "Step 3: Verify context appears in prompt",
       "Step 4: Verify context section header is present"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -302,7 +302,7 @@
       "Step 2: Verify goal appears in prompt",
       "Step 3: Verify ADDITIONAL CONTEXT section is not present"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -314,7 +314,7 @@
       "Step 3: Verify 'My Spec' appears in returned prompt",
       "Step 4: Verify 'SPEC VALIDATOR' role identifier is present"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -326,7 +326,7 @@
       "Step 3: Verify '75' appears in returned prompt",
       "Step 4: Verify 'SPEC DECOMPOSER' role identifier is present"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -484,7 +484,7 @@
       "Step 3: Verify 'SPEC WORKFLOW COMPLETE' appears in output",
       "Step 4: Verify list of generated files is printed"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -495,7 +495,7 @@
       "Step 2: Verify 'spec' command group is registered",
       "Step 3: Verify it has a help description"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -509,7 +509,7 @@
       "Step 5: Verify output includes 'auto' subcommand",
       "Step 6: Verify output includes 'status' subcommand"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -522,7 +522,7 @@
       "Step 4: Verify -i/--interactive option is shown",
       "Step 5: Verify -p/--project-dir option is shown"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -534,7 +534,7 @@
       "Step 3: Verify -i/--interactive option is shown",
       "Step 4: Verify -p/--project-dir option is shown"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -546,7 +546,7 @@
       "Step 3: Verify -f/--features option is shown",
       "Step 4: Verify -p/--project-dir option is shown"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -557,7 +557,7 @@
       "Step 2: Verify -g/--goal option is shown as required",
       "Step 3: Verify -p/--project-dir option is shown"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -567,7 +567,7 @@
       "Step 1: Run 'uv run claude-agent spec status --help'",
       "Step 2: Verify -p/--project-dir option is shown"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -578,7 +578,7 @@
       "Step 2: Verify exit code is non-zero",
       "Step 3: Verify error message mentions --goal or --from-file required"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -601,7 +601,7 @@
       "Step 3: Verify error message mentions spec-draft.md not found",
       "Step 4: Verify suggestion to run spec create first"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -623,7 +623,7 @@
       "Step 2: Run 'uv run claude-agent spec validate custom-spec.md -p <temp>'",
       "Step 3: Verify it validates custom-spec.md"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -634,7 +634,7 @@
       "Step 2: Run 'uv run claude-agent spec decompose -p <temp>'",
       "Step 3: Verify it attempts to decompose spec-validated.md"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -646,7 +646,7 @@
       "Step 3: Verify warning about using unvalidated draft is shown",
       "Step 4: Verify it proceeds with spec-draft.md"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -657,7 +657,7 @@
       "Step 2: Run 'uv run claude-agent spec decompose -f 100 -p <temp>'",
       "Step 3: Verify feature count 100 is used in decomposition"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -668,7 +668,7 @@
       "Step 2: Run 'uv run claude-agent spec decompose -p <temp>'",
       "Step 3: Verify feature count 50 is used"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -679,7 +679,7 @@
       "Step 2: Verify exit code is non-zero",
       "Step 3: Verify error mentions --goal is required"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -692,7 +692,7 @@
       "Step 4: Verify validate step ran",
       "Step 5: Verify decompose step ran"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -725,7 +725,7 @@
       "Step 2: Run 'uv run claude-agent spec status -p <temp>'",
       "Step 3: Verify 'Phase: none' appears in output"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -760,7 +760,7 @@
       "Step 2: Run spec status",
       "Step 3: Verify suggestion mentions 'spec create'"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -815,7 +815,7 @@
     "steps": [
       "Step 1: Check if src/claude_agent/spec_wizard.py exists"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1429,7 +1429,7 @@
       "Step 3: Verify initializer agent runs (not spec workflow)",
       "Step 4: Verify feature_list.json is created"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1440,7 +1440,7 @@
       "Step 2: Verify initializer agent runs (not spec workflow)",
       "Step 3: Verify feature_list.json is created"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1451,7 +1451,7 @@
       "Step 2: Verify wizard launches",
       "Step 3: Verify wizard behavior unchanged"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1464,7 +1464,7 @@
       "Step 4: Verify spec-validated.md is listed for deletion",
       "Step 5: Verify spec-workflow.json is listed for deletion"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1476,7 +1476,7 @@
       "Step 3: Verify spec workflow phase is shown",
       "Step 4: Verify existing status info (feature counts) is also shown"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1487,7 +1487,7 @@
       "Step 2: Verify 'workflow:' section is present in output",
       "Step 3: Verify default values are documented"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1498,7 +1498,7 @@
       "Step 2: Verify workflow options are commented",
       "Step 3: Verify auto_spec example is included"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1509,7 +1509,7 @@
       "Step 2: Verify TestSpecWorkflowState class exists",
       "Step 3: Verify test_get_state_returns_empty_for_new_project test exists"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1519,7 +1519,7 @@
       "Step 1: Check tests/test_spec_workflow.py exists",
       "Step 2: Verify test_save_and_load_state_roundtrip test exists"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1529,7 +1529,7 @@
       "Step 1: Check tests/test_spec_workflow.py exists",
       "Step 2: Verify test_record_step_appends_to_history test exists"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1540,7 +1540,7 @@
       "Step 2: Verify TestSpecPhaseDetection class exists",
       "Step 3: Verify tests for each phase value exist"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1551,7 +1551,7 @@
       "Step 2: Verify TestWorkflowConfig class exists",
       "Step 3: Verify test_default_values test exists"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1562,7 +1562,7 @@
       "Step 2: Verify TestPromptLoading class exists",
       "Step 3: Verify tests for each get_spec_*_prompt function exist"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1573,7 +1573,7 @@
       "Step 2: Verify TestSpecCLI class exists",
       "Step 3: Verify tests use CliRunner for testing"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1584,7 +1584,7 @@
       "Step 2: Verify all tests pass",
       "Step 3: Verify no warnings"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1595,7 +1595,7 @@
       "Step 2: Verify all tests pass",
       "Step 3: Verify no warnings"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1606,7 +1606,7 @@
       "Step 2: Verify all tests pass",
       "Step 3: Verify no regressions in existing tests"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1711,7 +1711,7 @@
       "Step 2: Verify issue counts by severity are printed",
       "Step 3: Verify overall verdict (PASS/FAIL) is shown"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1831,7 +1831,7 @@
       "Step 3: Verify error message about file encoding",
       "Step 4: Verify no crash"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1883,7 +1883,7 @@
       "Step 5: Run spec status",
       "Step 6: Verify suggestion mentions 'spec decompose'"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1895,7 +1895,7 @@
       "Step 3: Verify pointer style matches wizard style",
       "Step 4: Compare with existing wizard.py styling"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1906,7 +1906,7 @@
       "Step 2: Verify header uses '=' separators",
       "Step 3: Verify header width matches wizard (60 chars)"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1919,7 +1919,7 @@
       "Step 4: Verify double quotes for strings",
       "Step 5: Verify snake_case function names"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1981,7 +1981,7 @@
       "Step 3: Verify file paths are clearly specified",
       "Step 4: Verify no conflicting tool instructions"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1994,7 +1994,7 @@
       "Step 4: Verify Step-by-Step example is provided",
       "Step 5: Verify Combined Mode example is provided"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2005,7 +2005,7 @@
       "Step 2: Verify spec subcommands are documented",
       "Step 3: Verify spec workflow files are listed"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2027,7 +2027,7 @@
       "Step 2: Verify relevant new functions are exported if needed",
       "Step 3: Verify __all__ list is updated if present"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2039,7 +2039,7 @@
       "Step 3: Verify versions match",
       "Step 4: Note: version bump should happen at release time, not feature time"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2054,7 +2054,7 @@
       "Step 6: Run with --auto-spec",
       "Step 7: Verify spec workflow runs"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2172,7 +2172,7 @@
       "Step 3: Verify auto_spec_enabled has type bool",
       "Step 4: Verify skip_if_feature_list_exists has type bool"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2183,7 +2183,7 @@
       "Step 2: Verify workflow field exists",
       "Step 3: Verify it uses field(default_factory=WorkflowConfig)"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {

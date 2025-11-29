@@ -131,3 +131,61 @@ def write_spec_to_project(project_dir: Path, spec_content: str) -> Path:
     spec_path = project_dir / "app_spec.txt"
     spec_path.write_text(spec_content)
     return spec_path
+
+
+# =============================================================================
+# Spec Workflow Prompt Loaders
+# =============================================================================
+
+
+def get_spec_create_prompt(goal: str, context: str = "") -> str:
+    """
+    Load and render the spec creation prompt.
+
+    Args:
+        goal: The user's goal or rough idea
+        context: Optional additional context
+
+    Returns:
+        Rendered prompt string
+    """
+    template = load_prompt("spec_create")
+    context_block = f"\n### ADDITIONAL CONTEXT\n\n{context}" if context else ""
+    return render_template(template, {
+        "goal": goal,
+        "context": context_block,
+    })
+
+
+def get_spec_validate_prompt(spec_content: str) -> str:
+    """
+    Load and render the spec validation prompt.
+
+    Args:
+        spec_content: The specification content to validate
+
+    Returns:
+        Rendered prompt string
+    """
+    template = load_prompt("spec_validate")
+    return render_template(template, {
+        "spec_content": spec_content,
+    })
+
+
+def get_spec_decompose_prompt(spec_content: str, feature_count: int) -> str:
+    """
+    Load and render the spec decomposition prompt.
+
+    Args:
+        spec_content: The specification content to decompose
+        feature_count: Target number of features to generate
+
+    Returns:
+        Rendered prompt string
+    """
+    template = load_prompt("spec_decompose")
+    return render_template(template, {
+        "spec_content": spec_content,
+        "feature_count": str(feature_count),
+    })

@@ -44,6 +44,15 @@ class SecurityConfigOptions:
 
 
 @dataclass
+class WorkflowConfig:
+    """Spec workflow configuration."""
+
+    default: str = "full"  # "full" | "spec-only" | "code-only"
+    auto_spec_enabled: bool = False
+    skip_if_feature_list_exists: bool = True
+
+
+@dataclass
 class Config:
     """Complete configuration for a claude-agent run."""
 
@@ -63,6 +72,9 @@ class Config:
 
     # Validator settings
     validator: ValidatorConfig = field(default_factory=ValidatorConfig)
+
+    # Workflow settings
+    workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
 
     @property
     def spec_content(self) -> Optional[str]:
@@ -173,6 +185,19 @@ def merge_config(
             if "max_turns" in validator_config:
                 config.validator.max_turns = validator_config["max_turns"]
 
+        # Workflow settings
+        if "workflow" in file_config:
+            workflow_config = file_config["workflow"]
+            if "default" in workflow_config:
+                config.workflow.default = workflow_config["default"]
+            # Handle nested auto_spec section
+            if "auto_spec" in workflow_config:
+                auto_spec = workflow_config["auto_spec"]
+                if "enabled" in auto_spec:
+                    config.workflow.auto_spec_enabled = auto_spec["enabled"]
+                if "skip_if_feature_list_exists" in auto_spec:
+                    config.workflow.skip_if_feature_list_exists = auto_spec["skip_if_feature_list_exists"]
+
     # Apply CLI overrides (highest priority)
     if cli_spec is not None:
         config.spec_file = cli_spec
@@ -235,4 +260,11 @@ validator:
   enabled: true
   max_rejections: 3  # Stop after this many validation failures
   max_turns: 75  # Lower than coding agent to force quicker verdict
+
+# Workflow settings
+workflow:
+  default: full  # "full" | "spec-only" | "code-only"
+  auto_spec:
+    enabled: false
+    skip_if_feature_list_exists: true
 """
