@@ -1,5 +1,5 @@
 ================================================================================
-SPEC WORKFLOW INTEGRATION - SESSION 5 SUMMARY
+SPEC WORKFLOW INTEGRATION - SESSION 5 SUMMARY (UPDATED)
 ================================================================================
 Date: 2025-11-29
 Session: Coding Agent (Session 5)
@@ -7,7 +7,7 @@ Branch: feat/spec-creation-workflow
 
 OBJECTIVE:
 Continue implementing and testing spec workflow features.
-Add mocked agent session tests that require Claude client mocking.
+Add mocked agent session tests and CLI exit code tests.
 
 ================================================================================
 COMPLETED THIS SESSION (SESSION 5)
@@ -34,9 +34,12 @@ COMPLETED THIS SESSION (SESSION 5)
      * test_returns_false_on_validation_failure
      * test_returns_true_when_all_succeed
      * test_prints_workflow_banner
+   - TestSpecAutoExitCodes: 2 tests
+     * test_spec_auto_exits_with_code_0_on_success
+     * test_spec_auto_exits_with_code_1_on_failure
 
 3. FEATURE LIST UPDATED
-   - Marked 8 additional tests as passing:
+   - Marked 10 additional tests as passing:
      * run_spec_create_session records step in spec-workflow.json
      * run_spec_validate_session records step with passed=true
      * run_spec_validate_session records step with passed=false
@@ -45,12 +48,14 @@ COMPLETED THIS SESSION (SESSION 5)
      * run_spec_workflow returns False on validation failure
      * run_spec_workflow returns True when all succeed
      * run_spec_workflow prints progress banner at start
-   - Current status: 101/200 tests passing (50.5%)
+     * CLI: spec auto exits with code 0 on success
+     * CLI: spec auto exits with code 1 on failure
+   - Current status: 103/200 tests passing (51.5%)
 
 4. ALL TESTS PASS
-   - 37/37 pytest tests pass
+   - 39/39 pytest tests pass
    - Tests cover: state tracking, phase detection, config, prompt loaders,
-     CLI, interactive mode, and agent session mocking
+     CLI, interactive mode, agent session mocking, exit codes
 
 ================================================================================
 IMPLEMENTATION STATUS
@@ -85,12 +90,13 @@ DONE:
 - [x] CLI default spec-draft.md for validate
 - [x] spec_wizard.py interactive functions
 - [x] Mocked agent session tests (tests/test_agent_sessions.py)
+- [x] CLI exit code tests
 
 NOT YET DONE:
 - [ ] README documentation update
 - [ ] AGENTS.md documentation update
-- [ ] CLI exit code tests (requires full agent mock)
 - [ ] --auto-spec workflow integration tests
+- [ ] Interactive mode tests (requires mocking questionary)
 
 ================================================================================
 NEXT SESSION TASKS
@@ -98,14 +104,14 @@ NEXT SESSION TASKS
 
 The next coding agent should work on:
 
-1. CLI EXIT CODE TESTS
-   - Test spec auto exits with code 0 on success
-   - Test spec auto exits with code 1 on failure
-   - Test --auto-spec workflow integration
-
-2. DOCUMENTATION
+1. DOCUMENTATION
    - Update README with spec workflow examples
    - Update AGENTS.md with new commands
+
+2. INTERACTIVE MODE TESTS
+   - Tests for interactive_spec_create with questionary mocking
+   - Tests for prompt_after_create
+   - Tests for prompt_after_validate
 
 3. REMAINING FEATURE TESTS
    - Review feature_list.json for tests that can be marked passing
@@ -144,9 +150,10 @@ Files added:
 - tests/test_agent_sessions.py: 11 new tests with Claude client mocking
 
 Files modified:
-- feature_list.json: Updated 8 tests to passing status
+- tests/test_spec_cli.py: Added 2 CLI exit code tests
+- feature_list.json: Updated 10 tests to passing status
 
-Total pytest tests: 37 passing
-Total feature tests: 101/200 passing (50.5%)
+Total pytest tests: 39 passing
+Total feature tests: 103/200 passing (51.5%)
 
 ================================================================================
