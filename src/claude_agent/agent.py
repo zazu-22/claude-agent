@@ -422,59 +422,80 @@ async def run_autonomous_agent(config: Config) -> None:
             print("To continue, run the command again without --max-iterations")
             break
 
-        # Print session header
-        print_session_header(iteration, is_first_run)
-
-        # Create client (fresh context)
-        client = create_client(
-            project_dir=project_dir,
-            model=config.agent.model,
-            max_turns=config.agent.max_turns,
-            stack=stack,
-        )
-
-        # Choose prompt based on session type
-        if is_first_run:
-            prompt = get_initializer_prompt(
-                spec_content=spec_content,
-                feature_count=config.features,
-                init_command=init_command,
-                dev_command=dev_command,
-            )
-            is_first_run = False  # Only use initializer once
-        else:
-            prompt = get_coding_prompt(
-                init_command=init_command,
-                dev_command=dev_command,
-            )
-
-        # Run session
-        async with client:
-            status, response = await run_agent_session(client, prompt, project_dir)
-
-        # Check for completion - trigger validation when automated work is done
+        # Check if validation should trigger BEFORE running coding session
         passing, total = count_passing_tests(project_dir)
         counts = count_tests_by_type(project_dir)
         automated_complete = is_automated_work_complete(project_dir)
         all_tests_pass = total > 0 and passing == total
+        should_validate = (all_tests_pass or automated_complete) and not is_first_run
 
-        # Show workflow decision
-        print("\n" + "-" * 70)
-        print("WORKFLOW CHECK:")
-        print(f"  Total tests: {total} | Passing: {passing}")
-        print(f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}")
-
-        # Trigger validation if:
-        # 1. All tests pass (including any manual tests), OR
-        # 2. All automated tests pass (manual tests may remain)
-        if all_tests_pass or automated_complete:
-            # Show what triggered validation
+        if should_validate:
+            # Show workflow decision
+            print("\n" + "-" * 70)
+            print("WORKFLOW CHECK:")
+            print(f"  Total tests: {total} | Passing: {passing}")
+            print(f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}")
             if all_tests_pass:
                 trigger_reason = "all tests passing"
             else:
                 trigger_reason = f"automated work complete ({counts['manual_total']} manual tests remaining)"
             print(f"  -> TRIGGERING VALIDATION ({trigger_reason})")
             print("-" * 70)
+        else:
+            # Run coding session
+            print_session_header(iteration, is_first_run)
+
+            # Create client (fresh context)
+            client = create_client(
+                project_dir=project_dir,
+                model=config.agent.model,
+                max_turns=config.agent.max_turns,
+                stack=stack,
+            )
+
+            # Choose prompt based on session type
+            if is_first_run:
+                prompt = get_initializer_prompt(
+                    spec_content=spec_content,
+                    feature_count=config.features,
+                    init_command=init_command,
+                    dev_command=dev_command,
+                )
+                is_first_run = False  # Only use initializer once
+            else:
+                prompt = get_coding_prompt(
+                    init_command=init_command,
+                    dev_command=dev_command,
+                )
+
+            # Run session
+            async with client:
+                status, response = await run_agent_session(client, prompt, project_dir)
+
+            # Re-check after coding session
+            passing, total = count_passing_tests(project_dir)
+            counts = count_tests_by_type(project_dir)
+            automated_complete = is_automated_work_complete(project_dir)
+            all_tests_pass = total > 0 and passing == total
+
+            # Show workflow decision after coding
+            print("\n" + "-" * 70)
+            print("WORKFLOW CHECK:")
+            print(f"  Total tests: {total} | Passing: {passing}")
+            print(f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}")
+
+        # Trigger validation if:
+        # 1. All tests pass (including any manual tests), OR
+        # 2. All automated tests pass (manual tests may remain)
+        if all_tests_pass or automated_complete:
+            # Show trigger reason if we came from coding (not already shown)
+            if not should_validate:
+                if all_tests_pass:
+                    trigger_reason = "all tests passing"
+                else:
+                    trigger_reason = f"automated work complete ({counts['manual_total']} manual tests remaining)"
+                print(f"  -> TRIGGERING VALIDATION ({trigger_reason})")
+                print("-" * 70)
 
             # Skip validation if disabled
             if not config.validator.enabled:
