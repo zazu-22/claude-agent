@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 # Python
 __pycache__/
 *.py[cod]
@@ -39,3 +42,21 @@ htmlcov/
 # Generated
 generations/
 logs/
+specs/
+
+# Temporary files and debugging
+/temp/
+temp/
+**/temp/
+debug-*.py
+test-*.py
+analyze-*.sh
+*-debug.*
+*.debug
+
+# Claude Code settings (local only)
+.claude/settings.local.json
+
+# Don't ignore reports directory
+!reports/
+!reports/**
