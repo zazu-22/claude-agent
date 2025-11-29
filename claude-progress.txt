@@ -1,8 +1,8 @@
 ================================================================================
-SPEC WORKFLOW INTEGRATION - SESSION 1 SUMMARY
+SPEC WORKFLOW INTEGRATION - SESSION 2 SUMMARY
 ================================================================================
-Date: 2025-01-29
-Session: Initializer Agent (Session 1 of Many)
+Date: 2025-11-29
+Session: Coding Agent (Session 2)
 Branch: feat/spec-creation-workflow
 
 OBJECTIVE:
@@ -11,141 +11,117 @@ with fresh context windows. Each step available as subcommand (spec create,
 spec validate, spec decompose, spec status), with auto mode (spec auto).
 
 ================================================================================
-COMPLETED THIS SESSION
+COMPLETED THIS SESSION (SESSION 2)
 ================================================================================
 
-1. FEATURE LIST CREATED (200 test cases)
-   - File: feature_list.json
-   - Total: 200 features (verified)
-   - Categories: technical (config, state), functional (CLI, sessions),
-     integration (workflow), error-handling, style
-   - All tests start with passes: false
-   - Covers: WorkflowConfig, state tracking, prompts, session runners,
-     CLI commands, interactive mode, full workflow integration
-   - Includes comprehensive 10+ step end-to-end test as final feature
+1. CONFIG UPDATES (config.py) - DONE
+   - Added WorkflowConfig dataclass with:
+     - default: str = "full"
+     - auto_spec_enabled: bool = False
+     - skip_if_feature_list_exists: bool = True
+   - Added workflow field to Config dataclass
+   - Updated merge_config to parse workflow section from YAML
+   - Updated generate_config_template to include workflow section
 
-2. INIT.SH CREATED
-   - File: init.sh (executable)
-   - Sets up development environment using uv
-   - Checks prerequisites (uv, Python 3.10+)
-   - Installs dependencies
-   - Runs tests to verify setup
-   - Prints helpful commands and quick start guide
+2. PROGRESS TRACKING (progress.py) - DONE
+   - Added SPEC_WORKFLOW_FILE constant = "spec-workflow.json"
+   - Implemented get_spec_workflow_state()
+   - Implemented save_spec_workflow_state()
+   - Implemented record_spec_step()
+   - Implemented get_spec_phase()
 
-3. PROMPT TEMPLATES CREATED
-   - src/claude_agent/prompts/spec_create.md
-     - Role: SPEC CREATOR
-     - Input: goal, context
-     - Output: spec-draft.md
-     - Sections: Project Overview, Functional/Technical/Non-Functional
-       Requirements, Out of Scope, Open Questions
+3. PROMPT LOADER (prompts/loader.py) - DONE
+   - Added get_spec_create_prompt(goal, context)
+   - Added get_spec_validate_prompt(spec_content)
+   - Added get_spec_decompose_prompt(spec_content, feature_count)
 
-   - src/claude_agent/prompts/spec_validate.md
-     - Role: SPEC VALIDATOR
-     - Input: spec_content
-     - Output: spec-validation.md, spec-validated.md (if PASS)
-     - Categories: BLOCKING, WARNING, SUGGESTION
-     - Verdict: PASS or FAIL
+4. CLI COMMANDS (cli.py) - DONE
+   - Added spec command group
+   - Added spec create subcommand (with -g/--goal, --from-file, -i, -p)
+   - Added spec validate subcommand (with spec_file arg, -i, -p)
+   - Added spec decompose subcommand (with spec_file arg, -f/--features, -p)
+   - Added spec auto subcommand (with -g/--goal required, -p)
+   - Added spec status subcommand (with -p)
 
-   - src/claude_agent/prompts/spec_decompose.md
-     - Role: SPEC DECOMPOSER
-     - Input: spec_content, feature_count
-     - Output: feature_list.json, app_spec.txt
-     - Categories: functional, technical, style, integration, error-handling
+   Note: --auto-spec flag on main command NOT YET IMPLEMENTED
 
-4. SPEC WIZARD MODULE CREATED
-   - File: src/claude_agent/spec_wizard.py
-   - Functions:
-     - interactive_spec_create(): Prompts for goal and context
-     - interactive_spec_review(): Options after spec creation
-     - interactive_validation_review(): Options after validation
-   - Uses questionary with WIZARD_STYLE from existing wizard.py
+5. TESTS - ALL PASSING
+   - 17/17 pytest tests pass
+   - Tests cover: state tracking, phase detection, config, prompt loaders, CLI
 
-5. TEST FILES CREATED
-   - tests/test_spec_workflow.py
-     - TestSpecWorkflowState: State tracking tests
-     - TestSpecPhaseDetection: Phase detection tests
-     - TestWorkflowConfig: Config dataclass tests
-     - TestPromptLoading: Prompt loader tests
+6. FEATURE LIST UPDATED
+   - Verified and marked 53 tests as passing
+   - Current status: 76/200 tests passing (38%)
 
-   - tests/test_spec_cli.py
-     - TestSpecCLI: CLI integration tests using CliRunner
-     - Tests for all subcommands and error cases
-
-6. GIT COMMIT MADE
-   - Commit: b9613da
-   - Message: "feat: Add spec workflow foundation with feature list and test structure"
-   - Files committed: 8
+7. GIT COMMIT
+   - Commit: 537d9ab
+   - Message: "feat: Implement spec workflow foundation"
 
 ================================================================================
 NEXT SESSION TASKS
 ================================================================================
 
-The next coding agent should implement the following in order:
+The next coding agent should implement:
 
-1. CONFIG UPDATES (config.py)
-   - Add WorkflowConfig dataclass with:
-     - default: str = "full"
-     - auto_spec_enabled: bool = False
-     - skip_if_feature_list_exists: bool = True
-   - Add workflow field to Config dataclass
-   - Update merge_config to parse workflow section from YAML
-   - Update generate_config_template to include workflow section
+1. AGENT SESSION RUNNERS (agent.py) - NOT YET DONE
+   - Add run_spec_create_session() function
+   - Add run_spec_validate_session() function
+   - Add run_spec_decompose_session() function
+   - Add run_spec_workflow() function for auto mode
 
-2. PROGRESS TRACKING (progress.py)
-   - Add SPEC_WORKFLOW_FILE constant
-   - Implement get_spec_workflow_state()
-   - Implement save_spec_workflow_state()
-   - Implement record_spec_step()
-   - Implement get_spec_phase()
+2. WIRE CLI TO AGENT SESSIONS
+   - Update spec create to call run_spec_create_session
+   - Update spec validate to call run_spec_validate_session
+   - Update spec decompose to call run_spec_decompose_session
+   - Update spec auto to call run_spec_workflow
 
-3. PROMPT LOADER (prompts/loader.py)
-   - Add get_spec_create_prompt(goal, context)
-   - Add get_spec_validate_prompt(spec_content)
-   - Add get_spec_decompose_prompt(spec_content, feature_count)
+3. ADD --auto-spec FLAG TO MAIN COMMAND
+   - Add flag to main command
+   - Wire to run spec workflow before coding agent
 
-4. AGENT SESSION RUNNERS (agent.py)
-   - Add run_spec_create_session()
-   - Add run_spec_validate_session()
-   - Add run_spec_decompose_session()
-   - Add run_spec_workflow() for auto mode
+4. ADDITIONAL FEATURES
+   - spec status suggestions for next step
+   - spec validate interactive mode
+   - spec decompose interactive mode
 
-5. CLI COMMANDS (cli.py)
-   - Add spec command group
-   - Add spec create subcommand
-   - Add spec validate subcommand
-   - Add spec decompose subcommand
-   - Add spec auto subcommand
-   - Add spec status subcommand
-   - Add --auto-spec flag to main command
-
-6. RUN TESTS
-   - uv run pytest tests/test_spec_workflow.py -v
-   - uv run pytest tests/test_spec_cli.py -v
-   - Fix any failing tests
+5. VERIFY AND UPDATE FEATURE LIST
+   - Run comprehensive tests
+   - Mark additional tests as passing
 
 ================================================================================
-FILES TO MODIFY
+IMPLEMENTATION STATUS
 ================================================================================
 
-- src/claude_agent/config.py (add WorkflowConfig, update Config)
-- src/claude_agent/progress.py (add spec workflow state functions)
-- src/claude_agent/prompts/loader.py (add spec prompt loaders)
-- src/claude_agent/agent.py (add spec session runners)
-- src/claude_agent/cli.py (add spec command group and subcommands)
-- README.md (add spec workflow documentation)
-- AGENTS.md (update with new commands)
+DONE:
+- [x] WorkflowConfig dataclass
+- [x] Config.workflow field
+- [x] merge_config workflow parsing
+- [x] generate_config_template workflow section
+- [x] SPEC_WORKFLOW_FILE constant
+- [x] get_spec_workflow_state()
+- [x] save_spec_workflow_state()
+- [x] record_spec_step()
+- [x] get_spec_phase()
+- [x] get_spec_create_prompt()
+- [x] get_spec_validate_prompt()
+- [x] get_spec_decompose_prompt()
+- [x] spec command group
+- [x] spec create CLI
+- [x] spec validate CLI
+- [x] spec decompose CLI
+- [x] spec auto CLI
+- [x] spec status CLI
 
-================================================================================
-IMPLEMENTATION NOTES
-================================================================================
-
-- Each spec workflow step runs as separate Claude session (fresh context)
-- State tracked in spec-workflow.json with phase and history
-- Files created: spec-draft.md, spec-validation.md, spec-validated.md
-- feature_list.json created by decompose step (not initializer)
-- Existing --spec and --goal workflows remain unchanged
-- --auto-spec flag combines spec workflow with normal agent
+NOT YET DONE:
+- [ ] run_spec_create_session() in agent.py
+- [ ] run_spec_validate_session() in agent.py
+- [ ] run_spec_decompose_session() in agent.py
+- [ ] run_spec_workflow() in agent.py
+- [ ] --auto-spec flag on main command
+- [ ] Interactive mode for validate
+- [ ] spec status next-step suggestions
+- [ ] README documentation update
+- [ ] AGENTS.md documentation update
 
 ================================================================================
 TESTING COMMANDS
@@ -160,10 +136,22 @@ uv run pytest tests/test_spec_workflow.py -v
 # Run CLI tests only
 uv run pytest tests/test_spec_cli.py -v
 
-# Check linting
-uv run ruff check src/claude_agent/
+# Test CLI manually
+uv run claude-agent spec --help
+uv run claude-agent spec status -p /tmp/test
+uv run claude-agent spec create --help
+uv run claude-agent spec validate --help
+uv run claude-agent spec decompose --help
+uv run claude-agent spec auto --help
 
-# Format code
-uv run ruff format src/claude_agent/
+================================================================================
+NOTES FOR NEXT SESSION
+================================================================================
+
+- The CLI commands are implemented but currently just print messages
+- They need to be wired to actual agent sessions
+- The agent.py module needs the run_spec_*_session functions
+- These functions should use the existing create_client and run_agent_session
+- See app_spec.txt for detailed function signatures and behavior
 
 ================================================================================
