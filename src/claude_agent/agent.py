@@ -256,6 +256,16 @@ async def run_agent_session(
                         else:
                             print("   [Done]", flush=True)
 
+            # Handle ResultMessage (session end - critical diagnostic info)
+            elif msg_type == "ResultMessage":
+                num_turns = getattr(msg, "num_turns", "?")
+                is_error = getattr(msg, "is_error", False)
+                subtype = getattr(msg, "subtype", "unknown")
+                result = getattr(msg, "result", None)
+                print(f"\n[Session End] turns={num_turns}, subtype={subtype}, is_error={is_error}", flush=True)
+                if result:
+                    print(f"   Result: {result[:200]}..." if len(str(result)) > 200 else f"   Result: {result}", flush=True)
+
         print("\n" + "-" * 70 + "\n")
         return "continue", response_text
 
