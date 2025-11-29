@@ -127,6 +127,7 @@ def main(
             "spec-review.md",
             "claude-progress.txt",
             "validation-history.json",
+            "validation-progress.txt",
         ]
         existing = [f for f in agent_files if (project_dir / f).exists()]
 

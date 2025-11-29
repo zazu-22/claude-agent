@@ -40,7 +40,8 @@ needs to be built.
       "Step 2: Perform action",
       "Step 3: Verify expected result"
     ],
-    "passes": false
+    "passes": false,
+    "requires_manual_testing": false
   },
   {
     "category": "style",
@@ -50,10 +51,16 @@ needs to be built.
       "Step 2: Take screenshot",
       "Step 3: Verify visual requirements"
     ],
-    "passes": false
+    "passes": false,
+    "requires_manual_testing": false
   }
 ]
 ```
+
+**Note on `requires_manual_testing`:**
+- Set to `false` for most tests (the default)
+- Only set to `true` if a test CANNOT be automated (e.g., file uploads from local disk, camera/microphone access, OAuth with external providers, hardware interactions)
+- When all non-manual tests pass, validation will trigger even if manual tests remain
 
 **Requirements for feature_list.json:**
 - Target {{feature_count}} features total with testing steps for each

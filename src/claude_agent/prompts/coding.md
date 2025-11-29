@@ -117,9 +117,9 @@ Use browser automation tools:
 
 ### STEP 7: UPDATE feature_list.json (CAREFULLY!)
 
-**YOU CAN ONLY MODIFY ONE FIELD: "passes"**
+**YOU CAN MODIFY TWO FIELDS:**
 
-After thorough verification, change:
+1. **"passes"** - After thorough verification, change:
 ```json
 "passes": false
 ```
@@ -127,6 +127,25 @@ to:
 ```json
 "passes": true
 ```
+
+2. **"requires_manual_testing"** - For tests that CANNOT be automated:
+```json
+"requires_manual_testing": true
+```
+
+**WHEN TO MARK requires_manual_testing: true:**
+- File uploads from local filesystem (browser automation can't access user files)
+- Camera/microphone access
+- OAuth flows with external providers
+- Hardware interactions (Bluetooth, USB, etc.)
+- Features requiring real user accounts you don't have credentials for
+- Mobile-specific features that can't be tested in desktop browser
+- Print functionality
+- Download verification (files save to user's filesystem)
+
+**IMPORTANT:** When you mark a test as `requires_manual_testing: true`, validation
+will still trigger once all OTHER (automated) tests pass. The validator will
+approve the implementation while noting which tests need manual user verification.
 
 **NEVER:**
 - Remove tests
@@ -136,6 +155,7 @@ to:
 - Reorder tests
 
 **ONLY CHANGE "passes" FIELD AFTER VERIFICATION WITH SCREENSHOTS.**
+**ONLY CHANGE "requires_manual_testing" FOR TESTS THAT TRULY CANNOT BE AUTOMATED.**
 
 ### STEP 8: COMMIT YOUR PROGRESS
 

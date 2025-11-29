@@ -34,6 +34,72 @@ def count_passing_tests(project_dir: Path) -> tuple[int, int]:
         return 0, 0
 
 
+def count_tests_by_type(project_dir: Path) -> dict:
+    """
+    Count tests by type (automated vs manual) and status.
+
+    Returns:
+        Dict with keys:
+        - total: total number of tests
+        - passing: tests with passes=true
+        - automated_total: tests that can be automated
+        - automated_passing: automated tests that pass
+        - manual_total: tests requiring manual verification
+        - manual_passing: manual tests marked as passing
+    """
+    feature_list_path = project_dir / "feature_list.json"
+
+    result = {
+        "total": 0,
+        "passing": 0,
+        "automated_total": 0,
+        "automated_passing": 0,
+        "manual_total": 0,
+        "manual_passing": 0,
+    }
+
+    if not feature_list_path.exists():
+        return result
+
+    try:
+        with open(feature_list_path) as f:
+            features = json.load(f)
+
+        for f in features:
+            result["total"] += 1
+            is_passing = f.get("passes", False)
+            is_manual = f.get("requires_manual_testing", False)
+
+            if is_passing:
+                result["passing"] += 1
+
+            if is_manual:
+                result["manual_total"] += 1
+                if is_passing:
+                    result["manual_passing"] += 1
+            else:
+                result["automated_total"] += 1
+                if is_passing:
+                    result["automated_passing"] += 1
+
+        return result
+    except (json.JSONDecodeError, IOError):
+        return result
+
+
+def is_automated_work_complete(project_dir: Path) -> bool:
+    """
+    Check if all automated (non-manual) tests are passing.
+
+    This triggers validation even if manual tests remain.
+    """
+    counts = count_tests_by_type(project_dir)
+    return (
+        counts["automated_total"] > 0
+        and counts["automated_passing"] == counts["automated_total"]
+    )
+
+
 def get_session_state(project_dir: Path) -> str:
     """
     Determine current session state.
@@ -94,6 +160,11 @@ def print_progress_summary(project_dir: Path) -> None:
     bar = "█" * filled + "░" * (bar_width - filled)
 
     print(f"\nProgress: [{bar}] {passing}/{total} ({percentage:.1f}%)")
+
+    # Show manual test info if any exist
+    counts = count_tests_by_type(project_dir)
+    if counts["manual_total"] > 0:
+        print(f"          (includes {counts['manual_total']} manual test(s) requiring user verification)")
 
 
 def print_startup_banner(

@@ -23,7 +23,9 @@ from claude_agent.detection import (
 )
 from claude_agent.progress import (
     count_passing_tests,
+    count_tests_by_type,
     get_rejection_count,
+    is_automated_work_complete,
     mark_tests_failed,
     print_session_header,
     print_progress_summary,
@@ -44,9 +46,11 @@ from claude_agent.security import configure_security
 class ValidatorResult:
     """Result from validator agent session."""
 
-    verdict: str  # "APPROVED", "REJECTED", "ERROR"
+    verdict: str  # "APPROVED", "REJECTED", "ERROR", "NEEDS_VERIFICATION", "CONTINUE"
     rejected_tests: list[dict]  # [{test_index: int, reason: str}, ...]
     summary: str
+    manual_tests_remaining: list[dict] = None  # [{test_index: int, reason: str}, ...]
+    tests_verified: int = 0  # How many tests were actually verified through UI
     error: Optional[str] = None
 
 
@@ -54,7 +58,7 @@ def parse_validator_response(response: str) -> ValidatorResult:
     """
     Parse validator response to extract structured verdict.
 
-    Attempts multiple parsing strategies with fallback to REJECTED.
+    Attempts multiple parsing strategies with fallback to NEEDS_VERIFICATION.
     """
     # Strategy 1: Look for JSON in code block
     json_match = re.search(r"```json\s*\n(.*?)\n```", response, re.DOTALL)
@@ -65,6 +69,8 @@ def parse_validator_response(response: str) -> ValidatorResult:
                 verdict=data.get("verdict", "REJECTED"),
                 rejected_tests=data.get("rejected_tests", []),
                 summary=data.get("summary", ""),
+                manual_tests_remaining=data.get("manual_tests_remaining", []),
+                tests_verified=data.get("tests_verified", 0),
             )
         except json.JSONDecodeError:
             pass
@@ -82,6 +88,8 @@ def parse_validator_response(response: str) -> ValidatorResult:
                 verdict=data.get("verdict", "REJECTED"),
                 rejected_tests=data.get("rejected_tests", []),
                 summary=data.get("summary", ""),
+                manual_tests_remaining=data.get("manual_tests_remaining", []),
+                tests_verified=data.get("tests_verified", 0),
             )
     except json.JSONDecodeError:
         pass
@@ -95,12 +103,13 @@ def parse_validator_response(response: str) -> ValidatorResult:
             summary="Approval inferred from response keywords",
         )
 
-    # Default: Treat as error (fail-safe)
+    # Default: Treat as NEEDS_VERIFICATION - validator couldn't properly verify
+    # This is safer than assuming rejection or approval
     return ValidatorResult(
-        verdict="ERROR",
+        verdict="NEEDS_VERIFICATION",
         rejected_tests=[],
         summary="",
-        error="Could not parse structured output from validator",
+        error="Could not parse structured output from validator - manual verification required",
     )
 
 
@@ -275,11 +284,12 @@ async def run_validator_session(
     Returns:
         ValidatorResult with verdict and any rejected tests
     """
-    # Create client with validator model
+    # Create client with validator model and lower max_turns
+    # Validator has fewer turns to force quicker verdict output
     client = create_client(
         project_dir=project_dir,
         model=config.validator.model,
-        max_turns=config.agent.max_turns,
+        max_turns=config.validator.max_turns,
         stack=stack,
     )
 
@@ -418,15 +428,32 @@ async def run_autonomous_agent(config: Config) -> None:
         async with client:
             status, response = await run_agent_session(client, prompt, project_dir)
 
-        # Check for completion
+        # Check for completion - trigger validation when automated work is done
         passing, total = count_passing_tests(project_dir)
-        if total > 0 and passing == total:
-            # All tests pass - run validation if enabled
+        counts = count_tests_by_type(project_dir)
+        automated_complete = is_automated_work_complete(project_dir)
+        all_tests_pass = total > 0 and passing == total
+
+        # Trigger validation if:
+        # 1. All tests pass (including any manual tests), OR
+        # 2. All automated tests pass (manual tests may remain)
+        if all_tests_pass or automated_complete:
+            # Show what triggered validation
+            if all_tests_pass:
+                trigger_reason = "all tests passing"
+            else:
+                trigger_reason = f"automated work complete ({counts['manual_total']} manual tests remaining)"
+
+            # Skip validation if disabled
             if not config.validator.enabled:
                 print("\n" + "=" * 70)
-                print("  ALL FEATURES COMPLETE!")
+                if all_tests_pass:
+                    print("  ALL FEATURES COMPLETE!")
+                else:
+                    print("  AUTOMATED WORK COMPLETE!")
+                    print(f"  {counts['manual_total']} test(s) require manual verification")
                 print("=" * 70)
-                print(f"\n{passing}/{total} features passing - project is done!")
+                print(f"\n{passing}/{total} features passing - {trigger_reason}")
                 break
 
             # Check rejection limit
@@ -439,53 +466,93 @@ async def run_autonomous_agent(config: Config) -> None:
                 print("To continue, increase max_rejections in config or disable validation.")
                 break
 
-            # Run validation phase
-            print_validation_header(rejection_count + 1)
+            # Run validation phase - may take multiple sessions
+            validation_session = 0
+            while True:
+                validation_session += 1
+                print_validation_header(rejection_count + 1)
+                if validation_session > 1:
+                    print(f"(Validation session {validation_session})")
+                if counts["manual_total"] > 0:
+                    print(f"Note: {counts['manual_total']} test(s) marked as requiring manual verification")
+                print()
 
-            result = await run_validator_session(
-                config=config,
-                stack=stack,
-                project_dir=project_dir,
-                init_command=init_command,
-                dev_command=dev_command,
-            )
+                result = await run_validator_session(
+                    config=config,
+                    stack=stack,
+                    project_dir=project_dir,
+                    init_command=init_command,
+                    dev_command=dev_command,
+                )
 
-            # Save attempt to history
-            save_validation_attempt(
-                project_dir=project_dir,
-                result=result.verdict.lower(),
-                rejected_indices=[t.get("test_index", -1) for t in result.rejected_tests],
-                summary=result.summary,
-            )
+                # Save attempt to history
+                save_validation_attempt(
+                    project_dir=project_dir,
+                    result=result.verdict.lower(),
+                    rejected_indices=[t.get("test_index", -1) for t in result.rejected_tests],
+                    summary=result.summary,
+                )
 
+                if result.verdict == "APPROVED":
+                    print("\n" + "=" * 70)
+                    print("  VALIDATION PASSED - ALL FEATURES COMPLETE!")
+                    print("=" * 70)
+                    print(f"\n{passing}/{total} features validated and approved!")
+                    if counts["manual_total"] > 0:
+                        print(f"\nNote: {counts['manual_total']} test(s) require manual verification by user")
+                    break  # Exit validation loop
+
+                # Handle CONTINUE - validator needs more sessions to complete testing
+                if result.verdict == "CONTINUE":
+                    print(f"\nValidator tested {result.tests_verified} feature(s) so far")
+                    print("Continuing validation in next session...")
+                    await asyncio.sleep(config.agent.auto_continue_delay)
+                    continue  # Continue validation loop
+
+                # Handle NEEDS_VERIFICATION - validator couldn't properly test
+                if result.verdict == "NEEDS_VERIFICATION":
+                    print("\n" + "=" * 70)
+                    print("  VALIDATION INCOMPLETE - MANUAL VERIFICATION REQUIRED")
+                    print("=" * 70)
+                    print(f"\nValidator could not fully verify the implementation.")
+                    if result.error:
+                        print(f"Reason: {result.error}")
+                    print("\nThe automated agent has completed its work.")
+                    print("Please manually verify the implementation before deployment.")
+                    if result.tests_verified > 0:
+                        print(f"Tests verified by validator: {result.tests_verified}/{total}")
+                    break  # Exit validation loop
+
+                # Handle rejection or error
+                if result.rejected_tests:
+                    indices = [t.get("test_index") for t in result.rejected_tests if "test_index" in t]
+                    reasons = {t.get("test_index"): t.get("reason", "Rejected by validator") for t in result.rejected_tests if "test_index" in t}
+                    updated, errors = mark_tests_failed(project_dir, indices, reasons)
+
+                    if errors:
+                        for err in errors:
+                            print(f"Warning: {err}")
+
+                    print(f"\nValidation rejected {len(indices)} feature(s)")
+                    print(f"Marked {updated} test(s) as needing rework")
+
+                if result.error:
+                    print(f"\nValidator error: {result.error}")
+                    print("Treating as rejection - will retry validation on next pass")
+
+                break  # Exit validation loop on rejection/error
+
+            # After validation loop, decide what to do
             if result.verdict == "APPROVED":
-                print("\n" + "=" * 70)
-                print("  VALIDATION PASSED - ALL FEATURES COMPLETE!")
-                print("=" * 70)
-                print(f"\n{passing}/{total} features validated and approved!")
-                break
+                break  # Exit main loop - we're done!
 
-            # Handle rejection or error
-            if result.rejected_tests:
-                indices = [t.get("test_index") for t in result.rejected_tests if "test_index" in t]
-                reasons = {t.get("test_index"): t.get("reason", "Rejected by validator") for t in result.rejected_tests if "test_index" in t}
-                updated, errors = mark_tests_failed(project_dir, indices, reasons)
+            if result.verdict == "NEEDS_VERIFICATION":
+                break  # Exit main loop - manual review needed
 
-                if errors:
-                    for err in errors:
-                        print(f"Warning: {err}")
-
-                print(f"\nValidation rejected {len(indices)} feature(s)")
-                print(f"Marked {updated} test(s) as needing rework")
-
-            if result.error:
-                print(f"\nValidator error: {result.error}")
-                print("Treating as rejection - will retry validation on next pass")
-
+            # Otherwise (REJECTED or ERROR), return to coding agent
             print("\nReturning to coding agent to address issues...")
             await asyncio.sleep(config.agent.auto_continue_delay)
-            # Loop continues - coding agent will see the feedback in progress notes
-            continue
+            continue  # Continue main loop
 
         # Handle status
         if status == "continue":

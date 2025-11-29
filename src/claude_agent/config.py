@@ -33,6 +33,7 @@ class ValidatorConfig:
     model: str = "claude-opus-4-5-20251101"
     enabled: bool = True
     max_rejections: int = 3  # Max validation failures before stopping
+    max_turns: int = 75  # Lower than coding agent - forces quicker verdict
 
 
 @dataclass
@@ -169,6 +170,8 @@ def merge_config(
                 config.validator.enabled = validator_config["enabled"]
             if "max_rejections" in validator_config:
                 config.validator.max_rejections = validator_config["max_rejections"]
+            if "max_turns" in validator_config:
+                config.validator.max_turns = validator_config["max_turns"]
 
     # Apply CLI overrides (highest priority)
     if cli_spec is not None:
@@ -231,4 +234,5 @@ validator:
   model: claude-opus-4-5-20251101  # Recommended: use Opus for final validation
   enabled: true
   max_rejections: 3  # Stop after this many validation failures
+  max_turns: 75  # Lower than coding agent to force quicker verdict
 """
