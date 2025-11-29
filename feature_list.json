@@ -2104,5 +2104,269 @@
     ],
     "passes": false,
     "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Spec create prompt specifies output file name explicitly",
+    "steps": [
+      "Step 1: Read spec_create.md prompt",
+      "Step 2: Verify 'spec-draft.md' filename is specified",
+      "Step 3: Verify filename appears in OUTPUT section"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Spec validate prompt specifies both output filenames",
+    "steps": [
+      "Step 1: Read spec_validate.md prompt",
+      "Step 2: Verify 'spec-validation.md' is specified",
+      "Step 3: Verify 'spec-validated.md' is specified"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Spec decompose prompt specifies app_spec.txt copy instruction",
+    "steps": [
+      "Step 1: Read spec_decompose.md prompt",
+      "Step 2: Verify instruction to copy spec to app_spec.txt",
+      "Step 3: Verify this is mentioned in OUTPUT section"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Spec workflow uses same security configuration as coding agent",
+    "steps": [
+      "Step 1: Configure extra_commands in .claude-agent.yaml",
+      "Step 2: Run spec create",
+      "Step 3: Verify security is configured with extra_commands",
+      "Step 4: Run coding agent",
+      "Step 5: Verify same security configuration applies"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Spec workflow detects stack from project files",
+    "steps": [
+      "Step 1: Create package.json in project directory",
+      "Step 2: Run spec create",
+      "Step 3: Verify node stack is detected",
+      "Step 4: Verify security is configured for node stack"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "WorkflowConfig has correct type hints",
+    "steps": [
+      "Step 1: Inspect WorkflowConfig dataclass",
+      "Step 2: Verify default field has type str",
+      "Step 3: Verify auto_spec_enabled has type bool",
+      "Step 4: Verify skip_if_feature_list_exists has type bool"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Config.workflow field uses field with default_factory",
+    "steps": [
+      "Step 1: Inspect Config dataclass",
+      "Step 2: Verify workflow field exists",
+      "Step 3: Verify it uses field(default_factory=WorkflowConfig)"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "spec_wizard.py imports WIZARD_STYLE correctly",
+    "steps": [
+      "Step 1: Open spec_wizard.py",
+      "Step 2: Verify 'from claude_agent.wizard import WIZARD_STYLE' exists",
+      "Step 3: Verify no ImportError when module loads"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "All prompt templates are valid markdown",
+    "steps": [
+      "Step 1: Read spec_create.md",
+      "Step 2: Read spec_validate.md",
+      "Step 3: Read spec_decompose.md",
+      "Step 4: Verify each parses as valid markdown",
+      "Step 5: Verify no unclosed code blocks"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "get_spec_create_prompt handles empty goal gracefully",
+    "steps": [
+      "Step 1: Call get_spec_create_prompt with empty string",
+      "Step 2: Verify no exception is raised",
+      "Step 3: Verify prompt is still rendered"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "get_spec_decompose_prompt handles zero feature count",
+    "steps": [
+      "Step 1: Call get_spec_decompose_prompt with feature_count=0",
+      "Step 2: Verify no exception is raised",
+      "Step 3: Verify '0' appears in prompt"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Spec workflow state includes spec_file field",
+    "steps": [
+      "Step 1: Run spec create",
+      "Step 2: Read spec-workflow.json",
+      "Step 3: Verify spec_file field exists",
+      "Step 4: Verify value is 'spec-draft.md'"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "History entries include status field",
+    "steps": [
+      "Step 1: Run spec create",
+      "Step 2: Read spec-workflow.json",
+      "Step 3: Verify history entry has status field",
+      "Step 4: Verify status is 'complete' or 'error'"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Spec workflow works with absolute project paths",
+    "steps": [
+      "Step 1: Get absolute path of temp directory",
+      "Step 2: Run spec create -p /absolute/path -g 'test'",
+      "Step 3: Verify files created at absolute path",
+      "Step 4: Verify no path resolution issues"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Spec workflow works with paths containing spaces",
+    "steps": [
+      "Step 1: Create directory with spaces in name",
+      "Step 2: Run spec create -p 'path with spaces' -g 'test'",
+      "Step 3: Verify no errors from path handling",
+      "Step 4: Verify files created correctly"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "CLI spec create accepts long multiline goals",
+    "steps": [
+      "Step 1: Create goal.txt with 500+ character multiline goal",
+      "Step 2: Run spec create --from-file goal.txt",
+      "Step 3: Verify full goal is passed to session",
+      "Step 4: Verify no truncation"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Spec status shows correct timestamp format",
+    "steps": [
+      "Step 1: Run spec create",
+      "Step 2: Run spec status",
+      "Step 3: Verify timestamps are human-readable",
+      "Step 4: Verify ISO 8601 format is parsed correctly"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "style",
+    "description": "Spec status output aligns labels consistently",
+    "steps": [
+      "Step 1: Run spec status",
+      "Step 2: Verify 'Phase:' label is aligned",
+      "Step 3: Verify file status labels are aligned",
+      "Step 4: Compare alignment with existing status command"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "run_spec_workflow uses config.features for decompose step",
+    "steps": [
+      "Step 1: Create config with features=100",
+      "Step 2: Run spec auto",
+      "Step 3: Verify decompose session receives feature_count=100"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Spec auto truncates long goals in console output",
+    "steps": [
+      "Step 1: Run spec auto with 200+ character goal",
+      "Step 2: Capture console output",
+      "Step 3: Verify goal is truncated to ~100 chars with '...'",
+      "Step 4: Verify full goal is still used in session"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Test files use pytest fixtures correctly",
+    "steps": [
+      "Step 1: Open test_spec_workflow.py",
+      "Step 2: Verify tmp_path fixture is used for temp directories",
+      "Step 3: Open test_spec_cli.py",
+      "Step 4: Verify CliRunner fixture is properly defined"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Full end-to-end spec workflow produces working feature list for coding agent",
+    "steps": [
+      "Step 1: Run spec auto -g 'Build a simple counter app'",
+      "Step 2: Verify all spec files are created",
+      "Step 3: Verify feature_list.json has valid structure",
+      "Step 4: Run claude-agent (coding agent)",
+      "Step 5: Verify coding agent starts implementing features",
+      "Step 6: Verify no errors from feature list parsing",
+      "Step 7: Verify progress tracking works correctly",
+      "Step 8: Verify agent can mark features as passing",
+      "Step 9: Check claude-progress.txt is updated",
+      "Step 10: Verify validation triggers when all automated tests pass"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
   }
 ]
