@@ -25,6 +25,7 @@ from claude_agent.progress import (
     count_passing_tests,
     count_tests_by_type,
     find_spec_draft,
+    find_spec_validated,
     get_rejection_count,
     is_automated_work_complete,
     mark_tests_failed,
@@ -817,9 +818,9 @@ async def run_spec_validate_session(
     async with client:
         status, response = await run_agent_session(client, prompt, project_dir)
 
-    # Check if validation passed (spec-validated.md created)
-    validated_path = project_dir / "spec-validated.md"
-    passed = validated_path.exists()
+    # Check if validation passed (spec-validated.md created in root or specs/)
+    validated_path = find_spec_validated(project_dir)
+    passed = validated_path is not None
 
     record_spec_step(
         project_dir,
@@ -827,7 +828,7 @@ async def run_spec_validate_session(
         {
             "status": "complete",
             "passed": passed,
-            "output_file": "spec-validated.md" if passed else None,
+            "output_file": str(validated_path.relative_to(project_dir)) if passed else None,
             "validation_report": "spec-validation.md",
         },
     )
@@ -944,7 +945,11 @@ async def run_spec_workflow(config: Config, goal: str) -> bool:
         print("Review spec-validation.md and fix issues before continuing")
         return False
 
-    validated_path = project_dir / "spec-validated.md"
+    # Find the validated spec (may be in root or specs/)
+    validated_path = find_spec_validated(project_dir)
+    if validated_path is None:
+        print("\nError: spec-validated.md not found after validation passed")
+        return False
 
     # Step 3: Decompose
     print("\nStep 3/3: Decomposing into features...")

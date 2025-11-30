@@ -13,6 +13,10 @@ Analyze this specification thoroughly and create two output files.
 
 ## OUTPUT 1: spec-validation.md
 
+Save to one of these locations:
+- If a `specs/` directory exists, save to `specs/spec-validation.md`
+- Otherwise, save to `spec-validation.md` in the project root
+
 Create a validation report with these sections:
 
 ### Issues Found
@@ -57,6 +61,10 @@ State one of:
 - **FAIL**: Blocking issues must be resolved first
 
 ## OUTPUT 2: spec-validated.md (only if PASS)
+
+Save to one of these locations:
+- If a `specs/` directory exists, save to `specs/spec-validated.md`
+- Otherwise, save to `spec-validated.md` in the project root
 
 If the spec passes validation:
 1. Copy the original spec
