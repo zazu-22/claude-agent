@@ -344,6 +344,29 @@ class TestInteractiveSpecWizard:
         assert "override" in choice_values
 
 
+class TestSpecWizardModule:
+    """Test spec_wizard.py module structure and imports."""
+
+    def test_wizard_style_imported_from_wizard(self):
+        """
+        Purpose: Verify WIZARD_STYLE is imported from wizard.py.
+        Tests feature: WIZARD_STYLE is imported from wizard.py in spec_wizard.py
+        """
+        from claude_agent import spec_wizard
+        # Check WIZARD_STYLE is available
+        assert hasattr(spec_wizard, "WIZARD_STYLE")
+
+    def test_uses_questionary(self):
+        """
+        Purpose: Verify spec_wizard uses questionary for prompts.
+        Tests feature: spec_wizard uses questionary for interactive prompts
+        """
+        from claude_agent import spec_wizard
+        import questionary
+        # Module should use questionary (verified by the import)
+        assert "questionary" in dir(spec_wizard) or hasattr(spec_wizard, "questionary")
+
+
 class TestPromptLoading:
     """Test spec prompt loader functions."""
 

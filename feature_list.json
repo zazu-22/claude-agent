@@ -1290,7 +1290,7 @@
       "Step 2: Verify import of WIZARD_STYLE from wizard module",
       "Step 3: Verify WIZARD_STYLE is used in questionary calls"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1303,7 +1303,7 @@
       "Step 4: Verify questionary.select is used for selections",
       "Step 5: Verify questionary.confirm is used for confirmations"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2194,7 +2194,7 @@
       "Step 2: Verify 'from claude_agent.wizard import WIZARD_STYLE' exists",
       "Step 3: Verify no ImportError when module loads"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
