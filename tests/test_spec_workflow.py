@@ -383,6 +383,48 @@ class TestSpecWizardModule:
         # Module should use questionary (verified by the import)
         assert "questionary" in dir(spec_wizard) or hasattr(spec_wizard, "questionary")
 
+    def test_imports_follow_project_conventions(self):
+        """
+        Purpose: Verify imports follow stdlib, third-party, local order.
+        Tests feature: Import statements follow project conventions
+        """
+        import ast
+        import inspect
+        from claude_agent import spec_wizard
+
+        # Get source and parse
+        source = inspect.getsource(spec_wizard)
+        tree = ast.parse(source)
+
+        imports = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                module = node.module if isinstance(node, ast.ImportFrom) else node.names[0].name
+                if module:
+                    imports.append((node.lineno, module))
+
+        # Group by type
+        stdlib = {"pathlib", "typing", "json", "os", "sys", "datetime", "ast", "inspect"}
+        local = {"claude_agent"}
+
+        positions = {"stdlib": [], "third_party": [], "local": []}
+        for lineno, module in imports:
+            root = module.split(".")[0]
+            if root in stdlib:
+                positions["stdlib"].append(lineno)
+            elif root in local:
+                positions["local"].append(lineno)
+            else:
+                positions["third_party"].append(lineno)
+
+        # Verify order: stdlib < third_party < local
+        if positions["stdlib"] and positions["third_party"]:
+            assert max(positions["stdlib"]) < min(positions["third_party"]), \
+                "stdlib imports should come before third-party"
+        if positions["third_party"] and positions["local"]:
+            assert max(positions["third_party"]) < min(positions["local"]), \
+                "third-party imports should come before local"
+
 
 class TestPromptLoading:
     """Test spec prompt loader functions."""

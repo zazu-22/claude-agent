@@ -1212,7 +1212,7 @@
       "Step 3: Verify import order: third-party second",
       "Step 4: Verify import order: local imports last"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
