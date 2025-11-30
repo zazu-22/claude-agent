@@ -1,61 +1,42 @@
 ================================================================================
-SPEC WORKFLOW INTEGRATION - SESSION 5 SUMMARY (UPDATED)
+SPEC WORKFLOW INTEGRATION - SESSION 6 SUMMARY
 ================================================================================
 Date: 2025-11-29
-Session: Coding Agent (Session 5)
+Session: Coding Agent (Session 6)
 Branch: feat/spec-creation-workflow
 
 OBJECTIVE:
 Continue implementing and testing spec workflow features.
-Add mocked agent session tests and CLI exit code tests.
+Add --auto-spec integration tests and interactive mode tests.
 
 ================================================================================
-COMPLETED THIS SESSION (SESSION 5)
+COMPLETED THIS SESSION (SESSION 6)
 ================================================================================
 
-1. MOCKED AGENT SESSION TESTS - DONE
-   - Created tests/test_agent_sessions.py with 11 new tests
-   - Implemented MockClient class to simulate Claude SDK client
-   - Tests verify orchestration logic without making API calls
+1. --AUTO-SPEC MAIN COMMAND INTEGRATION TESTS - DONE
+   - Added TestAutoSpecMainCommand class with 2 tests:
+     * test_auto_spec_runs_workflow_before_coding_agent
+     * test_auto_spec_exits_if_workflow_fails
+   - Tests verify --auto-spec flag properly orchestrates workflow + coding agent
 
-2. TEST COVERAGE ADDED:
-   - TestRunSpecCreateSession: 3 tests
-     * test_records_step_on_success
-     * test_returns_complete_on_success
-     * test_returns_error_when_file_not_created
-   - TestRunSpecValidateSession: 2 tests
-     * test_records_step_with_passed_true
-     * test_records_step_with_passed_false
-   - TestRunSpecDecomposeSession: 2 tests
-     * test_records_step_with_feature_count
-     * test_returns_error_when_no_feature_list
-   - TestRunSpecWorkflow: 4 tests
-     * test_returns_false_on_create_failure
-     * test_returns_false_on_validation_failure
-     * test_returns_true_when_all_succeed
-     * test_prints_workflow_banner
-   - TestSpecAutoExitCodes: 2 tests
-     * test_spec_auto_exits_with_code_0_on_success
-     * test_spec_auto_exits_with_code_1_on_failure
+2. INTERACTIVE MODE TESTS WITH QUESTIONARY MOCKING - DONE
+   - Added 6 new tests to TestInteractiveSpecWizard class:
+     * test_interactive_spec_create_returns_none_on_cancel
+     * test_interactive_spec_create_returns_goal_and_context
+     * test_interactive_spec_create_skips_context_when_declined
+     * test_interactive_spec_review_returns_action
+     * test_interactive_validation_review_shows_pass_options
+     * test_interactive_validation_review_shows_fail_options
+   - Tests use unittest.mock to simulate questionary prompts
 
 3. FEATURE LIST UPDATED
-   - Marked 10 additional tests as passing:
-     * run_spec_create_session records step in spec-workflow.json
-     * run_spec_validate_session records step with passed=true
-     * run_spec_validate_session records step with passed=false
-     * run_spec_decompose_session records step and feature_count
-     * run_spec_workflow returns False on create failure
-     * run_spec_workflow returns False on validation failure
-     * run_spec_workflow returns True when all succeed
-     * run_spec_workflow prints progress banner at start
-     * CLI: spec auto exits with code 0 on success
-     * CLI: spec auto exits with code 1 on failure
-   - Current status: 103/200 tests passing (51.5%)
+   - Marked 8 additional tests as passing (from 103 to 111)
+   - Current status: 111/200 tests passing (55.5%)
 
 4. ALL TESTS PASS
-   - 39/39 pytest tests pass
+   - 47/47 pytest tests pass
    - Tests cover: state tracking, phase detection, config, prompt loaders,
-     CLI, interactive mode, agent session mocking, exit codes
+     CLI, interactive mode, agent session mocking, exit codes, --auto-spec
 
 ================================================================================
 IMPLEMENTATION STATUS
@@ -91,12 +72,14 @@ DONE:
 - [x] spec_wizard.py interactive functions
 - [x] Mocked agent session tests (tests/test_agent_sessions.py)
 - [x] CLI exit code tests
+- [x] --auto-spec main command integration tests
+- [x] Interactive mode tests with questionary mocking
 
 NOT YET DONE:
 - [ ] README documentation update
 - [ ] AGENTS.md documentation update
-- [ ] --auto-spec workflow integration tests
-- [ ] Interactive mode tests (requires mocking questionary)
+- [ ] CLI -i interactive mode tests (spec create -i, spec validate -i)
+- [ ] Additional integration tests for full workflow
 
 ================================================================================
 NEXT SESSION TASKS
@@ -108,14 +91,13 @@ The next coding agent should work on:
    - Update README with spec workflow examples
    - Update AGENTS.md with new commands
 
-2. INTERACTIVE MODE TESTS
-   - Tests for interactive_spec_create with questionary mocking
-   - Tests for prompt_after_create
-   - Tests for prompt_after_validate
+2. CLI INTERACTIVE MODE TESTS
+   - Tests for "spec create -i" launching interactive mode
+   - Tests for "spec validate -i" launching interactive review
 
 3. REMAINING FEATURE TESTS
    - Review feature_list.json for tests that can be marked passing
-   - Many tests may already pass based on implementation
+   - Continue pushing toward 100% test coverage
 
 ================================================================================
 TESTING COMMANDS
@@ -137,23 +119,17 @@ uv run pytest tests/test_agent_sessions.py -v
 uv run claude-agent --help  # Shows --auto-spec flag
 uv run claude-agent spec --help
 uv run claude-agent spec status -p /tmp/test
-uv run claude-agent spec create --help
-uv run claude-agent spec validate --help
-uv run claude-agent spec decompose --help
-uv run claude-agent spec auto --help
 
 ================================================================================
 KEY CHANGES THIS SESSION
 ================================================================================
 
-Files added:
-- tests/test_agent_sessions.py: 11 new tests with Claude client mocking
-
 Files modified:
-- tests/test_spec_cli.py: Added 2 CLI exit code tests
-- feature_list.json: Updated 10 tests to passing status
+- tests/test_spec_cli.py: Added TestAutoSpecMainCommand with 2 tests
+- tests/test_spec_workflow.py: Added 6 interactive mode tests
+- feature_list.json: Updated 8 tests to passing status
 
-Total pytest tests: 39 passing
-Total feature tests: 103/200 passing (51.5%)
+Total pytest tests: 47 passing
+Total feature tests: 111/200 passing (55.5%)
 
 ================================================================================
