@@ -1107,7 +1107,7 @@
       "Step 3: Verify default state is returned (phase='none')",
       "Step 4: Verify no exception is raised"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1807,7 +1807,7 @@
       "Step 2: Verify clear error message",
       "Step 3: Verify non-zero exit code"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {

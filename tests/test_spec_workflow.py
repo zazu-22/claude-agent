@@ -59,6 +59,23 @@ class TestSpecWorkflowState:
         assert state["history"][0]["step"] == "create"
         assert state["history"][1]["step"] == "validate"
 
+    def test_get_state_returns_default_for_corrupted_json(self, tmp_path):
+        """
+        Purpose: Verify that corrupted JSON returns default state without error.
+        Tests feature: get_spec_workflow_state returns default for corrupted JSON
+        """
+        from claude_agent.progress import get_spec_workflow_state, SPEC_WORKFLOW_FILE
+
+        # Create corrupted JSON file
+        workflow_path = tmp_path / SPEC_WORKFLOW_FILE
+        workflow_path.write_text("{ invalid json }")
+
+        # Should return default state without raising exception
+        state = get_spec_workflow_state(tmp_path)
+        assert state["phase"] == "none"
+        assert state["history"] == []
+        assert state["spec_file"] is None
+
 
 class TestSpecPhaseDetection:
     """Test phase detection based on file presence."""

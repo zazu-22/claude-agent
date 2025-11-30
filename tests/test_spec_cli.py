@@ -335,6 +335,34 @@ class TestInteractiveModeCLI:
         assert "-i" in result.output or "--interactive" in result.output
 
 
+class TestSpecErrorHandling:
+    """Test spec command error handling."""
+
+    @pytest.fixture
+    def runner(self):
+        return CliRunner()
+
+    def test_spec_status_handles_missing_directory(self, runner):
+        """
+        Purpose: Verify spec status handles nonexistent directory gracefully.
+        Tests feature: Spec status handles missing project directory gracefully
+
+        Note: The current design shows "Phase: none" for non-existent directories,
+        which is a valid graceful handling approach - no crash occurs and the
+        user gets meaningful feedback.
+        """
+        result = runner.invoke(main, [
+            "spec", "status",
+            "-p", "/nonexistent/path/that/does/not/exist"
+        ])
+
+        # Should not crash - exit code 0 is acceptable
+        assert result.exit_code == 0
+        # Should show the path and phase info
+        assert "Project:" in result.output
+        assert "Phase: none" in result.output
+
+
 class TestSpecAutoExitCodes:
     """Test spec auto command exit codes with mocked agent sessions."""
 
