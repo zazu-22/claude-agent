@@ -25,6 +25,15 @@ claude-agent -p ./my-project --spec ./SPEC.md --review
 
 # Run interactive wizard (when no spec provided)
 claude-agent -p ./my-project
+
+# Generate spec from a goal using the spec workflow
+claude-agent spec create --goal "Build a task management API"
+
+# Validate an existing spec before implementation
+claude-agent spec validate ./SPEC.md
+
+# Decompose a validated spec into features
+claude-agent spec decompose ./spec-validated.md --features 50
 ```
 
 ## How It Works
@@ -39,6 +48,69 @@ Progress persists through:
 - `feature_list.json` - Source of truth for all features and their status
 - `claude-progress.txt` - Session notes and handoff information
 - Git commits - Records implementation history
+
+## Spec Workflow
+
+The spec workflow helps you go from idea to implementation-ready specification:
+
+```
+Goal → Create → Validate → Decompose → Implement
+```
+
+### 1. Create (`spec create`)
+
+Generate a detailed specification from a brief goal:
+
+```bash
+claude-agent spec create --goal "Build a REST API with authentication"
+```
+
+Creates `spec-draft.md` with:
+- Project overview and success criteria
+- Functional requirements with priorities
+- Technical requirements and architecture
+- Non-functional requirements
+- Out of scope items
+- Open questions and assumptions
+
+### 2. Validate (`spec validate`)
+
+Check a specification for completeness and issues:
+
+```bash
+claude-agent spec validate ./spec-draft.md
+```
+
+Produces:
+- `spec-validation.md` - Issues categorized as BLOCKING, WARNING, or SUGGESTION
+- `spec-validated.md` - Cleaned spec with minor issues resolved (if passed)
+- Verdict: PASS or FAIL
+
+### 3. Decompose (`spec decompose`)
+
+Break a validated spec into implementable features:
+
+```bash
+claude-agent spec decompose ./spec-validated.md --features 50
+```
+
+Creates:
+- `feature_list.json` - Test cases ready for the coding agent
+- `app_spec.txt` - Spec copy for agent reference
+
+### Full Workflow
+
+Run all steps automatically:
+
+```bash
+claude-agent spec auto --goal "Build a task management API"
+```
+
+Or use the `--auto-spec` flag with the main command:
+
+```bash
+claude-agent -p ./my-project --goal "Build a REST API" --auto-spec
+```
 
 ## CLI Reference
 
@@ -60,6 +132,13 @@ claude-agent [OPTIONS]
 # Subcommands
 claude-agent init [DIR]    # Create .claude-agent.yaml template
 claude-agent status [DIR]  # Show project progress
+
+# Spec workflow commands
+claude-agent spec create   # Generate spec from goal
+claude-agent spec validate # Validate spec for completeness
+claude-agent spec decompose # Break spec into features
+claude-agent spec auto     # Run full workflow (create → validate → decompose)
+claude-agent spec status   # Show spec workflow status
 ```
 
 ## Configuration File
