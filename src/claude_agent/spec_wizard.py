@@ -46,11 +46,14 @@ def interactive_spec_create(project_dir: Path) -> tuple[Optional[str], str]:
 
     context = ""
     if add_context:
-        context = questionary.text(
-            "Additional context (requirements, constraints, preferences):",
-            multiline=True,
-            style=WIZARD_STYLE,
-        ).ask() or ""
+        context = (
+            questionary.text(
+                "Additional context (requirements, constraints, preferences):",
+                multiline=True,
+                style=WIZARD_STYLE,
+            ).ask()
+            or ""
+        )
 
     return goal, context
 

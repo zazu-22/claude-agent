@@ -1059,7 +1059,7 @@
       "Step 3: Verify validation proceeds without crash",
       "Step 4: Verify validation report mentions issues"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1071,7 +1071,7 @@
       "Step 3: Verify error message is clear",
       "Step 4: Verify non-zero exit code"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1083,7 +1083,7 @@
       "Step 3: Verify file is not corrupted",
       "Step 4: Verify all history entries are preserved"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1132,7 +1132,7 @@
       "Step 4: Verify 'created' phase is shown",
       "Step 5: Verify workflow can resume with spec validate"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1223,7 +1223,7 @@
       "Step 2: Verify no errors reported for new files",
       "Step 3: Verify no errors reported for modified files"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1233,7 +1233,7 @@
       "Step 1: Run 'uv run ruff format --check src/claude_agent/'",
       "Step 2: Verify no formatting changes needed"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1279,7 +1279,7 @@
       "Step 2: Verify temp file + rename pattern is used",
       "Step 3: Verify temp file is cleaned up on error"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {

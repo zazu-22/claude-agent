@@ -1,0 +1,34 @@
+# Claude Agent Configuration
+# https://github.com/anthropics/claude-agent
+
+# Specification - provide either spec_file or goal
+# spec_file: ./docs/SPEC.md
+# goal: "Build a REST API with authentication"
+
+# Number of features to generate (default: 50)
+features: 50
+
+# Tech stack - auto-detected if not specified
+# Options: node, python
+# stack: python
+
+# Agent settings
+agent:
+  model: claude-opus-4-5-20251101
+  # max_iterations: 10  # Limit iterations (default: unlimited)
+  # auto_continue_delay: 3  # Seconds between sessions
+
+# Security settings
+security:
+  extra_commands: []
+  # Add additional allowed commands:
+  # extra_commands:
+  #   - docker
+  #   - make
+
+# Validator settings (runs after all features pass)
+validator:
+  model: claude-opus-4-5-20251101  # Recommended: use Opus for final validation
+  enabled: true
+  max_rejections: 3  # Stop after this many validation failures
+  max_turns: 75  # Lower than coding agent to force quicker verdict

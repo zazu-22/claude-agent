@@ -6,7 +6,6 @@ Command-line interface for the autonomous coding agent.
 """
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -16,13 +15,11 @@ import click
 from claude_agent import __version__
 from claude_agent.agent import run_autonomous_agent
 from claude_agent.config import (
-    Config,
     generate_config_template,
     merge_config,
 )
 from claude_agent.detection import detect_stack, get_available_stacks
 from claude_agent.progress import (
-    count_passing_tests,
     get_session_state,
     print_progress_summary,
 )
@@ -30,23 +27,27 @@ from claude_agent.progress import (
 
 @click.group(invoke_without_command=True)
 @click.option(
-    "--project-dir", "-p",
+    "--project-dir",
+    "-p",
     type=click.Path(path_type=Path),
     default=".",
     help="Project directory (default: current directory)",
 )
 @click.option(
-    "--spec", "-s",
+    "--spec",
+    "-s",
     type=click.Path(exists=True, path_type=Path),
     help="Path to specification file",
 )
 @click.option(
-    "--goal", "-g",
+    "--goal",
+    "-g",
     type=str,
     help="Short goal description (alternative to --spec)",
 )
 @click.option(
-    "--features", "-f",
+    "--features",
+    "-f",
     type=int,
     help="Number of features to generate (default: 50)",
 )
@@ -56,22 +57,26 @@ from claude_agent.progress import (
     help="Tech stack (auto-detected if not specified)",
 )
 @click.option(
-    "--model", "-m",
+    "--model",
+    "-m",
     type=str,
     help="Claude model to use",
 )
 @click.option(
-    "--max-iterations", "-n",
+    "--max-iterations",
+    "-n",
     type=int,
     help="Maximum agent iterations",
 )
 @click.option(
-    "--config", "-c",
+    "--config",
+    "-c",
     type=click.Path(exists=True, path_type=Path),
     help="Path to config file",
 )
 @click.option(
-    "--review", "-r",
+    "--review",
+    "-r",
     is_flag=True,
     help="Review spec before generating features (recommended for new specs)",
 )
@@ -174,6 +179,7 @@ def main(
             sys.exit(1)
 
         from claude_agent.agent import run_spec_workflow
+
         success = asyncio.run(run_spec_workflow(merged_config, goal))
         if not success:
             click.echo("\nSpec workflow failed. Fix issues and try again.")
@@ -198,6 +204,7 @@ def main(
         else:
             # New project with no spec - run wizard
             from claude_agent.wizard import run_wizard
+
             spec_content = run_wizard(project_dir)
             if spec_content:
                 merged_config.goal = spec_content
@@ -240,7 +247,9 @@ def init(project_dir: Path):
 
 
 @main.command()
-@click.argument("project_dir", type=click.Path(exists=True, path_type=Path), default=".")
+@click.argument(
+    "project_dir", type=click.Path(exists=True, path_type=Path), default="."
+)
 def status(project_dir: Path):
     """Show project status and progress.
 
@@ -261,12 +270,16 @@ def status(project_dir: Path):
     counts = count_tests_by_type(project_dir)
 
     if state == "pending_validation":
-        click.echo(f"State:   {state} (all automated tests pass, {counts['manual_total']} manual remaining)")
+        click.echo(
+            f"State:   {state} (all automated tests pass, {counts['manual_total']} manual remaining)"
+        )
         click.echo("         -> Running claude-agent will trigger validation")
     elif state == "validating":
         click.echo(f"State:   {state} (all tests pass, awaiting validator approval)")
     elif state == "in_progress":
-        click.echo(f"State:   {state} ({counts['automated_passing']}/{counts['automated_total']} automated tests passing)")
+        click.echo(
+            f"State:   {state} ({counts['automated_passing']}/{counts['automated_total']} automated tests passing)"
+        )
     else:
         click.echo(f"State:   {state}")
 
@@ -314,6 +327,7 @@ def spec_create(goal, from_file, interactive, project_dir):
     context = ""
     if interactive:
         from claude_agent.spec_wizard import interactive_spec_create
+
         goal, context = interactive_spec_create(project_dir)
         if not goal:
             click.echo("Cancelled.")
@@ -373,7 +387,9 @@ def spec_decompose(spec_file, features, project_dir):
             sys.exit(1)
 
     config = merge_config(project_dir=project_dir, cli_features=features)
-    status, feature_path = asyncio.run(run_spec_decompose_session(config, spec_path, features))
+    status, feature_path = asyncio.run(
+        run_spec_decompose_session(config, spec_path, features)
+    )
 
     sys.exit(0 if feature_path.exists() else 1)
 

@@ -266,9 +266,17 @@ async def run_agent_session(
                 is_error = getattr(msg, "is_error", False)
                 subtype = getattr(msg, "subtype", "unknown")
                 result = getattr(msg, "result", None)
-                print(f"\n[Session End] turns={num_turns}, subtype={subtype}, is_error={is_error}", flush=True)
+                print(
+                    f"\n[Session End] turns={num_turns}, subtype={subtype}, is_error={is_error}",
+                    flush=True,
+                )
                 if result:
-                    print(f"   Result: {result[:200]}..." if len(str(result)) > 200 else f"   Result: {result}", flush=True)
+                    print(
+                        f"   Result: {result[:200]}..."
+                        if len(str(result)) > 200
+                        else f"   Result: {result}",
+                        flush=True,
+                    )
 
         print("\n" + "-" * 70 + "\n")
         return "continue", response_text
@@ -369,7 +377,9 @@ async def run_autonomous_agent(config: Config) -> None:
                 spec_content = existing_spec.read_text()
             else:
                 print("Error: No spec file or goal provided.")
-                print("Use --spec PATH or --goal 'description' to specify what to build.")
+                print(
+                    "Use --spec PATH or --goal 'description' to specify what to build."
+                )
                 return
 
         # Run review session if requested
@@ -384,7 +394,7 @@ async def run_autonomous_agent(config: Config) -> None:
         print("Fresh start - will use initializer agent")
         print()
         print("=" * 70)
-        print(f"  NOTE: First session may take 10-20+ minutes!")
+        print("  NOTE: First session may take 10-20+ minutes!")
         print(f"  The agent is generating {config.features} detailed test cases.")
         print("  This may appear to hang - it's working. Watch for [Tool: ...] output.")
         print("=" * 70)
@@ -395,13 +405,16 @@ async def run_autonomous_agent(config: Config) -> None:
     else:
         # Show detected state
         from claude_agent.progress import get_session_state
+
         state = get_session_state(project_dir)
         counts = count_tests_by_type(project_dir)
 
         print("\n" + "-" * 70)
         print("PROJECT STATE DETECTED:")
         print(f"  State: {state}")
-        print(f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}")
+        print(
+            f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}"
+        )
         if state == "pending_validation":
             print("  -> Will trigger VALIDATION (all automated tests pass)")
         else:
@@ -438,7 +451,9 @@ async def run_autonomous_agent(config: Config) -> None:
             print("\n" + "-" * 70)
             print("WORKFLOW CHECK:")
             print(f"  Total tests: {total} | Passing: {passing}")
-            print(f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}")
+            print(
+                f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}"
+            )
             if all_tests_pass:
                 trigger_reason = "all tests passing"
             else:
@@ -486,7 +501,9 @@ async def run_autonomous_agent(config: Config) -> None:
             print("\n" + "-" * 70)
             print("WORKFLOW CHECK:")
             print(f"  Total tests: {total} | Passing: {passing}")
-            print(f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}")
+            print(
+                f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}"
+            )
 
         # Trigger validation if:
         # 1. All tests pass (including any manual tests), OR
@@ -508,7 +525,9 @@ async def run_autonomous_agent(config: Config) -> None:
                     print("  ALL FEATURES COMPLETE!")
                 else:
                     print("  AUTOMATED WORK COMPLETE!")
-                    print(f"  {counts['manual_total']} test(s) require manual verification")
+                    print(
+                        f"  {counts['manual_total']} test(s) require manual verification"
+                    )
                 print("=" * 70)
                 print(f"\n{passing}/{total} features passing - {trigger_reason}")
                 break
@@ -517,10 +536,14 @@ async def run_autonomous_agent(config: Config) -> None:
             rejection_count = get_rejection_count(project_dir)
             if rejection_count >= config.validator.max_rejections:
                 print("\n" + "=" * 70)
-                print(f"  MAX VALIDATION REJECTIONS ({config.validator.max_rejections}) REACHED")
+                print(
+                    f"  MAX VALIDATION REJECTIONS ({config.validator.max_rejections}) REACHED"
+                )
                 print("=" * 70)
                 print("\nManual review recommended.")
-                print("To continue, increase max_rejections in config or disable validation.")
+                print(
+                    "To continue, increase max_rejections in config or disable validation."
+                )
                 break
 
             # Run validation phase - may take multiple sessions
@@ -531,7 +554,9 @@ async def run_autonomous_agent(config: Config) -> None:
                 if validation_session > 1:
                     print(f"(Validation session {validation_session})")
                 if counts["manual_total"] > 0:
-                    print(f"Note: {counts['manual_total']} test(s) marked as requiring manual verification")
+                    print(
+                        f"Note: {counts['manual_total']} test(s) marked as requiring manual verification"
+                    )
                 print()
 
                 result = await run_validator_session(
@@ -546,7 +571,9 @@ async def run_autonomous_agent(config: Config) -> None:
                 save_validation_attempt(
                     project_dir=project_dir,
                     result=result.verdict.lower(),
-                    rejected_indices=[t.get("test_index", -1) for t in result.rejected_tests],
+                    rejected_indices=[
+                        t.get("test_index", -1) for t in result.rejected_tests
+                    ],
                     summary=result.summary,
                 )
 
@@ -556,12 +583,16 @@ async def run_autonomous_agent(config: Config) -> None:
                     print("=" * 70)
                     print(f"\n{passing}/{total} features validated and approved!")
                     if counts["manual_total"] > 0:
-                        print(f"\nNote: {counts['manual_total']} test(s) require manual verification by user")
+                        print(
+                            f"\nNote: {counts['manual_total']} test(s) require manual verification by user"
+                        )
                     break  # Exit validation loop
 
                 # Handle CONTINUE - validator needs more sessions to complete testing
                 if result.verdict == "CONTINUE":
-                    print(f"\nValidator tested {result.tests_verified} feature(s) so far")
+                    print(
+                        f"\nValidator tested {result.tests_verified} feature(s) so far"
+                    )
                     print("Continuing validation in next session...")
                     await asyncio.sleep(config.agent.auto_continue_delay)
                     continue  # Continue validation loop
@@ -571,19 +602,31 @@ async def run_autonomous_agent(config: Config) -> None:
                     print("\n" + "=" * 70)
                     print("  VALIDATION INCOMPLETE - MANUAL VERIFICATION REQUIRED")
                     print("=" * 70)
-                    print(f"\nValidator could not fully verify the implementation.")
+                    print("\nValidator could not fully verify the implementation.")
                     if result.error:
                         print(f"Reason: {result.error}")
                     print("\nThe automated agent has completed its work.")
-                    print("Please manually verify the implementation before deployment.")
+                    print(
+                        "Please manually verify the implementation before deployment."
+                    )
                     if result.tests_verified > 0:
-                        print(f"Tests verified by validator: {result.tests_verified}/{total}")
+                        print(
+                            f"Tests verified by validator: {result.tests_verified}/{total}"
+                        )
                     break  # Exit validation loop
 
                 # Handle rejection or error
                 if result.rejected_tests:
-                    indices = [t.get("test_index") for t in result.rejected_tests if "test_index" in t]
-                    reasons = {t.get("test_index"): t.get("reason", "Rejected by validator") for t in result.rejected_tests if "test_index" in t}
+                    indices = [
+                        t.get("test_index")
+                        for t in result.rejected_tests
+                        if "test_index" in t
+                    ]
+                    reasons = {
+                        t.get("test_index"): t.get("reason", "Rejected by validator")
+                        for t in result.rejected_tests
+                        if "test_index" in t
+                    }
                     updated, errors = mark_tests_failed(project_dir, indices, reasons)
 
                     if errors:
@@ -616,7 +659,7 @@ async def run_autonomous_agent(config: Config) -> None:
             continue  # Continue main loop
 
         # Not ready for validation - continue coding
-        remaining = counts['automated_total'] - counts['automated_passing']
+        remaining = counts["automated_total"] - counts["automated_passing"]
         print(f"  -> CONTINUING CODING ({remaining} automated tests remaining)")
         print("-" * 70)
 
@@ -705,11 +748,15 @@ async def run_spec_create_session(
 
     # Record step
     spec_path = project_dir / "spec-draft.md"
-    record_spec_step(project_dir, "create", {
-        "status": "complete" if spec_path.exists() else "error",
-        "output_file": "spec-draft.md",
-        "goal": goal[:200],  # Truncate for storage
-    })
+    record_spec_step(
+        project_dir,
+        "create",
+        {
+            "status": "complete" if spec_path.exists() else "error",
+            "output_file": "spec-draft.md",
+            "goal": goal[:200],  # Truncate for storage
+        },
+    )
 
     if spec_path.exists():
         print(f"\nCreated: {spec_path}")
@@ -762,12 +809,16 @@ async def run_spec_validate_session(
     validated_path = project_dir / "spec-validated.md"
     passed = validated_path.exists()
 
-    record_spec_step(project_dir, "validate", {
-        "status": "complete",
-        "passed": passed,
-        "output_file": "spec-validated.md" if passed else None,
-        "validation_report": "spec-validation.md",
-    })
+    record_spec_step(
+        project_dir,
+        "validate",
+        {
+            "status": "complete",
+            "passed": passed,
+            "output_file": "spec-validated.md" if passed else None,
+            "validation_report": "spec-validation.md",
+        },
+    )
 
     if passed:
         print(f"\nValidation PASSED: {validated_path}")
@@ -822,11 +873,15 @@ async def run_spec_decompose_session(
 
     feature_list_path = project_dir / "feature_list.json"
 
-    record_spec_step(project_dir, "decompose", {
-        "status": "complete" if feature_list_path.exists() else "error",
-        "output_file": "feature_list.json",
-        "feature_count": feature_count,
-    })
+    record_spec_step(
+        project_dir,
+        "decompose",
+        {
+            "status": "complete" if feature_list_path.exists() else "error",
+            "output_file": "feature_list.json",
+            "feature_count": feature_count,
+        },
+    )
 
     if feature_list_path.exists():
         print(f"\nCreated: {feature_list_path}")

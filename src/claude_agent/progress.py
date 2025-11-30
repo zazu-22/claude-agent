@@ -119,7 +119,6 @@ def get_session_state(project_dir: Path) -> str:
         return "fresh"
 
     passing, total = count_passing_tests(project_dir)
-    counts = count_tests_by_type(project_dir)
 
     if total == 0:
         return "initialized"
@@ -173,7 +172,9 @@ def print_progress_summary(project_dir: Path) -> None:
     # Show manual test info if any exist
     counts = count_tests_by_type(project_dir)
     if counts["manual_total"] > 0:
-        print(f"          (includes {counts['manual_total']} manual test(s) requiring user verification)")
+        print(
+            f"          (includes {counts['manual_total']} manual test(s) requiring user verification)"
+        )
 
 
 def print_startup_banner(

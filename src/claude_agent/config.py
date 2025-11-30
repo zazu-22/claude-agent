@@ -196,7 +196,9 @@ def merge_config(
                 if "enabled" in auto_spec:
                     config.workflow.auto_spec_enabled = auto_spec["enabled"]
                 if "skip_if_feature_list_exists" in auto_spec:
-                    config.workflow.skip_if_feature_list_exists = auto_spec["skip_if_feature_list_exists"]
+                    config.workflow.skip_if_feature_list_exists = auto_spec[
+                        "skip_if_feature_list_exists"
+                    ]
 
     # Apply CLI overrides (highest priority)
     if cli_spec is not None:
