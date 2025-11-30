@@ -24,6 +24,7 @@ from claude_agent.detection import (
 from claude_agent.progress import (
     count_passing_tests,
     count_tests_by_type,
+    find_spec_draft,
     get_rejection_count,
     is_automated_work_complete,
     mark_tests_failed,
@@ -746,24 +747,35 @@ async def run_spec_create_session(
     async with client:
         status, _ = await run_agent_session(client, prompt, project_dir)
 
-    # Record step
-    spec_path = project_dir / "spec-draft.md"
-    record_spec_step(
-        project_dir,
-        "create",
-        {
-            "status": "complete" if spec_path.exists() else "error",
-            "output_file": "spec-draft.md",
-            "goal": goal[:200],  # Truncate for storage
-        },
-    )
+    # Find spec-draft.md in project root or specs/ subdirectory
+    spec_path = find_spec_draft(project_dir)
 
-    if spec_path.exists():
+    # Record step
+    if spec_path is not None:
+        record_spec_step(
+            project_dir,
+            "create",
+            {
+                "status": "complete",
+                "output_file": str(spec_path.relative_to(project_dir)),
+                "goal": goal[:200],  # Truncate for storage
+            },
+        )
         print(f"\nCreated: {spec_path}")
         return "complete", spec_path
     else:
+        # File not found - record error with default path
+        record_spec_step(
+            project_dir,
+            "create",
+            {
+                "status": "error",
+                "output_file": "spec-draft.md",
+                "goal": goal[:200],
+            },
+        )
         print("\nError: spec-draft.md was not created")
-        return "error", spec_path
+        return "error", project_dir / "spec-draft.md"
 
 
 async def run_spec_validate_session(

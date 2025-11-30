@@ -348,9 +348,19 @@ def spec_create(goal, from_file, interactive, project_dir):
 def spec_validate(spec_file, interactive, project_dir):
     """Validate a specification for completeness and clarity."""
     from claude_agent.agent import run_spec_validate_session
+    from claude_agent.progress import find_spec_draft
 
     project_dir = Path(project_dir).resolve()
-    spec_path = Path(spec_file) if spec_file else project_dir / "spec-draft.md"
+
+    if spec_file:
+        spec_path = Path(spec_file)
+    else:
+        # Check both project root and specs/ subdirectory
+        spec_path = find_spec_draft(project_dir)
+        if spec_path is None:
+            click.echo("Error: spec-draft.md not found")
+            click.echo("Run 'claude-agent spec create' first or specify a spec file")
+            sys.exit(1)
 
     if not spec_path.exists():
         click.echo(f"Error: {spec_path} not found")
@@ -370,19 +380,25 @@ def spec_validate(spec_file, interactive, project_dir):
 def spec_decompose(spec_file, features, project_dir):
     """Decompose a validated spec into a feature list."""
     from claude_agent.agent import run_spec_decompose_session
+    from claude_agent.progress import find_spec_draft, find_spec_validated
 
     project_dir = Path(project_dir).resolve()
-    spec_path = Path(spec_file) if spec_file else project_dir / "spec-validated.md"
 
-    if not spec_path.exists():
+    if spec_file:
+        spec_path = Path(spec_file)
+    else:
+        # Check both project root and specs/ subdirectory for validated spec
+        spec_path = find_spec_validated(project_dir)
+
+    if spec_path is None or not spec_path.exists():
         # Fall back to spec-draft.md with warning
-        draft_path = project_dir / "spec-draft.md"
-        if draft_path.exists():
+        draft_path = find_spec_draft(project_dir)
+        if draft_path is not None:
             click.echo("Warning: Using spec-draft.md (not validated)")
             click.echo("Consider running 'claude-agent spec validate' first")
             spec_path = draft_path
         else:
-            click.echo(f"Error: {spec_path} not found")
+            click.echo("Error: No spec file found")
             click.echo("Run 'claude-agent spec validate' first or specify a spec file")
             sys.exit(1)
 
@@ -412,7 +428,12 @@ def spec_auto(goal, project_dir):
 @click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
 def spec_status(project_dir):
     """Show spec workflow progress and status."""
-    from claude_agent.progress import get_spec_phase, get_spec_workflow_state
+    from claude_agent.progress import (
+        find_spec_draft,
+        find_spec_validated,
+        get_spec_phase,
+        get_spec_workflow_state,
+    )
 
     project_dir = Path(project_dir).resolve()
 
@@ -422,20 +443,36 @@ def spec_status(project_dir):
     phase = get_spec_phase(project_dir)
     click.echo(f"Phase: {phase}")
 
-    # Show files present
-    files = {
-        "spec-draft.md": "Draft specification",
-        "spec-validated.md": "Validated specification",
-        "spec-validation.md": "Validation report",
-        "feature_list.json": "Feature list",
-    }
-
+    # Show files present (check both project root and specs/ subdirectory)
     click.echo("\nFiles:")
-    for filename, description in files.items():
-        path = project_dir / filename
-        status = "present" if path.exists() else "missing"
-        symbol = "+" if path.exists() else "-"
-        click.echo(f"  {symbol} {filename}: {status}")
+
+    # Check spec-draft.md in both locations
+    draft_path = find_spec_draft(project_dir)
+    if draft_path:
+        rel_path = draft_path.relative_to(project_dir)
+        click.echo(f"  + {rel_path}: present")
+    else:
+        click.echo("  - spec-draft.md: missing")
+
+    # Check spec-validated.md in both locations
+    validated_path = find_spec_validated(project_dir)
+    if validated_path:
+        rel_path = validated_path.relative_to(project_dir)
+        click.echo(f"  + {rel_path}: present")
+    else:
+        click.echo("  - spec-validated.md: missing")
+
+    # Check spec-validation.md (only in root for now)
+    validation_path = project_dir / "spec-validation.md"
+    symbol = "+" if validation_path.exists() else "-"
+    status = "present" if validation_path.exists() else "missing"
+    click.echo(f"  {symbol} spec-validation.md: {status}")
+
+    # Check feature_list.json
+    feature_path = project_dir / "feature_list.json"
+    symbol = "+" if feature_path.exists() else "-"
+    status = "present" if feature_path.exists() else "missing"
+    click.echo(f"  {symbol} feature_list.json: {status}")
 
     # Show workflow state if exists
     state = get_spec_workflow_state(project_dir)

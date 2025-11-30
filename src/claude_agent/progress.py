@@ -15,6 +15,49 @@ from typing import Optional
 SPEC_WORKFLOW_FILE = "spec-workflow.json"
 
 
+def find_spec_draft(project_dir: Path) -> Optional[Path]:
+    """
+    Find spec-draft.md in project directory or specs/ subdirectory.
+
+    The agent may place the draft in either location depending on context.
+    Prefers specs/ subdirectory if it exists there.
+
+    Returns:
+        Path to spec-draft.md if found, None otherwise
+    """
+    # Check specs/ subdirectory first (preferred location)
+    specs_path = project_dir / "specs" / "spec-draft.md"
+    if specs_path.exists():
+        return specs_path
+
+    # Fall back to project root
+    root_path = project_dir / "spec-draft.md"
+    if root_path.exists():
+        return root_path
+
+    return None
+
+
+def find_spec_validated(project_dir: Path) -> Optional[Path]:
+    """
+    Find spec-validated.md in project directory or specs/ subdirectory.
+
+    Returns:
+        Path to spec-validated.md if found, None otherwise
+    """
+    # Check specs/ subdirectory first
+    specs_path = project_dir / "specs" / "spec-validated.md"
+    if specs_path.exists():
+        return specs_path
+
+    # Fall back to project root
+    root_path = project_dir / "spec-validated.md"
+    if root_path.exists():
+        return root_path
+
+    return None
+
+
 def count_passing_tests(project_dir: Path) -> tuple[int, int]:
     """
     Count passing and total tests from feature_list.json.
@@ -433,19 +476,19 @@ def get_spec_phase(project_dir: Path) -> str:
     """
     Get current spec workflow phase based on file presence.
 
+    Checks both project root and specs/ subdirectory for spec files.
+
     Returns:
         "none" | "created" | "validated" | "decomposed"
     """
     feature_list = project_dir / "feature_list.json"
-    validated_spec = project_dir / "spec-validated.md"
-    draft_spec = project_dir / "spec-draft.md"
 
     # Check in order of completion (most complete first)
     if feature_list.exists():
         return "decomposed"
-    elif validated_spec.exists():
+    elif find_spec_validated(project_dir) is not None:
         return "validated"
-    elif draft_spec.exists():
+    elif find_spec_draft(project_dir) is not None:
         return "created"
     else:
         return "none"
