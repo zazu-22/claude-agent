@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from claude_agent.detection import (
-    BASE_COMMANDS,
     get_stack_commands,
     get_stack_pkill_targets,
 )
@@ -132,9 +131,22 @@ def extract_commands(command_string: str) -> list[str]:
 
             # Skip shell keywords
             if token in (
-                "if", "then", "else", "elif", "fi",
-                "for", "while", "until", "do", "done",
-                "case", "esac", "in", "!", "{", "}",
+                "if",
+                "then",
+                "else",
+                "elif",
+                "fi",
+                "for",
+                "while",
+                "until",
+                "do",
+                "done",
+                "case",
+                "esac",
+                "in",
+                "!",
+                "{",
+                "}",
             ):
                 continue
 
@@ -274,12 +286,12 @@ async def validator_stop_hook(input_data, tool_use_id=None, context=None):
             "STOP! You have not output your JSON verdict yet. "
             "Before ending your session, you MUST output a JSON code block with your verdict:\n\n"
             "```json\n"
-            '{\n'
+            "{\n"
             '  "verdict": "APPROVED",\n'
             '  "rejected_tests": [],\n'
             '  "tests_verified": <number>,\n'
             '  "summary": "<what you tested>"\n'
-            '}\n'
+            "}\n"
             "```\n\n"
             "Output this JSON block NOW, then you may stop."
         ),

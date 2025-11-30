@@ -30,6 +30,7 @@ from claude_agent.progress import (
     print_session_header,
     print_progress_summary,
     print_startup_banner,
+    record_spec_step,
     save_validation_attempt,
 )
 from claude_agent.prompts.loader import (
@@ -37,6 +38,9 @@ from claude_agent.prompts.loader import (
     get_coding_prompt,
     get_review_prompt,
     get_validator_prompt,
+    get_spec_create_prompt,
+    get_spec_validate_prompt,
+    get_spec_decompose_prompt,
     write_spec_to_project,
 )
 from claude_agent.security import configure_security
@@ -262,9 +266,17 @@ async def run_agent_session(
                 is_error = getattr(msg, "is_error", False)
                 subtype = getattr(msg, "subtype", "unknown")
                 result = getattr(msg, "result", None)
-                print(f"\n[Session End] turns={num_turns}, subtype={subtype}, is_error={is_error}", flush=True)
+                print(
+                    f"\n[Session End] turns={num_turns}, subtype={subtype}, is_error={is_error}",
+                    flush=True,
+                )
                 if result:
-                    print(f"   Result: {result[:200]}..." if len(str(result)) > 200 else f"   Result: {result}", flush=True)
+                    print(
+                        f"   Result: {result[:200]}..."
+                        if len(str(result)) > 200
+                        else f"   Result: {result}",
+                        flush=True,
+                    )
 
         print("\n" + "-" * 70 + "\n")
         return "continue", response_text
@@ -365,7 +377,9 @@ async def run_autonomous_agent(config: Config) -> None:
                 spec_content = existing_spec.read_text()
             else:
                 print("Error: No spec file or goal provided.")
-                print("Use --spec PATH or --goal 'description' to specify what to build.")
+                print(
+                    "Use --spec PATH or --goal 'description' to specify what to build."
+                )
                 return
 
         # Run review session if requested
@@ -380,7 +394,7 @@ async def run_autonomous_agent(config: Config) -> None:
         print("Fresh start - will use initializer agent")
         print()
         print("=" * 70)
-        print(f"  NOTE: First session may take 10-20+ minutes!")
+        print("  NOTE: First session may take 10-20+ minutes!")
         print(f"  The agent is generating {config.features} detailed test cases.")
         print("  This may appear to hang - it's working. Watch for [Tool: ...] output.")
         print("=" * 70)
@@ -391,13 +405,16 @@ async def run_autonomous_agent(config: Config) -> None:
     else:
         # Show detected state
         from claude_agent.progress import get_session_state
+
         state = get_session_state(project_dir)
         counts = count_tests_by_type(project_dir)
 
         print("\n" + "-" * 70)
         print("PROJECT STATE DETECTED:")
         print(f"  State: {state}")
-        print(f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}")
+        print(
+            f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}"
+        )
         if state == "pending_validation":
             print("  -> Will trigger VALIDATION (all automated tests pass)")
         else:
@@ -434,7 +451,9 @@ async def run_autonomous_agent(config: Config) -> None:
             print("\n" + "-" * 70)
             print("WORKFLOW CHECK:")
             print(f"  Total tests: {total} | Passing: {passing}")
-            print(f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}")
+            print(
+                f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}"
+            )
             if all_tests_pass:
                 trigger_reason = "all tests passing"
             else:
@@ -482,7 +501,9 @@ async def run_autonomous_agent(config: Config) -> None:
             print("\n" + "-" * 70)
             print("WORKFLOW CHECK:")
             print(f"  Total tests: {total} | Passing: {passing}")
-            print(f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}")
+            print(
+                f"  Automated: {counts['automated_passing']}/{counts['automated_total']} | Manual: {counts['manual_passing']}/{counts['manual_total']}"
+            )
 
         # Trigger validation if:
         # 1. All tests pass (including any manual tests), OR
@@ -504,7 +525,9 @@ async def run_autonomous_agent(config: Config) -> None:
                     print("  ALL FEATURES COMPLETE!")
                 else:
                     print("  AUTOMATED WORK COMPLETE!")
-                    print(f"  {counts['manual_total']} test(s) require manual verification")
+                    print(
+                        f"  {counts['manual_total']} test(s) require manual verification"
+                    )
                 print("=" * 70)
                 print(f"\n{passing}/{total} features passing - {trigger_reason}")
                 break
@@ -513,10 +536,14 @@ async def run_autonomous_agent(config: Config) -> None:
             rejection_count = get_rejection_count(project_dir)
             if rejection_count >= config.validator.max_rejections:
                 print("\n" + "=" * 70)
-                print(f"  MAX VALIDATION REJECTIONS ({config.validator.max_rejections}) REACHED")
+                print(
+                    f"  MAX VALIDATION REJECTIONS ({config.validator.max_rejections}) REACHED"
+                )
                 print("=" * 70)
                 print("\nManual review recommended.")
-                print("To continue, increase max_rejections in config or disable validation.")
+                print(
+                    "To continue, increase max_rejections in config or disable validation."
+                )
                 break
 
             # Run validation phase - may take multiple sessions
@@ -527,7 +554,9 @@ async def run_autonomous_agent(config: Config) -> None:
                 if validation_session > 1:
                     print(f"(Validation session {validation_session})")
                 if counts["manual_total"] > 0:
-                    print(f"Note: {counts['manual_total']} test(s) marked as requiring manual verification")
+                    print(
+                        f"Note: {counts['manual_total']} test(s) marked as requiring manual verification"
+                    )
                 print()
 
                 result = await run_validator_session(
@@ -542,7 +571,9 @@ async def run_autonomous_agent(config: Config) -> None:
                 save_validation_attempt(
                     project_dir=project_dir,
                     result=result.verdict.lower(),
-                    rejected_indices=[t.get("test_index", -1) for t in result.rejected_tests],
+                    rejected_indices=[
+                        t.get("test_index", -1) for t in result.rejected_tests
+                    ],
                     summary=result.summary,
                 )
 
@@ -552,12 +583,16 @@ async def run_autonomous_agent(config: Config) -> None:
                     print("=" * 70)
                     print(f"\n{passing}/{total} features validated and approved!")
                     if counts["manual_total"] > 0:
-                        print(f"\nNote: {counts['manual_total']} test(s) require manual verification by user")
+                        print(
+                            f"\nNote: {counts['manual_total']} test(s) require manual verification by user"
+                        )
                     break  # Exit validation loop
 
                 # Handle CONTINUE - validator needs more sessions to complete testing
                 if result.verdict == "CONTINUE":
-                    print(f"\nValidator tested {result.tests_verified} feature(s) so far")
+                    print(
+                        f"\nValidator tested {result.tests_verified} feature(s) so far"
+                    )
                     print("Continuing validation in next session...")
                     await asyncio.sleep(config.agent.auto_continue_delay)
                     continue  # Continue validation loop
@@ -567,19 +602,31 @@ async def run_autonomous_agent(config: Config) -> None:
                     print("\n" + "=" * 70)
                     print("  VALIDATION INCOMPLETE - MANUAL VERIFICATION REQUIRED")
                     print("=" * 70)
-                    print(f"\nValidator could not fully verify the implementation.")
+                    print("\nValidator could not fully verify the implementation.")
                     if result.error:
                         print(f"Reason: {result.error}")
                     print("\nThe automated agent has completed its work.")
-                    print("Please manually verify the implementation before deployment.")
+                    print(
+                        "Please manually verify the implementation before deployment."
+                    )
                     if result.tests_verified > 0:
-                        print(f"Tests verified by validator: {result.tests_verified}/{total}")
+                        print(
+                            f"Tests verified by validator: {result.tests_verified}/{total}"
+                        )
                     break  # Exit validation loop
 
                 # Handle rejection or error
                 if result.rejected_tests:
-                    indices = [t.get("test_index") for t in result.rejected_tests if "test_index" in t]
-                    reasons = {t.get("test_index"): t.get("reason", "Rejected by validator") for t in result.rejected_tests if "test_index" in t}
+                    indices = [
+                        t.get("test_index")
+                        for t in result.rejected_tests
+                        if "test_index" in t
+                    ]
+                    reasons = {
+                        t.get("test_index"): t.get("reason", "Rejected by validator")
+                        for t in result.rejected_tests
+                        if "test_index" in t
+                    }
                     updated, errors = mark_tests_failed(project_dir, indices, reasons)
 
                     if errors:
@@ -612,7 +659,7 @@ async def run_autonomous_agent(config: Config) -> None:
             continue  # Continue main loop
 
         # Not ready for validation - continue coding
-        remaining = counts['automated_total'] - counts['automated_passing']
+        remaining = counts["automated_total"] - counts["automated_passing"]
         print(f"  -> CONTINUING CODING ({remaining} automated tests remaining)")
         print("-" * 70)
 
@@ -649,3 +696,263 @@ async def run_autonomous_agent(config: Config) -> None:
     print("-" * 70)
 
     print("\nDone!")
+
+
+# =============================================================================
+# Spec Workflow Session Runners
+# =============================================================================
+
+
+async def run_spec_create_session(
+    config: Config,
+    goal: str,
+    context: str = "",
+) -> tuple[str, Path]:
+    """
+    Run spec creation session.
+
+    Args:
+        config: Configuration object
+        goal: The user's goal or rough idea
+        context: Optional additional context
+
+    Returns:
+        (status, spec_path) where status is "complete" or "error"
+    """
+    project_dir = config.project_dir
+    stack = config.stack or detect_stack(project_dir)
+
+    # Configure security
+    configure_security(stack=stack, extra_commands=config.security.extra_commands)
+
+    # Print header
+    print("\n" + "=" * 70)
+    print("  SPEC WORKFLOW - STEP 1: CREATE")
+    print("  Creating detailed specification from goal...")
+    print("=" * 70 + "\n")
+
+    # Create client
+    client = create_client(
+        project_dir=project_dir,
+        model=config.agent.model,
+        max_turns=config.agent.max_turns,
+        stack=stack,
+    )
+
+    # Get prompt
+    prompt = get_spec_create_prompt(goal, context)
+
+    # Run session
+    async with client:
+        status, _ = await run_agent_session(client, prompt, project_dir)
+
+    # Record step
+    spec_path = project_dir / "spec-draft.md"
+    record_spec_step(
+        project_dir,
+        "create",
+        {
+            "status": "complete" if spec_path.exists() else "error",
+            "output_file": "spec-draft.md",
+            "goal": goal[:200],  # Truncate for storage
+        },
+    )
+
+    if spec_path.exists():
+        print(f"\nCreated: {spec_path}")
+        return "complete", spec_path
+    else:
+        print("\nError: spec-draft.md was not created")
+        return "error", spec_path
+
+
+async def run_spec_validate_session(
+    config: Config,
+    spec_path: Path,
+) -> tuple[str, bool]:
+    """
+    Run spec validation session.
+
+    Args:
+        config: Configuration object
+        spec_path: Path to the specification file to validate
+
+    Returns:
+        (status, passed) where passed indicates if validation succeeded
+    """
+    project_dir = config.project_dir
+    stack = config.stack or detect_stack(project_dir)
+
+    configure_security(stack=stack, extra_commands=config.security.extra_commands)
+
+    print("\n" + "=" * 70)
+    print("  SPEC WORKFLOW - STEP 2: VALIDATE")
+    print("  Validating specification for completeness...")
+    print("=" * 70 + "\n")
+
+    # Read spec content
+    spec_content = spec_path.read_text()
+
+    client = create_client(
+        project_dir=project_dir,
+        model=config.agent.model,
+        max_turns=config.agent.max_turns,
+        stack=stack,
+    )
+
+    prompt = get_spec_validate_prompt(spec_content)
+
+    async with client:
+        status, response = await run_agent_session(client, prompt, project_dir)
+
+    # Check if validation passed (spec-validated.md created)
+    validated_path = project_dir / "spec-validated.md"
+    passed = validated_path.exists()
+
+    record_spec_step(
+        project_dir,
+        "validate",
+        {
+            "status": "complete",
+            "passed": passed,
+            "output_file": "spec-validated.md" if passed else None,
+            "validation_report": "spec-validation.md",
+        },
+    )
+
+    if passed:
+        print(f"\nValidation PASSED: {validated_path}")
+    else:
+        print("\nValidation FAILED: blocking issues found")
+        validation_report = project_dir / "spec-validation.md"
+        if validation_report.exists():
+            print(f"Review issues in: {validation_report}")
+
+    return status, passed
+
+
+async def run_spec_decompose_session(
+    config: Config,
+    spec_path: Path,
+    feature_count: int,
+) -> tuple[str, Path]:
+    """
+    Run spec decomposition session.
+
+    Args:
+        config: Configuration object
+        spec_path: Path to the validated specification file
+        feature_count: Target number of features to generate
+
+    Returns:
+        (status, feature_list_path)
+    """
+    project_dir = config.project_dir
+    stack = config.stack or detect_stack(project_dir)
+
+    configure_security(stack=stack, extra_commands=config.security.extra_commands)
+
+    print("\n" + "=" * 70)
+    print("  SPEC WORKFLOW - STEP 3: DECOMPOSE")
+    print(f"  Decomposing specification into ~{feature_count} features...")
+    print("=" * 70 + "\n")
+
+    spec_content = spec_path.read_text()
+
+    client = create_client(
+        project_dir=project_dir,
+        model=config.agent.model,
+        max_turns=config.agent.max_turns,
+        stack=stack,
+    )
+
+    prompt = get_spec_decompose_prompt(spec_content, feature_count)
+
+    async with client:
+        status, _ = await run_agent_session(client, prompt, project_dir)
+
+    feature_list_path = project_dir / "feature_list.json"
+
+    record_spec_step(
+        project_dir,
+        "decompose",
+        {
+            "status": "complete" if feature_list_path.exists() else "error",
+            "output_file": "feature_list.json",
+            "feature_count": feature_count,
+        },
+    )
+
+    if feature_list_path.exists():
+        print(f"\nCreated: {feature_list_path}")
+    else:
+        print("\nError: feature_list.json was not created")
+
+    return status, feature_list_path
+
+
+async def run_spec_workflow(config: Config, goal: str) -> bool:
+    """
+    Run full spec workflow (auto mode).
+
+    This orchestrates the complete spec workflow:
+    1. Create: Generate detailed spec from goal
+    2. Validate: Check spec for completeness
+    3. Decompose: Break into feature list
+
+    Args:
+        config: Configuration object
+        goal: The user's goal or rough idea
+
+    Returns:
+        True if workflow completed successfully
+    """
+    print("\n" + "=" * 70)
+    print("  SPEC WORKFLOW - AUTO MODE")
+    print("=" * 70)
+    print(f"\nGoal: {goal[:100]}{'...' if len(goal) > 100 else ''}")
+    print("-" * 70)
+
+    project_dir = config.project_dir
+
+    # Step 1: Create
+    print("\nStep 1/3: Creating specification...")
+    status, spec_path = await run_spec_create_session(config, goal)
+
+    if not spec_path.exists():
+        print("\nError: Spec creation failed - spec-draft.md not created")
+        return False
+
+    # Step 2: Validate
+    print("\nStep 2/3: Validating specification...")
+    status, passed = await run_spec_validate_session(config, spec_path)
+
+    if not passed:
+        print("\nValidation failed - blocking issues found")
+        print("Review spec-validation.md and fix issues before continuing")
+        return False
+
+    validated_path = project_dir / "spec-validated.md"
+
+    # Step 3: Decompose
+    print("\nStep 3/3: Decomposing into features...")
+    status, feature_path = await run_spec_decompose_session(
+        config, validated_path, config.features
+    )
+
+    if not feature_path.exists():
+        print("\nError: Decomposition failed - feature_list.json not created")
+        return False
+
+    # Summary
+    print("\n" + "=" * 70)
+    print("  SPEC WORKFLOW COMPLETE")
+    print("=" * 70)
+    print("\nGenerated files:")
+    print("  - spec-draft.md          (initial spec)")
+    print("  - spec-validation.md     (validation report)")
+    print("  - spec-validated.md      (approved spec)")
+    print("  - feature_list.json      (implementation roadmap)")
+    print("\nReady for coding. Run 'claude-agent' to start implementation.")
+
+    return True

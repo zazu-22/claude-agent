@@ -5,7 +5,6 @@ Interactive Wizard
 Interactive wizard for generating project specifications when none provided.
 """
 
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -16,14 +15,16 @@ from claude_agent.detection import detect_stack
 
 
 # Custom style for questionary
-WIZARD_STYLE = Style([
-    ("qmark", "fg:cyan bold"),
-    ("question", "bold"),
-    ("answer", "fg:cyan"),
-    ("pointer", "fg:cyan bold"),
-    ("highlighted", "fg:cyan bold"),
-    ("selected", "fg:cyan"),
-])
+WIZARD_STYLE = Style(
+    [
+        ("qmark", "fg:cyan bold"),
+        ("question", "bold"),
+        ("answer", "fg:cyan"),
+        ("pointer", "fg:cyan bold"),
+        ("highlighted", "fg:cyan bold"),
+        ("selected", "fg:cyan"),
+    ]
+)
 
 
 def analyze_existing_codebase(project_dir: Path) -> dict:
@@ -49,7 +50,14 @@ def analyze_existing_codebase(project_dir: Path) -> dict:
         return info
 
     # Count files and check for patterns
-    test_patterns = ["test_", "_test.py", ".test.js", ".spec.js", "tests/", "__tests__/"]
+    test_patterns = [
+        "test_",
+        "_test.py",
+        ".test.js",
+        ".spec.js",
+        "tests/",
+        "__tests__/",
+    ]
 
     for item in project_dir.iterdir():
         if item.is_dir() and not item.name.startswith("."):
@@ -85,7 +93,7 @@ def run_wizard(project_dir: Path) -> Optional[str]:
     analysis = analyze_existing_codebase(project_dir)
 
     if analysis["file_count"] > 0:
-        print(f"Detected existing project:")
+        print("Detected existing project:")
         print(f"  - Stack: {analysis['detected_stack']}")
         print(f"  - Files: {analysis['file_count']}")
         if analysis["main_dirs"]:
@@ -265,7 +273,7 @@ Fix the following bugs and issues:
         stack_section = f"""
 ## Technology Stack
 
-Detected stack: {analysis['detected_stack']}
+Detected stack: {analysis["detected_stack"]}
 
 Follow the conventions and patterns already established in this codebase.
 """
@@ -276,7 +284,7 @@ Follow the conventions and patterns already established in this codebase.
         structure_section = f"""
 ## Existing Structure
 
-Main directories: {', '.join(analysis['main_dirs'][:10])}
+Main directories: {", ".join(analysis["main_dirs"][:10])}
 
 Preserve the existing project structure and naming conventions.
 """

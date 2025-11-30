@@ -6,7 +6,6 @@ Command-line interface for the autonomous coding agent.
 """
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -16,13 +15,11 @@ import click
 from claude_agent import __version__
 from claude_agent.agent import run_autonomous_agent
 from claude_agent.config import (
-    Config,
     generate_config_template,
     merge_config,
 )
 from claude_agent.detection import detect_stack, get_available_stacks
 from claude_agent.progress import (
-    count_passing_tests,
     get_session_state,
     print_progress_summary,
 )
@@ -30,23 +27,27 @@ from claude_agent.progress import (
 
 @click.group(invoke_without_command=True)
 @click.option(
-    "--project-dir", "-p",
+    "--project-dir",
+    "-p",
     type=click.Path(path_type=Path),
     default=".",
     help="Project directory (default: current directory)",
 )
 @click.option(
-    "--spec", "-s",
+    "--spec",
+    "-s",
     type=click.Path(exists=True, path_type=Path),
     help="Path to specification file",
 )
 @click.option(
-    "--goal", "-g",
+    "--goal",
+    "-g",
     type=str,
     help="Short goal description (alternative to --spec)",
 )
 @click.option(
-    "--features", "-f",
+    "--features",
+    "-f",
     type=int,
     help="Number of features to generate (default: 50)",
 )
@@ -56,22 +57,26 @@ from claude_agent.progress import (
     help="Tech stack (auto-detected if not specified)",
 )
 @click.option(
-    "--model", "-m",
+    "--model",
+    "-m",
     type=str,
     help="Claude model to use",
 )
 @click.option(
-    "--max-iterations", "-n",
+    "--max-iterations",
+    "-n",
     type=int,
     help="Maximum agent iterations",
 )
 @click.option(
-    "--config", "-c",
+    "--config",
+    "-c",
     type=click.Path(exists=True, path_type=Path),
     help="Path to config file",
 )
 @click.option(
-    "--review", "-r",
+    "--review",
+    "-r",
     is_flag=True,
     help="Review spec before generating features (recommended for new specs)",
 )
@@ -79,6 +84,11 @@ from claude_agent.progress import (
     "--reset",
     is_flag=True,
     help="Clear previous agent files and start fresh (will prompt for confirmation)",
+)
+@click.option(
+    "--auto-spec",
+    is_flag=True,
+    help="Run spec workflow before coding (create -> validate -> decompose)",
 )
 @click.version_option(version=__version__)
 @click.pass_context
@@ -94,6 +104,7 @@ def main(
     config: Optional[Path],
     review: bool,
     reset: bool,
+    auto_spec: bool,
 ):
     """
     Claude Agent - Autonomous coding agent powered by Claude.
@@ -161,6 +172,23 @@ def main(
         cli_review=review,
     )
 
+    # Handle --auto-spec flag
+    if auto_spec:
+        if not goal:
+            click.echo("Error: --auto-spec requires --goal")
+            sys.exit(1)
+
+        from claude_agent.agent import run_spec_workflow
+
+        success = asyncio.run(run_spec_workflow(merged_config, goal))
+        if not success:
+            click.echo("\nSpec workflow failed. Fix issues and try again.")
+            sys.exit(1)
+
+        # After spec workflow, feature_list.json now exists
+        # Continue with normal agent (coding agent)
+        click.echo("\nSpec workflow complete. Starting coding agent...")
+
     # Check if we have a spec - if not, check for existing or run wizard
     if not merged_config.spec_content:
         feature_list = project_dir / "feature_list.json"
@@ -176,6 +204,7 @@ def main(
         else:
             # New project with no spec - run wizard
             from claude_agent.wizard import run_wizard
+
             spec_content = run_wizard(project_dir)
             if spec_content:
                 merged_config.goal = spec_content
@@ -218,7 +247,9 @@ def init(project_dir: Path):
 
 
 @main.command()
-@click.argument("project_dir", type=click.Path(exists=True, path_type=Path), default=".")
+@click.argument(
+    "project_dir", type=click.Path(exists=True, path_type=Path), default="."
+)
 def status(project_dir: Path):
     """Show project status and progress.
 
@@ -239,12 +270,16 @@ def status(project_dir: Path):
     counts = count_tests_by_type(project_dir)
 
     if state == "pending_validation":
-        click.echo(f"State:   {state} (all automated tests pass, {counts['manual_total']} manual remaining)")
+        click.echo(
+            f"State:   {state} (all automated tests pass, {counts['manual_total']} manual remaining)"
+        )
         click.echo("         -> Running claude-agent will trigger validation")
     elif state == "validating":
         click.echo(f"State:   {state} (all tests pass, awaiting validator approval)")
     elif state == "in_progress":
-        click.echo(f"State:   {state} ({counts['automated_passing']}/{counts['automated_total']} automated tests passing)")
+        click.echo(
+            f"State:   {state} ({counts['automated_passing']}/{counts['automated_total']} automated tests passing)"
+        )
     else:
         click.echo(f"State:   {state}")
 
@@ -260,6 +295,157 @@ def status(project_dir: Path):
         lines = content.strip().split("\n")
         for line in lines[-20:]:
             click.echo(f"  {line}")
+
+
+# =============================================================================
+# Spec Command Group
+# =============================================================================
+
+
+@main.group()
+def spec():
+    """Spec creation and validation commands."""
+    pass
+
+
+@spec.command("create")
+@click.option("-g", "--goal", type=str, help="What to build")
+@click.option("--from-file", type=click.Path(exists=True), help="Read goal from file")
+@click.option("-i", "--interactive", is_flag=True, help="Interactive mode")
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+def spec_create(goal, from_file, interactive, project_dir):
+    """Create a project specification from a goal or rough idea."""
+    from claude_agent.agent import run_spec_create_session
+
+    project_dir = Path(project_dir).resolve()
+
+    # Get goal from file if specified
+    if from_file:
+        goal = Path(from_file).read_text()
+
+    # Interactive mode
+    context = ""
+    if interactive:
+        from claude_agent.spec_wizard import interactive_spec_create
+
+        goal, context = interactive_spec_create(project_dir)
+        if not goal:
+            click.echo("Cancelled.")
+            sys.exit(0)
+
+    if not goal:
+        click.echo("Error: --goal or --from-file required (or use -i for interactive)")
+        sys.exit(1)
+
+    config = merge_config(project_dir=project_dir)
+    asyncio.run(run_spec_create_session(config, goal, context))
+
+
+@spec.command("validate")
+@click.argument("spec_file", type=click.Path(exists=True), required=False)
+@click.option("-i", "--interactive", is_flag=True, help="Interactive mode")
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+def spec_validate(spec_file, interactive, project_dir):
+    """Validate a specification for completeness and clarity."""
+    from claude_agent.agent import run_spec_validate_session
+
+    project_dir = Path(project_dir).resolve()
+    spec_path = Path(spec_file) if spec_file else project_dir / "spec-draft.md"
+
+    if not spec_path.exists():
+        click.echo(f"Error: {spec_path} not found")
+        click.echo("Run 'claude-agent spec create' first or specify a spec file")
+        sys.exit(1)
+
+    config = merge_config(project_dir=project_dir)
+    status, passed = asyncio.run(run_spec_validate_session(config, spec_path))
+
+    sys.exit(0 if passed else 1)
+
+
+@spec.command("decompose")
+@click.argument("spec_file", type=click.Path(exists=True), required=False)
+@click.option("-f", "--features", type=int, default=50, help="Target feature count")
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+def spec_decompose(spec_file, features, project_dir):
+    """Decompose a validated spec into a feature list."""
+    from claude_agent.agent import run_spec_decompose_session
+
+    project_dir = Path(project_dir).resolve()
+    spec_path = Path(spec_file) if spec_file else project_dir / "spec-validated.md"
+
+    if not spec_path.exists():
+        # Fall back to spec-draft.md with warning
+        draft_path = project_dir / "spec-draft.md"
+        if draft_path.exists():
+            click.echo("Warning: Using spec-draft.md (not validated)")
+            click.echo("Consider running 'claude-agent spec validate' first")
+            spec_path = draft_path
+        else:
+            click.echo(f"Error: {spec_path} not found")
+            click.echo("Run 'claude-agent spec validate' first or specify a spec file")
+            sys.exit(1)
+
+    config = merge_config(project_dir=project_dir, cli_features=features)
+    status, feature_path = asyncio.run(
+        run_spec_decompose_session(config, spec_path, features)
+    )
+
+    sys.exit(0 if feature_path.exists() else 1)
+
+
+@spec.command("auto")
+@click.option("-g", "--goal", type=str, required=True, help="What to build")
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+def spec_auto(goal, project_dir):
+    """Run full spec workflow (create -> validate -> decompose)."""
+    from claude_agent.agent import run_spec_workflow
+
+    project_dir = Path(project_dir).resolve()
+    config = merge_config(project_dir=project_dir)
+
+    success = asyncio.run(run_spec_workflow(config, goal))
+    sys.exit(0 if success else 1)
+
+
+@spec.command("status")
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+def spec_status(project_dir):
+    """Show spec workflow progress and status."""
+    from claude_agent.progress import get_spec_phase, get_spec_workflow_state
+
+    project_dir = Path(project_dir).resolve()
+
+    click.echo(f"\nProject: {project_dir}")
+
+    # Get phase from files
+    phase = get_spec_phase(project_dir)
+    click.echo(f"Phase: {phase}")
+
+    # Show files present
+    files = {
+        "spec-draft.md": "Draft specification",
+        "spec-validated.md": "Validated specification",
+        "spec-validation.md": "Validation report",
+        "feature_list.json": "Feature list",
+    }
+
+    click.echo("\nFiles:")
+    for filename, description in files.items():
+        path = project_dir / filename
+        status = "present" if path.exists() else "missing"
+        symbol = "+" if path.exists() else "-"
+        click.echo(f"  {symbol} {filename}: {status}")
+
+    # Show workflow state if exists
+    state = get_spec_workflow_state(project_dir)
+    if state["history"]:
+        click.echo("\nHistory:")
+        for entry in state["history"]:
+            step = entry.get("step", "unknown")
+            timestamp = entry.get("timestamp", "unknown")
+            status = entry.get("status", "unknown")
+            click.echo(f"  - {step}: {status} ({timestamp})")
 
 
 if __name__ == "__main__":

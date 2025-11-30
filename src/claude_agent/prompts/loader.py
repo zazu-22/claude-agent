@@ -5,9 +5,7 @@ Prompt Loading Utilities
 Load and render prompt templates with variable substitution.
 """
 
-import re
 from pathlib import Path
-from typing import Optional
 
 
 PROMPTS_DIR = Path(__file__).parent
@@ -51,12 +49,15 @@ def get_initializer_prompt(
         Rendered prompt string
     """
     template = load_prompt("initializer")
-    return render_template(template, {
-        "spec_content": spec_content,
-        "feature_count": str(feature_count),
-        "init_command": init_command,
-        "dev_command": dev_command,
-    })
+    return render_template(
+        template,
+        {
+            "spec_content": spec_content,
+            "feature_count": str(feature_count),
+            "init_command": init_command,
+            "dev_command": dev_command,
+        },
+    )
 
 
 def get_coding_prompt(
@@ -74,10 +75,13 @@ def get_coding_prompt(
         Rendered prompt string
     """
     template = load_prompt("coding")
-    return render_template(template, {
-        "init_command": init_command,
-        "dev_command": dev_command,
-    })
+    return render_template(
+        template,
+        {
+            "init_command": init_command,
+            "dev_command": dev_command,
+        },
+    )
 
 
 def get_review_prompt(spec_content: str) -> str:
@@ -91,9 +95,12 @@ def get_review_prompt(spec_content: str) -> str:
         Rendered prompt string
     """
     template = load_prompt("review")
-    return render_template(template, {
-        "spec_content": spec_content,
-    })
+    return render_template(
+        template,
+        {
+            "spec_content": spec_content,
+        },
+    )
 
 
 def get_validator_prompt(
@@ -111,10 +118,13 @@ def get_validator_prompt(
         Rendered prompt string
     """
     template = load_prompt("validator")
-    return render_template(template, {
-        "init_command": init_command,
-        "dev_command": dev_command,
-    })
+    return render_template(
+        template,
+        {
+            "init_command": init_command,
+            "dev_command": dev_command,
+        },
+    )
 
 
 def write_spec_to_project(project_dir: Path, spec_content: str) -> Path:
@@ -131,3 +141,70 @@ def write_spec_to_project(project_dir: Path, spec_content: str) -> Path:
     spec_path = project_dir / "app_spec.txt"
     spec_path.write_text(spec_content)
     return spec_path
+
+
+# =============================================================================
+# Spec Workflow Prompt Loaders
+# =============================================================================
+
+
+def get_spec_create_prompt(goal: str, context: str = "") -> str:
+    """
+    Load and render the spec creation prompt.
+
+    Args:
+        goal: The user's goal or rough idea
+        context: Optional additional context
+
+    Returns:
+        Rendered prompt string
+    """
+    template = load_prompt("spec_create")
+    context_block = f"\n### ADDITIONAL CONTEXT\n\n{context}" if context else ""
+    return render_template(
+        template,
+        {
+            "goal": goal,
+            "context": context_block,
+        },
+    )
+
+
+def get_spec_validate_prompt(spec_content: str) -> str:
+    """
+    Load and render the spec validation prompt.
+
+    Args:
+        spec_content: The specification content to validate
+
+    Returns:
+        Rendered prompt string
+    """
+    template = load_prompt("spec_validate")
+    return render_template(
+        template,
+        {
+            "spec_content": spec_content,
+        },
+    )
+
+
+def get_spec_decompose_prompt(spec_content: str, feature_count: int) -> str:
+    """
+    Load and render the spec decomposition prompt.
+
+    Args:
+        spec_content: The specification content to decompose
+        feature_count: Target number of features to generate
+
+    Returns:
+        Rendered prompt string
+    """
+    template = load_prompt("spec_decompose")
+    return render_template(
+        template,
+        {
+            "spec_content": spec_content,
+            "feature_count": str(feature_count),
+        },
+    )

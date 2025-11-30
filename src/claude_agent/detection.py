@@ -6,21 +6,42 @@ Auto-detect project tech stack from marker files.
 """
 
 from pathlib import Path
-from typing import Optional
 
 
 # Stack signatures for detection
 STACK_SIGNATURES = {
     "node": {
-        "markers": ["package.json", "tsconfig.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"],
+        "markers": [
+            "package.json",
+            "tsconfig.json",
+            "package-lock.json",
+            "yarn.lock",
+            "pnpm-lock.yaml",
+        ],
         "commands": ["npm", "npx", "node", "yarn", "pnpm"],
         "pkill_targets": ["node", "npm", "npx", "vite", "next", "webpack"],
         "init_command": "npm install",
         "dev_command": "npm run dev",
     },
     "python": {
-        "markers": ["pyproject.toml", "setup.py", "requirements.txt", "Pipfile", "poetry.lock", "uv.lock"],
-        "commands": ["python", "python3", "pip", "pip3", "uv", "poetry", "pytest", "ruff"],
+        "markers": [
+            "pyproject.toml",
+            "setup.py",
+            "requirements.txt",
+            "Pipfile",
+            "poetry.lock",
+            "uv.lock",
+        ],
+        "commands": [
+            "python",
+            "python3",
+            "pip",
+            "pip3",
+            "uv",
+            "poetry",
+            "pytest",
+            "ruff",
+        ],
         "pkill_targets": ["python", "python3", "uvicorn", "gunicorn", "flask"],
         "init_command": "pip install -r requirements.txt",
         "dev_command": "python main.py",
@@ -29,9 +50,21 @@ STACK_SIGNATURES = {
 
 # Base commands allowed for all stacks
 BASE_COMMANDS = {
-    "ls", "cat", "head", "tail", "wc", "grep",
-    "cp", "mkdir", "chmod", "pwd",
-    "git", "ps", "lsof", "sleep", "pkill",
+    "ls",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "grep",
+    "cp",
+    "mkdir",
+    "chmod",
+    "pwd",
+    "git",
+    "ps",
+    "lsof",
+    "sleep",
+    "pkill",
     "init.sh",
 }
 

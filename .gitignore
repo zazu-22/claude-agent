@@ -56,6 +56,10 @@ analyze-*.sh
 
 # Claude Code settings (local only)
 .claude/settings.local.json
+.claude_settings.json
+
+# Generated spec workflow files (for this project's own development)
+app_spec.txt
 
 # Don't ignore reports directory
 !reports/

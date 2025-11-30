@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Optional
 
 
+# Spec workflow state file
+SPEC_WORKFLOW_FILE = "spec-workflow.json"
+
+
 def count_passing_tests(project_dir: Path) -> tuple[int, int]:
     """
     Count passing and total tests from feature_list.json.
@@ -115,7 +119,6 @@ def get_session_state(project_dir: Path) -> str:
         return "fresh"
 
     passing, total = count_passing_tests(project_dir)
-    counts = count_tests_by_type(project_dir)
 
     if total == 0:
         return "initialized"
@@ -169,7 +172,9 @@ def print_progress_summary(project_dir: Path) -> None:
     # Show manual test info if any exist
     counts = count_tests_by_type(project_dir)
     if counts["manual_total"] > 0:
-        print(f"          (includes {counts['manual_total']} manual test(s) requiring user verification)")
+        print(
+            f"          (includes {counts['manual_total']} manual test(s) requiring user verification)"
+        )
 
 
 def print_startup_banner(
@@ -335,3 +340,112 @@ def mark_tests_failed(
             temp_path.unlink()
 
     return updated, errors
+
+
+# =============================================================================
+# Spec Workflow State Tracking
+# =============================================================================
+
+
+def get_spec_workflow_state(project_dir: Path) -> dict:
+    """
+    Load spec workflow state.
+
+    Returns:
+        Dict with keys:
+        - phase: "none" | "created" | "validated" | "decomposed"
+        - spec_file: Path to current spec file
+        - history: List of step records
+    """
+    workflow_path = project_dir / SPEC_WORKFLOW_FILE
+
+    if not workflow_path.exists():
+        return {
+            "phase": "none",
+            "spec_file": None,
+            "history": [],
+        }
+
+    try:
+        with open(workflow_path) as f:
+            data = json.load(f)
+        # Ensure required keys exist
+        data.setdefault("phase", "none")
+        data.setdefault("spec_file", None)
+        data.setdefault("history", [])
+        return data
+    except (json.JSONDecodeError, IOError):
+        return {
+            "phase": "none",
+            "spec_file": None,
+            "history": [],
+        }
+
+
+def save_spec_workflow_state(project_dir: Path, state: dict) -> None:
+    """Save spec workflow state to file."""
+    workflow_path = project_dir / SPEC_WORKFLOW_FILE
+
+    # Add/update timestamps
+    now = datetime.now(timezone.utc).isoformat()
+    if "created_at" not in state:
+        state["created_at"] = now
+    state["updated_at"] = now
+
+    with open(workflow_path, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+def record_spec_step(project_dir: Path, step: str, result: dict) -> None:
+    """
+    Record completion of a spec workflow step.
+
+    Args:
+        step: "create" | "validate" | "decompose"
+        result: Dict with status, output_file, etc.
+    """
+    state = get_spec_workflow_state(project_dir)
+
+    # Update phase based on step
+    phase_map = {
+        "create": "created",
+        "validate": "validated",
+        "decompose": "decomposed",
+    }
+    state["phase"] = phase_map.get(step, state["phase"])
+
+    # Update spec_file if provided
+    if "output_file" in result:
+        state["spec_file"] = result["output_file"]
+
+    # Append to history
+    history_entry = {
+        "step": step,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **result,
+    }
+    state["history"].append(history_entry)
+
+    save_spec_workflow_state(project_dir, state)
+
+
+def get_spec_phase(project_dir: Path) -> str:
+    """
+    Get current spec workflow phase based on file presence.
+
+    Returns:
+        "none" | "created" | "validated" | "decomposed"
+    """
+    feature_list = project_dir / "feature_list.json"
+    validated_spec = project_dir / "spec-validated.md"
+    draft_spec = project_dir / "spec-draft.md"
+
+    # Check in order of completion (most complete first)
+    if feature_list.exists():
+        return "decomposed"
+    elif validated_spec.exists():
+        return "validated"
+    elif draft_spec.exists():
+        return "created"
+    else:
+        return "none"

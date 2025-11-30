@@ -87,7 +87,7 @@ def create_client(
         json.dump(security_settings, f, indent=2)
 
     print(f"Security settings: {settings_file}")
-    print(f"   - Sandbox enabled (OS-level bash isolation)")
+    print("   - Sandbox enabled (OS-level bash isolation)")
     print(f"   - Filesystem restricted to: {project_dir.resolve()}")
     print(f"   - Bash commands restricted to {stack} stack allowlist")
     print()
