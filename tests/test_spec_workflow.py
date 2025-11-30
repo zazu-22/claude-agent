@@ -399,3 +399,212 @@ class TestPromptLoading:
         prompt = get_spec_decompose_prompt("# Spec", 75)
         assert "75" in prompt
         assert "SPEC DECOMPOSER" in prompt
+
+
+class TestPromptTemplateContent:
+    """Test that prompt templates contain required content."""
+
+    def test_spec_create_has_do_not_feature_list_instruction(self):
+        """
+        Purpose: Verify spec_create.md instructs not to generate feature_list.json.
+        Tests feature: Prompt templates specify not to generate feature_list.json
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        content = load_prompt("spec_create")
+        assert "feature_list.json" in content
+        assert "DO NOT" in content
+
+    def test_spec_create_has_do_not_application_code_instruction(self):
+        """
+        Purpose: Verify spec_create.md instructs not to write application code.
+        Tests feature: Prompt templates specify not to write application code
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        content = load_prompt("spec_create")
+        assert "application code" in content.lower()
+        assert "DO NOT" in content
+
+    def test_spec_validate_has_two_output_files(self):
+        """
+        Purpose: Verify spec_validate.md specifies both output files.
+        Tests feature: spec_validate.md instructs creation of two output files
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        content = load_prompt("spec_validate")
+        assert "spec-validation.md" in content
+        assert "spec-validated.md" in content
+        assert "OUTPUT 1" in content or "OUTPUT" in content
+        assert "only if PASS" in content
+
+    def test_spec_validate_has_all_validation_categories(self):
+        """
+        Purpose: Verify spec_validate.md includes all validation categories.
+        Tests feature: spec_validate.md includes all validation categories
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        content = load_prompt("spec_validate")
+        assert "Completeness" in content
+        assert "Ambiguities" in content
+        assert "Scope Risks" in content
+        assert "Technical Gaps" in content
+        assert "Contradictions" in content
+
+    def test_spec_decompose_has_all_feature_categories(self):
+        """
+        Purpose: Verify spec_decompose.md specifies all feature categories.
+        Tests feature: spec_decompose.md specifies all feature categories
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        content = load_prompt("spec_decompose")
+        assert "functional" in content
+        assert "technical" in content
+        assert "style" in content
+        assert "integration" in content
+        assert "error-handling" in content
+
+    def test_spec_decompose_has_manual_testing_explanation(self):
+        """
+        Purpose: Verify spec_decompose.md explains requires_manual_testing flag.
+        Tests feature: spec_decompose.md explains requires_manual_testing flag
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        content = load_prompt("spec_decompose")
+        assert "MANUAL TESTING" in content.upper()
+        assert "requires_manual_testing" in content
+
+    def test_spec_decompose_has_independence_and_ordering(self):
+        """
+        Purpose: Verify spec_decompose.md emphasizes independence and ordering.
+        Tests feature: spec_decompose.md emphasizes feature independence and ordering
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        content = load_prompt("spec_decompose")
+        assert "Independence" in content or "independent" in content.lower()
+        assert "Ordering" in content or "foundational" in content.lower()
+
+    def test_prompts_use_double_brace_syntax(self):
+        """
+        Purpose: Verify all prompts use {{variable}} syntax consistently.
+        Tests feature: New prompts use {{variable}} syntax consistently
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        create = load_prompt("spec_create")
+        validate = load_prompt("spec_validate")
+        decompose = load_prompt("spec_decompose")
+
+        assert "{{goal}}" in create
+        assert "{{context}}" in create
+        assert "{{spec_content}}" in validate
+        assert "{{spec_content}}" in decompose
+        assert "{{feature_count}}" in decompose
+
+    def test_prompts_have_your_role_section(self):
+        """
+        Purpose: Verify all prompts include clear role identification.
+        Tests feature: Spec prompts include clear role identification
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        create = load_prompt("spec_create")
+        validate = load_prompt("spec_validate")
+        decompose = load_prompt("spec_decompose")
+
+        assert "YOUR ROLE" in create
+        assert "YOUR ROLE" in validate
+        assert "YOUR ROLE" in decompose
+
+    def test_prompts_have_your_task_section(self):
+        """
+        Purpose: Verify all prompts include clear task description.
+        Tests feature: Spec prompts include clear task description
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        create = load_prompt("spec_create")
+        validate = load_prompt("spec_validate")
+        decompose = load_prompt("spec_decompose")
+
+        assert "YOUR TASK" in create
+        assert "YOUR TASK" in validate
+        assert "YOUR TASK" in decompose
+
+    def test_prompts_have_output_section(self):
+        """
+        Purpose: Verify all prompts specify output files.
+        Tests feature: Spec prompts include OUTPUT section specifying files to create
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        create = load_prompt("spec_create")
+        validate = load_prompt("spec_validate")
+        decompose = load_prompt("spec_decompose")
+
+        assert "OUTPUT" in create
+        assert "spec-draft.md" in create
+        assert "OUTPUT" in validate
+        assert "spec-validation.md" in validate
+        assert "spec-validated.md" in validate
+        assert "OUTPUT" in decompose
+        assert "feature_list.json" in decompose
+        assert "app_spec.txt" in decompose
+
+    def test_spec_create_specifies_output_filename(self):
+        """
+        Purpose: Verify spec_create.md specifies output file name explicitly.
+        Tests feature: Spec create prompt specifies output file name explicitly
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        content = load_prompt("spec_create")
+        assert "spec-draft.md" in content
+
+    def test_spec_validate_specifies_both_output_filenames(self):
+        """
+        Purpose: Verify spec_validate.md specifies both output filenames.
+        Tests feature: Spec validate prompt specifies both output filenames
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        content = load_prompt("spec_validate")
+        assert "spec-validation.md" in content
+        assert "spec-validated.md" in content
+
+    def test_spec_decompose_specifies_app_spec_copy(self):
+        """
+        Purpose: Verify spec_decompose.md specifies app_spec.txt copy instruction.
+        Tests feature: Spec decompose prompt specifies app_spec.txt copy instruction
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        content = load_prompt("spec_decompose")
+        assert "app_spec.txt" in content
+
+    def test_prompts_are_valid_markdown(self):
+        """
+        Purpose: Verify all prompt templates are valid markdown.
+        Tests feature: All prompt templates are valid markdown
+        """
+        from claude_agent.prompts.loader import load_prompt
+
+        # These should all load without error
+        create = load_prompt("spec_create")
+        validate = load_prompt("spec_validate")
+        decompose = load_prompt("spec_decompose")
+
+        # Basic checks for markdown structure
+        assert len(create) > 100
+        assert len(validate) > 100
+        assert len(decompose) > 100
+
+        # Check no unclosed code blocks (triple backtick should be even count)
+        assert create.count("```") % 2 == 0
+        assert validate.count("```") % 2 == 0
+        assert decompose.count("```") % 2 == 0

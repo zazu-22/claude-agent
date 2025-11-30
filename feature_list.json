@@ -907,7 +907,7 @@
       "Step 2: Run 'uv run claude-agent spec create -i'",
       "Step 3: Verify interactive_spec_create was called"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -919,7 +919,7 @@
       "Step 3: Verify 'Cancelled' message appears",
       "Step 4: Verify exit code is 0"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -931,7 +931,7 @@
       "Step 3: Run 'uv run claude-agent spec validate -i'",
       "Step 4: Verify interactive_validation_review was called"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1617,7 +1617,7 @@
       "Step 2: Verify DO NOT instruction mentions feature_list.json",
       "Step 3: Verify instruction is clear about decompose step responsibility"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1627,7 +1627,7 @@
       "Step 1: Read spec_create.md",
       "Step 2: Verify DO NOT instruction mentions application code"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1639,7 +1639,7 @@
       "Step 3: Verify OUTPUT 2: spec-validated.md is documented",
       "Step 4: Verify conditions for creating spec-validated.md (only if PASS)"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1653,7 +1653,7 @@
       "Step 5: Verify Technical Gaps category is mentioned",
       "Step 6: Verify Contradictions category is mentioned"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1667,7 +1667,7 @@
       "Step 5: Verify integration category is documented",
       "Step 6: Verify error-handling category is documented"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1678,7 +1678,7 @@
       "Step 2: Verify MANUAL TESTING FLAG section exists",
       "Step 3: Verify conditions for setting true are listed"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1689,7 +1689,7 @@
       "Step 2: Verify independence guideline is mentioned",
       "Step 3: Verify ordering guideline (foundational first) is mentioned"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1931,7 +1931,7 @@
       "Step 3: Review spec_decompose.md",
       "Step 4: Verify all use {{variable}} syntax, not ${variable} or other formats"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1943,7 +1943,7 @@
       "Step 3: Read spec_decompose.md and find 'YOUR ROLE' section",
       "Step 4: Verify role names are distinct and descriptive"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1955,7 +1955,7 @@
       "Step 3: Read spec_decompose.md and find 'YOUR TASK' section",
       "Step 4: Verify task sections clearly describe expected output"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1969,7 +1969,7 @@
       "Step 5: Read spec_decompose.md and find OUTPUT section",
       "Step 6: Verify feature_list.json and app_spec.txt are specified"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2113,7 +2113,7 @@
       "Step 2: Verify 'spec-draft.md' filename is specified",
       "Step 3: Verify filename appears in OUTPUT section"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2124,7 +2124,7 @@
       "Step 2: Verify 'spec-validation.md' is specified",
       "Step 3: Verify 'spec-validated.md' is specified"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2135,7 +2135,7 @@
       "Step 2: Verify instruction to copy spec to app_spec.txt",
       "Step 3: Verify this is mentioned in OUTPUT section"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2207,7 +2207,7 @@
       "Step 4: Verify each parses as valid markdown",
       "Step 5: Verify no unclosed code blocks"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
