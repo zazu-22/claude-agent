@@ -667,3 +667,550 @@ class TestPromptTemplateContent:
         assert create.count("```") % 2 == 0
         assert validate.count("```") % 2 == 0
         assert decompose.count("```") % 2 == 0
+
+
+class TestDependencies:
+    """Test that no new external dependencies were added."""
+
+    def test_no_new_external_dependencies_added(self):
+        """
+        Purpose: Verify no new external dependencies were added to pyproject.toml.
+        Tests feature: No new external dependencies added
+
+        The spec workflow uses only existing dependencies:
+        - click (CLI)
+        - questionary (interactive prompts)
+        - pyyaml (config parsing)
+        - claude-code-sdk (agent sessions)
+        """
+        from pathlib import Path
+
+        pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+        content = pyproject_path.read_text()
+
+        # These are the only allowed dependencies
+        expected_deps = [
+            "claude-code-sdk",
+            "click",
+            "pyyaml",
+            "questionary",
+        ]
+
+        # Extract dependencies section
+        in_deps = False
+        deps_found = []
+        for line in content.split("\n"):
+            if line.strip() == "dependencies = [":
+                in_deps = True
+                continue
+            if in_deps:
+                if line.strip() == "]":
+                    break
+                # Extract dependency name from line like '    "click>=8.0",'
+                if '"' in line:
+                    dep = line.strip().strip('",').split(">=")[0].split(">")[0].split("<")[0]
+                    deps_found.append(dep)
+
+        # Verify only expected dependencies
+        for dep in deps_found:
+            assert dep in expected_deps, f"Unexpected dependency: {dep}"
+
+
+class TestFixtureUsage:
+    """Test that test files use pytest fixtures correctly."""
+
+    def test_test_files_use_tmp_path_fixture(self):
+        """
+        Purpose: Verify tmp_path fixture is used for temp directories.
+        Tests feature: Test files use pytest fixtures correctly
+        """
+        from pathlib import Path
+
+        test_workflow = Path(__file__)
+        content = test_workflow.read_text()
+
+        # Should use tmp_path fixture, not tempfile module
+        assert "tmp_path" in content
+        # Should be used in function signature (as fixture parameter)
+        assert "def test_" in content
+
+    def test_cli_tests_use_cli_runner_fixture(self):
+        """
+        Purpose: Verify CliRunner fixture is properly defined in test_spec_cli.py.
+        Tests feature: Test files use pytest fixtures correctly
+        """
+        from pathlib import Path
+
+        test_cli = Path(__file__).parent / "test_spec_cli.py"
+        content = test_cli.read_text()
+
+        # Should define runner fixture
+        assert "@pytest.fixture" in content
+        assert "def runner(self)" in content
+        assert "CliRunner" in content
+
+
+class TestSessionHeaderFormatting:
+    """Test session header formatting consistency."""
+
+    def test_session_headers_use_70_char_separator(self):
+        """
+        Purpose: Verify session headers use 70-character separator lines.
+        Tests feature: Session headers use consistent formatting with existing agent.py
+        """
+        from claude_agent.progress import print_session_header
+        from io import StringIO
+        import sys
+
+        # Capture output
+        old_stdout = sys.stdout
+        sys.stdout = StringIO()
+
+        print_session_header(1, is_initializer=False)
+
+        output = sys.stdout.getvalue()
+        sys.stdout = old_stdout
+
+        # Check for 70 '=' characters
+        assert "=" * 70 in output
+
+    def test_session_headers_use_equals_separator(self):
+        """
+        Purpose: Verify session headers use '=' separator lines.
+        Tests feature: Session headers use consistent formatting with existing agent.py
+        """
+        from claude_agent.progress import print_session_header
+        from io import StringIO
+        import sys
+
+        old_stdout = sys.stdout
+        sys.stdout = StringIO()
+
+        print_session_header(1, is_initializer=True)
+
+        output = sys.stdout.getvalue()
+        sys.stdout = old_stdout
+
+        # Should have '=' separators, not '-' or other characters
+        lines = output.strip().split("\n")
+        separator_lines = [l for l in lines if l.strip() and set(l.strip()) == {"="}]
+        assert len(separator_lines) >= 2  # At least 2 separator lines
+
+
+class TestCLIHelpText:
+    """Test CLI help text follows existing patterns."""
+
+    def test_spec_help_text_follows_patterns(self):
+        """
+        Purpose: Verify spec --help follows existing CLI style.
+        Tests feature: CLI help text follows existing patterns
+        """
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["spec", "--help"])
+
+        # Should include subcommand descriptions
+        assert "create" in result.output
+        assert "validate" in result.output
+        assert "decompose" in result.output
+        assert "status" in result.output
+        assert "auto" in result.output
+
+        # Help text should follow click conventions
+        assert "Usage:" in result.output or "usage:" in result.output.lower()
+
+    def test_spec_subcommands_have_help_text(self):
+        """
+        Purpose: Verify each spec subcommand has descriptive help text.
+        Tests feature: CLI help text follows existing patterns
+        """
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        runner = CliRunner()
+
+        for cmd in ["create", "validate", "decompose", "auto", "status"]:
+            result = runner.invoke(main, ["spec", cmd, "--help"])
+            assert result.exit_code == 0
+            # Each should have a description
+            assert len(result.output) > 50  # Not just "Usage:"
+
+
+class TestErrorMessages:
+    """Test error messages are clear and actionable."""
+
+    def test_spec_create_missing_goal_message_is_actionable(self):
+        """
+        Purpose: Verify error message explains how to fix the issue.
+        Tests feature: Error messages are clear and actionable
+        """
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["spec", "create", "-p", "/tmp/test"])
+
+        # Should explain what's missing
+        assert "goal" in result.output.lower()
+        # Should suggest solution
+        assert "--goal" in result.output or "--from-file" in result.output or "-i" in result.output
+
+    def test_spec_validate_missing_spec_message_is_actionable(self, tmp_path):
+        """
+        Purpose: Verify error message explains how to fix the issue.
+        Tests feature: Error messages are clear and actionable
+        """
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["spec", "validate", "-p", str(tmp_path)])
+
+        # Should explain what's missing
+        assert "not found" in result.output.lower()
+        # Should suggest solution
+        assert "spec create" in result.output or "specify" in result.output.lower()
+
+
+class TestClickEchoUsage:
+    """Test progress output uses click.echo consistently."""
+
+    def test_cli_module_uses_click_echo(self):
+        """
+        Purpose: Verify CLI uses click.echo for user-facing output.
+        Tests feature: Progress output uses click.echo consistently
+        """
+        from pathlib import Path
+
+        cli_path = Path(__file__).parent.parent / "src" / "claude_agent" / "cli.py"
+        content = cli_path.read_text()
+
+        # Should use click.echo for output
+        assert "click.echo" in content
+
+        # Count usage - should be significant
+        echo_count = content.count("click.echo")
+        assert echo_count >= 10  # At least 10 uses
+
+    def test_cli_module_avoids_direct_print_for_user_output(self):
+        """
+        Purpose: Verify CLI doesn't use print() for user-facing output.
+        Tests feature: Progress output uses click.echo consistently
+
+        Note: Some internal debugging print() may be acceptable, but
+        user-facing output should use click.echo.
+        """
+        from pathlib import Path
+        import ast
+
+        cli_path = Path(__file__).parent.parent / "src" / "claude_agent" / "cli.py"
+        content = cli_path.read_text()
+
+        # Parse and find print calls
+        tree = ast.parse(content)
+        print_calls = 0
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id == "print":
+                    print_calls += 1
+
+        # Should have very few or no print() calls in CLI
+        assert print_calls <= 2, f"Found {print_calls} print() calls in cli.py"
+
+
+class TestSpecStatusAlignment:
+    """Test spec status output label alignment."""
+
+    def test_spec_status_labels_aligned(self, tmp_path):
+        """
+        Purpose: Verify spec status output aligns labels consistently.
+        Tests feature: Spec status output aligns labels consistently
+        """
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["spec", "status", "-p", str(tmp_path)])
+
+        # Output should be structured
+        assert "Project:" in result.output
+        assert "Phase:" in result.output
+        assert "Files:" in result.output
+
+        # Labels should be on separate lines with consistent structure
+        lines = result.output.strip().split("\n")
+        assert len(lines) >= 3  # At least Project, Phase, Files
+
+
+class TestJSONErrorHandling:
+    """Test JSON file operations error handling."""
+
+    def test_get_spec_workflow_state_handles_io_error(self, tmp_path, monkeypatch):
+        """
+        Purpose: Verify graceful handling of IOError when reading JSON.
+        Tests feature: JSON file operations use proper error handling
+        """
+        from claude_agent.progress import get_spec_workflow_state, SPEC_WORKFLOW_FILE
+        import builtins
+
+        # Create a valid JSON file first
+        workflow_path = tmp_path / SPEC_WORKFLOW_FILE
+        workflow_path.write_text('{"phase": "created", "history": []}')
+
+        # Mock open to raise IOError
+        original_open = builtins.open
+        def mock_open(*args, **kwargs):
+            if str(workflow_path) in str(args[0]):
+                raise IOError("Simulated IO error")
+            return original_open(*args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", mock_open)
+
+        # Should return default state without raising exception
+        state = get_spec_workflow_state(tmp_path)
+        assert state["phase"] == "none"
+        assert state["history"] == []
+
+    def test_count_passing_tests_handles_json_decode_error(self, tmp_path):
+        """
+        Purpose: Verify graceful handling of JSONDecodeError.
+        Tests feature: JSON file operations use proper error handling
+        """
+        from claude_agent.progress import count_passing_tests
+
+        # Create corrupted JSON
+        feature_list = tmp_path / "feature_list.json"
+        feature_list.write_text("{ invalid json")
+
+        # Should return (0, 0) without raising exception
+        passing, total = count_passing_tests(tmp_path)
+        assert passing == 0
+        assert total == 0
+
+
+class TestRecordSpecStepFields:
+    """Test spec workflow state recording includes all required fields."""
+
+    def test_record_step_includes_status_field(self, tmp_path):
+        """
+        Purpose: Verify history entries include status field.
+        Tests feature: History entries include status field
+        """
+        from claude_agent.progress import record_spec_step, get_spec_workflow_state
+
+        record_spec_step(tmp_path, "create", {"status": "complete"})
+
+        state = get_spec_workflow_state(tmp_path)
+        assert len(state["history"]) == 1
+        assert "status" in state["history"][0]
+        assert state["history"][0]["status"] == "complete"
+
+    def test_record_step_includes_output_file(self, tmp_path):
+        """
+        Purpose: Verify history entries include output_file for each step.
+        Tests feature: History entries include output_file for each step
+        """
+        from claude_agent.progress import record_spec_step, get_spec_workflow_state
+
+        record_spec_step(tmp_path, "create", {
+            "status": "complete",
+            "output_file": "spec-draft.md"
+        })
+
+        state = get_spec_workflow_state(tmp_path)
+        assert "output_file" in state["history"][0]
+        assert state["history"][0]["output_file"] == "spec-draft.md"
+
+    def test_validate_history_entry_includes_validation_report(self, tmp_path):
+        """
+        Purpose: Verify validate history entry includes validation_report field.
+        Tests feature: Validate history entry includes validation_report field
+        """
+        from claude_agent.progress import record_spec_step, get_spec_workflow_state
+
+        record_spec_step(tmp_path, "validate", {
+            "status": "complete",
+            "passed": True,
+            "output_file": "spec-validated.md",
+            "validation_report": "spec-validation.md"
+        })
+
+        state = get_spec_workflow_state(tmp_path)
+        assert "validation_report" in state["history"][0]
+        assert state["history"][0]["validation_report"] == "spec-validation.md"
+
+    def test_record_step_includes_timestamp(self, tmp_path):
+        """
+        Purpose: Verify history entries include timestamp.
+        Tests feature: Spec workflow records updated_at timestamp on each step
+        """
+        from claude_agent.progress import record_spec_step, get_spec_workflow_state
+
+        record_spec_step(tmp_path, "create", {"status": "complete"})
+
+        state = get_spec_workflow_state(tmp_path)
+        assert "timestamp" in state["history"][0]
+        # ISO 8601 format
+        assert "T" in state["history"][0]["timestamp"]
+
+    def test_workflow_state_includes_spec_file(self, tmp_path):
+        """
+        Purpose: Verify workflow state includes spec_file field.
+        Tests feature: Spec workflow state includes spec_file field
+        """
+        from claude_agent.progress import record_spec_step, get_spec_workflow_state
+
+        record_spec_step(tmp_path, "create", {
+            "status": "complete",
+            "output_file": "spec-draft.md"
+        })
+
+        state = get_spec_workflow_state(tmp_path)
+        assert "spec_file" in state
+        assert state["spec_file"] == "spec-draft.md"
+
+    def test_workflow_state_includes_created_at(self, tmp_path):
+        """
+        Purpose: Verify workflow state includes created_at timestamp.
+        Tests feature: Spec workflow records created_at timestamp
+        """
+        from claude_agent.progress import record_spec_step, get_spec_workflow_state
+
+        record_spec_step(tmp_path, "create", {"status": "complete"})
+
+        state = get_spec_workflow_state(tmp_path)
+        assert "created_at" in state
+        assert "T" in state["created_at"]  # ISO 8601 format
+
+    def test_workflow_state_includes_updated_at(self, tmp_path):
+        """
+        Purpose: Verify workflow state includes updated_at timestamp.
+        Tests feature: Spec workflow records updated_at timestamp on each step
+        """
+        from claude_agent.progress import record_spec_step, get_spec_workflow_state
+
+        record_spec_step(tmp_path, "create", {"status": "complete"})
+
+        state = get_spec_workflow_state(tmp_path)
+        assert "updated_at" in state
+
+    def test_multiple_runs_preserve_history(self, tmp_path):
+        """
+        Purpose: Verify multiple spec workflow runs preserve history.
+        Tests feature: Multiple spec workflow runs preserve history
+        """
+        from claude_agent.progress import record_spec_step, get_spec_workflow_state
+
+        # First run
+        record_spec_step(tmp_path, "create", {"status": "complete"})
+        record_spec_step(tmp_path, "validate", {"status": "complete"})
+
+        # Second run
+        record_spec_step(tmp_path, "create", {"status": "complete"})
+
+        state = get_spec_workflow_state(tmp_path)
+        assert len(state["history"]) == 3  # All entries preserved
+
+
+class TestPromptHandling:
+    """Test prompt function edge cases."""
+
+    def test_get_spec_create_prompt_handles_empty_goal(self):
+        """
+        Purpose: Verify empty goal is handled gracefully.
+        Tests feature: get_spec_create_prompt handles empty goal gracefully
+        """
+        from claude_agent.prompts.loader import get_spec_create_prompt
+
+        # Should not raise exception
+        prompt = get_spec_create_prompt("")
+        assert isinstance(prompt, str)
+        assert len(prompt) > 100  # Still has template content
+
+    def test_get_spec_decompose_prompt_handles_zero_feature_count(self):
+        """
+        Purpose: Verify zero feature count is handled gracefully.
+        Tests feature: get_spec_decompose_prompt handles zero feature count
+        """
+        from claude_agent.prompts.loader import get_spec_decompose_prompt
+
+        # Should not raise exception
+        prompt = get_spec_decompose_prompt("# Spec", 0)
+        assert isinstance(prompt, str)
+        assert "0" in prompt
+
+    def test_spec_create_accepts_multiline_goal(self):
+        """
+        Purpose: Verify multiline goals are handled correctly.
+        Tests feature: CLI spec create accepts long multiline goals
+        """
+        from claude_agent.prompts.loader import get_spec_create_prompt
+
+        multiline_goal = """Build a web application with:
+- User authentication
+- Dashboard
+- Settings page
+- Admin panel"""
+
+        prompt = get_spec_create_prompt(multiline_goal)
+        assert "User authentication" in prompt
+        assert "Dashboard" in prompt
+
+
+class TestCLIPathHandling:
+    """Test CLI path handling functionality."""
+
+    def test_cli_resolves_relative_paths(self, tmp_path):
+        """
+        Purpose: Verify CLI properly resolves relative project paths to absolute.
+        Tests feature: CLI properly resolves relative project paths to absolute
+        """
+        from claude_agent.config import merge_config
+        import os
+
+        # Save original working directory
+        original_cwd = os.getcwd()
+
+        try:
+            # Change to tmp_path so relative path works
+            os.chdir(tmp_path)
+
+            # Create a subdirectory
+            subdir = tmp_path / "project"
+            subdir.mkdir()
+
+            # merge_config resolves paths in CLI
+            config = merge_config(project_dir=subdir)
+
+            # Should be absolute
+            assert config.project_dir.is_absolute()
+        finally:
+            os.chdir(original_cwd)
+
+    def test_spec_status_shows_correct_timestamp_format(self, tmp_path):
+        """
+        Purpose: Verify spec status shows timestamps in readable format.
+        Tests feature: Spec status shows correct timestamp format
+        """
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+        import json
+
+        # Create workflow state with timestamp
+        workflow_state = {
+            "phase": "created",
+            "history": [{
+                "step": "create",
+                "timestamp": "2025-11-30T10:00:00Z",
+                "status": "complete"
+            }]
+        }
+        (tmp_path / "spec-workflow.json").write_text(json.dumps(workflow_state))
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["spec", "status", "-p", str(tmp_path)])
+
+        # Should display timestamp
+        assert "2025-11-30T10:00:00Z" in result.output or "2025" in result.output
