@@ -201,6 +201,148 @@ class TestInteractiveSpecWizard:
         # Function returns tuple[Optional[str], str]
         assert callable(interactive_spec_create)
 
+    def test_interactive_spec_create_returns_none_on_cancel(self, tmp_path):
+        """
+        Purpose: Verify interactive_spec_create returns (None, '') when user cancels.
+        Tests feature: interactive_spec_create returns (None, '') when cancelled
+        """
+        from unittest.mock import patch, MagicMock
+        from claude_agent.spec_wizard import interactive_spec_create
+
+        # Mock questionary.text to return None (user cancelled/empty)
+        mock_text = MagicMock()
+        mock_text.ask.return_value = None
+
+        with patch("claude_agent.spec_wizard.questionary.text", return_value=mock_text):
+            goal, context = interactive_spec_create(tmp_path)
+
+        assert goal is None
+        assert context == ""
+
+    def test_interactive_spec_create_returns_goal_and_context(self, tmp_path):
+        """
+        Purpose: Verify interactive_spec_create returns goal and context from user.
+        Tests feature: interactive_spec_create prompts for goal with multiline input
+        """
+        from unittest.mock import patch, MagicMock
+        from claude_agent.spec_wizard import interactive_spec_create
+
+        # Mock questionary.text for goal
+        mock_goal_text = MagicMock()
+        mock_goal_text.ask.return_value = "Build a todo app"
+
+        # Mock questionary.confirm for "add context?" prompt
+        mock_confirm = MagicMock()
+        mock_confirm.ask.return_value = True
+
+        # Mock questionary.text for context
+        mock_context_text = MagicMock()
+        mock_context_text.ask.return_value = "Use React and TypeScript"
+
+        call_count = [0]
+
+        def mock_text_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_goal_text
+            return mock_context_text
+
+        with patch("claude_agent.spec_wizard.questionary.text", side_effect=mock_text_side_effect):
+            with patch("claude_agent.spec_wizard.questionary.confirm", return_value=mock_confirm):
+                goal, context = interactive_spec_create(tmp_path)
+
+        assert goal == "Build a todo app"
+        assert context == "Use React and TypeScript"
+
+    def test_interactive_spec_create_skips_context_when_declined(self, tmp_path):
+        """
+        Purpose: Verify context prompt is skipped when user declines.
+        Tests feature: interactive_spec_create skips context prompt when user declines
+        """
+        from unittest.mock import patch, MagicMock
+        from claude_agent.spec_wizard import interactive_spec_create
+
+        # Mock questionary.text for goal
+        mock_goal_text = MagicMock()
+        mock_goal_text.ask.return_value = "Build a todo app"
+
+        # Mock questionary.confirm - user says NO to context
+        mock_confirm = MagicMock()
+        mock_confirm.ask.return_value = False
+
+        with patch("claude_agent.spec_wizard.questionary.text", return_value=mock_goal_text):
+            with patch("claude_agent.spec_wizard.questionary.confirm", return_value=mock_confirm):
+                goal, context = interactive_spec_create(tmp_path)
+
+        assert goal == "Build a todo app"
+        assert context == ""  # No context because user declined
+
+    def test_interactive_spec_review_returns_action(self, tmp_path):
+        """
+        Purpose: Verify interactive_spec_review returns user's action choice.
+        Tests feature: interactive_spec_review function returns action string
+        """
+        from unittest.mock import patch, MagicMock
+        from claude_agent.spec_wizard import interactive_spec_review
+
+        mock_select = MagicMock()
+        mock_select.ask.return_value = "view"
+
+        with patch("claude_agent.spec_wizard.questionary.select", return_value=mock_select):
+            action = interactive_spec_review(tmp_path / "spec.md")
+
+        assert action == "view"
+
+    def test_interactive_validation_review_shows_pass_options(self, tmp_path):
+        """
+        Purpose: Verify validation review shows correct options when passed=True.
+        Tests feature: interactive_validation_review shows different options based on passed flag
+        """
+        from unittest.mock import patch, MagicMock, call
+        from claude_agent.spec_wizard import interactive_validation_review
+
+        mock_select = MagicMock()
+        mock_select.ask.return_value = "continue"
+
+        with patch("claude_agent.spec_wizard.questionary.select", return_value=mock_select) as mock_questionary:
+            action = interactive_validation_review(tmp_path / "validation.md", passed=True)
+
+        # Verify "continue" is returned
+        assert action == "continue"
+
+        # Verify select was called with choices containing "Continue to decomposition"
+        call_args = mock_questionary.call_args
+        choices = call_args.kwargs.get("choices", call_args.args[1] if len(call_args.args) > 1 else [])
+        choice_values = [c.value for c in choices]
+        assert "continue" in choice_values
+        assert "view" in choice_values
+        assert "edit" in choice_values
+
+    def test_interactive_validation_review_shows_fail_options(self, tmp_path):
+        """
+        Purpose: Verify validation review shows correct options when passed=False.
+        Tests feature: interactive_validation_review shows different options based on passed flag
+        """
+        from unittest.mock import patch, MagicMock
+        from claude_agent.spec_wizard import interactive_validation_review
+
+        mock_select = MagicMock()
+        mock_select.ask.return_value = "fix"
+
+        with patch("claude_agent.spec_wizard.questionary.select", return_value=mock_select) as mock_questionary:
+            action = interactive_validation_review(tmp_path / "validation.md", passed=False)
+
+        # Verify "fix" is returned
+        assert action == "fix"
+
+        # Verify select was called with failure-specific choices
+        call_args = mock_questionary.call_args
+        choices = call_args.kwargs.get("choices", call_args.args[1] if len(call_args.args) > 1 else [])
+        choice_values = [c.value for c in choices]
+        assert "view" in choice_values
+        assert "fix" in choice_values
+        assert "override" in choice_values
+
 
 class TestPromptLoading:
     """Test spec prompt loader functions."""

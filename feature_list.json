@@ -837,7 +837,7 @@
       "Step 2: Call interactive_spec_create",
       "Step 3: Verify return is (None, '')"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -848,7 +848,7 @@
       "Step 2: Call interactive_spec_create",
       "Step 3: Verify questionary.text was called with multiline=True"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -860,7 +860,7 @@
       "Step 3: Verify additional context prompt appears",
       "Step 4: Verify context is returned in tuple"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -872,7 +872,7 @@
       "Step 3: Verify context text prompt is not shown",
       "Step 4: Verify empty context is returned"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -883,7 +883,7 @@
       "Step 2: Verify return type is str",
       "Step 3: Verify valid return values include 'continue', 'view', 'edit', 'regenerate'"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -896,7 +896,7 @@
       "Step 4: Call with passed=False",
       "Step 5: Verify 'View blocking issues' is an option"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
