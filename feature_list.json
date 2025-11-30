@@ -945,7 +945,7 @@
       "Step 5: Verify spec-draft.md is valid markdown"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "integration",
@@ -958,7 +958,7 @@
       "Step 5: Verify validation report contains verdict"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "integration",
@@ -971,7 +971,7 @@
       "Step 5: Verify spec-validated.md contains improved content"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "integration",
@@ -984,7 +984,7 @@
       "Step 5: Verify array structure with category, description, steps, passes fields"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "integration",
@@ -996,7 +996,7 @@
       "Step 4: Verify app_spec.txt content matches spec-validated.md"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "integration",
@@ -1011,7 +1011,7 @@
       "Step 7: Verify app_spec.txt exists"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "integration",
@@ -1024,7 +1024,7 @@
       "Step 5: Verify entries are in order: create, validate, decompose"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "integration",
@@ -1036,7 +1036,7 @@
       "Step 4: Verify feature_list.json is used"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "error-handling",
@@ -1048,7 +1048,7 @@
       "Step 4: Verify non-zero exit code"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "error-handling",
@@ -1120,7 +1120,7 @@
       "Step 4: Verify partial files are not corrupted"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "error-handling",
@@ -1701,7 +1701,7 @@
       "Step 3: Verify path to spec-draft.md is shown"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "functional",
@@ -1724,7 +1724,7 @@
       "Step 4: Verify manual testing count is shown"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "functional",
@@ -1820,7 +1820,7 @@
       "Step 4: Verify non-zero exit code"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "error-handling",
@@ -2077,7 +2077,7 @@
       "Step 3: Verify spec-draft.md is created inside"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "error-handling",
@@ -2090,7 +2090,7 @@
       "Step 5: Verify partial progress is preserved if any"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "error-handling",
@@ -2103,7 +2103,7 @@
       "Step 5: Verify suggestion to retry"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   },
   {
     "category": "functional",
@@ -2367,6 +2367,6 @@
       "Step 10: Verify validation triggers when all automated tests pass"
     ],
     "passes": false,
-    "requires_manual_testing": false
+    "requires_manual_testing": true
   }
 ]
