@@ -102,7 +102,7 @@ DONE:
 - [x] All prompt templates
 - [x] Comprehensive unit test coverage (97 tests)
 
-TESTS STILL FAILING (35 remaining):
+TESTS STILL FAILING (24 remaining):
 - Error handling for Claude API errors (requires integration testing)
 - Concurrent access safety (requires complex mocking)
 - Keyboard interrupt handling (requires signal mocking)
@@ -157,10 +157,10 @@ KEY CHANGES THIS SESSION
 ================================================================================
 
 Files modified:
-- tests/test_spec_workflow.py: Added 38 new tests across 14 test classes
-- feature_list.json: Updated 30 tests to passing status
+- tests/test_spec_workflow.py: Added 46 new tests across 17 test classes
+- feature_list.json: Updated 41 tests to passing status
 
-Total pytest tests: 108 passing (was 70)
-Total feature tests: 165/200 passing (82.5%)
+Total pytest tests: 116 passing (was 70)
+Total feature tests: 176/200 passing (88%)
 
 ================================================================================

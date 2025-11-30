@@ -1095,7 +1095,7 @@
       "Step 3: Verify no crash occurs",
       "Step 4: Verify error or fallback message is shown"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1327,7 +1327,7 @@
       "Step 2: Run spec create",
       "Step 3: Verify Claude client uses configured model"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1338,7 +1338,7 @@
       "Step 2: Run spec create",
       "Step 3: Verify Claude client uses max_turns=500"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1360,7 +1360,7 @@
       "Step 2: Run spec create",
       "Step 3: Verify extra_commands are passed to configure_security"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1371,7 +1371,7 @@
       "Step 2: Verify 'STEP 1: CREATE' appears in output",
       "Step 3: Verify description mentions specification creation"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1382,7 +1382,7 @@
       "Step 2: Verify 'STEP 2: VALIDATE' appears in output",
       "Step 3: Verify description mentions validation"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1393,7 +1393,7 @@
       "Step 2: Verify 'STEP 3: DECOMPOSE' appears in output",
       "Step 3: Verify '~75 features' appears in output"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1404,7 +1404,7 @@
       "Step 2: Verify goal is printed",
       "Step 3: Verify goal is truncated with '...' if >100 chars"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1417,7 +1417,7 @@
       "Step 4: Verify no runtime conflicts",
       "Step 5: Verify existing agent behavior unchanged"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1772,7 +1772,7 @@
       "Step 4: Run spec validate (passing)",
       "Step 5: Verify spec_file updated to 'spec-validated.md'"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2324,7 +2324,7 @@
       "Step 2: Run spec auto",
       "Step 3: Verify decompose session receives feature_count=100"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {

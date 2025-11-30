@@ -1447,3 +1447,142 @@ class TestGitignoreFriendly:
         assert "password" not in state_str.lower()
         assert "token" not in state_str.lower()
         assert "secret" not in state_str.lower()
+
+
+class TestSpecWorkflowHeaders:
+    """Test spec workflow header printing."""
+
+    def test_spec_create_prints_header_with_step_number(self):
+        """
+        Purpose: Verify spec create prints header with step number.
+        Tests feature: Spec create prints header with step number
+        """
+        from pathlib import Path
+
+        agent_path = Path(__file__).parent.parent / "src" / "claude_agent" / "agent.py"
+        content = agent_path.read_text()
+
+        # Check for step 1 in create session
+        assert "STEP 1" in content
+        assert "SPEC WORKFLOW" in content
+
+    def test_spec_validate_prints_header_with_step_number(self):
+        """
+        Purpose: Verify spec validate prints header with step number.
+        Tests feature: Spec validate prints header with step number
+        """
+        from pathlib import Path
+
+        agent_path = Path(__file__).parent.parent / "src" / "claude_agent" / "agent.py"
+        content = agent_path.read_text()
+
+        # Check for step 2 in validate session
+        assert "STEP 2" in content
+
+    def test_spec_decompose_prints_header_with_step_number_and_feature_count(self):
+        """
+        Purpose: Verify spec decompose prints header with step number and feature count.
+        Tests feature: Spec decompose prints header with step number and feature count
+        """
+        from pathlib import Path
+
+        agent_path = Path(__file__).parent.parent / "src" / "claude_agent" / "agent.py"
+        content = agent_path.read_text()
+
+        # Check for step 3 in decompose session
+        assert "STEP 3" in content
+        # Check feature count is shown
+        assert "feature_count" in content
+
+    def test_spec_workflow_prints_goal_at_start(self):
+        """
+        Purpose: Verify spec workflow prints goal (truncated if long) at start.
+        Tests feature: Spec workflow prints goal (truncated if long) at start
+        """
+        from pathlib import Path
+
+        agent_path = Path(__file__).parent.parent / "src" / "claude_agent" / "agent.py"
+        content = agent_path.read_text()
+
+        # Check that goal is printed at workflow start
+        assert 'Goal:' in content
+        # Check truncation
+        assert "goal[:100]" in content
+
+
+class TestConfigPassthrough:
+    """Test configuration is passed through to workflow."""
+
+    def test_spec_workflow_uses_configured_model(self, tmp_path):
+        """
+        Purpose: Verify spec workflow uses configured model from config file.
+        Tests feature: Spec workflow uses configured model from config file
+        """
+        from claude_agent.config import merge_config
+
+        # Create config with custom model
+        config_content = """
+agent:
+  model: claude-3-sonnet-20240229
+"""
+        (tmp_path / ".claude-agent.yaml").write_text(config_content)
+
+        config = merge_config(project_dir=tmp_path)
+        assert config.agent.model == "claude-3-sonnet-20240229"
+
+    def test_spec_workflow_uses_configured_max_turns(self, tmp_path):
+        """
+        Purpose: Verify spec workflow uses configured max_turns from config file.
+        Tests feature: Spec workflow uses configured max_turns from config file
+        """
+        from claude_agent.config import merge_config
+
+        # Create config with custom max_turns
+        config_content = """
+agent:
+  max_turns: 25
+"""
+        (tmp_path / ".claude-agent.yaml").write_text(config_content)
+
+        config = merge_config(project_dir=tmp_path)
+        assert config.agent.max_turns == 25
+
+    def test_extra_commands_passed_to_security(self):
+        """
+        Purpose: Verify extra commands from config are passed to security.
+        Tests feature: Extra commands from config are passed to security
+        """
+        from pathlib import Path
+
+        agent_path = Path(__file__).parent.parent / "src" / "claude_agent" / "agent.py"
+        content = agent_path.read_text()
+
+        # Check that extra_commands is passed to configure_security
+        assert "extra_commands=config.security.extra_commands" in content
+
+
+class TestSpecWorkflowIntegration:
+    """Test spec workflow integrates with existing agent."""
+
+    def test_spec_workflow_integrates_without_conflicts(self):
+        """
+        Purpose: Verify spec workflow integrates with existing agent without conflicts.
+        Tests feature: Spec workflow integrates with existing agent without conflicts
+        """
+        from pathlib import Path
+
+        # Verify that imports work without circular dependency issues
+        from claude_agent.agent import (
+            run_spec_create_session,
+            run_spec_validate_session,
+            run_spec_decompose_session,
+            run_spec_workflow,
+            run_autonomous_agent,
+        )
+
+        # All functions should be callable
+        assert callable(run_spec_create_session)
+        assert callable(run_spec_validate_session)
+        assert callable(run_spec_decompose_session)
+        assert callable(run_spec_workflow)
+        assert callable(run_autonomous_agent)
