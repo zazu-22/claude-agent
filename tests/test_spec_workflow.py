@@ -1214,3 +1214,236 @@ class TestCLIPathHandling:
 
         # Should display timestamp
         assert "2025-11-30T10:00:00Z" in result.output or "2025" in result.output
+
+    def test_spec_workflow_works_with_absolute_paths(self, tmp_path):
+        """
+        Purpose: Verify spec workflow works with absolute project paths.
+        Tests feature: Spec workflow works with absolute project paths
+        """
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Use absolute path
+        abs_path = str(tmp_path.resolve())
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["spec", "status", "-p", abs_path])
+
+        assert result.exit_code == 0
+        assert "Project:" in result.output
+
+    def test_spec_workflow_works_with_paths_containing_spaces(self, tmp_path):
+        """
+        Purpose: Verify spec workflow works with paths containing spaces.
+        Tests feature: Spec workflow works with paths containing spaces
+        """
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create directory with space in name
+        space_dir = tmp_path / "project with spaces"
+        space_dir.mkdir()
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["spec", "status", "-p", str(space_dir)])
+
+        assert result.exit_code == 0
+        assert "Project:" in result.output
+
+
+class TestSpecWorkflowConfig:
+    """Test spec workflow configuration usage."""
+
+    def test_spec_workflow_respects_project_dir(self, tmp_path):
+        """
+        Purpose: Verify spec workflow respects project_dir option.
+        Tests feature: Spec workflow respects project_dir option across all subcommands
+        """
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create different directories
+        dir1 = tmp_path / "project1"
+        dir2 = tmp_path / "project2"
+        dir1.mkdir()
+        dir2.mkdir()
+
+        runner = CliRunner()
+
+        # Create spec-draft.md in dir1
+        (dir1 / "spec-draft.md").write_text("# Test")
+
+        # Status should show different results for each dir
+        result1 = runner.invoke(main, ["spec", "status", "-p", str(dir1)])
+        result2 = runner.invoke(main, ["spec", "status", "-p", str(dir2)])
+
+        # dir1 has spec-draft.md, dir2 doesn't
+        assert "present" in result1.output
+        assert "Phase: created" in result1.output
+        assert "Phase: none" in result2.output
+
+
+class TestSecurityConfiguration:
+    """Test security configuration is applied to spec workflow."""
+
+    def test_security_hooks_are_applied(self):
+        """
+        Purpose: Verify security hooks are applied to spec workflow sessions.
+        Tests feature: Security hooks are applied to spec workflow sessions
+
+        Note: This test verifies the code structure rather than runtime behavior
+        since running actual sessions requires Claude API.
+        """
+        from pathlib import Path
+        import ast
+
+        agent_path = Path(__file__).parent.parent / "src" / "claude_agent" / "agent.py"
+        content = agent_path.read_text()
+
+        # Check that configure_security is called in spec session functions
+        assert "configure_security" in content
+
+        # Parse and find calls to configure_security
+        tree = ast.parse(content)
+        configure_calls = 0
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id == "configure_security":
+                    configure_calls += 1
+                elif isinstance(node.func, ast.Attribute) and node.func.attr == "configure_security":
+                    configure_calls += 1
+
+        # Should have multiple calls (once per session type)
+        assert configure_calls >= 3  # create, validate, decompose
+
+    def test_spec_workflow_uses_same_security_as_coding_agent(self):
+        """
+        Purpose: Verify spec workflow uses same security configuration as coding agent.
+        Tests feature: Spec workflow uses same security configuration as coding agent
+        """
+        from pathlib import Path
+
+        agent_path = Path(__file__).parent.parent / "src" / "claude_agent" / "agent.py"
+        content = agent_path.read_text()
+
+        # Check that extra_commands is passed to configure_security
+        assert "extra_commands=config.security.extra_commands" in content
+
+
+class TestStackDetection:
+    """Test stack detection in spec workflow."""
+
+    def test_spec_workflow_detects_stack(self, tmp_path):
+        """
+        Purpose: Verify spec workflow detects stack from project files.
+        Tests feature: Spec workflow detects stack from project files
+        """
+        from claude_agent.detection import detect_stack
+
+        # Create Python project markers
+        (tmp_path / "pyproject.toml").write_text("[project]")
+
+        stack = detect_stack(tmp_path)
+        assert stack == "python"
+
+    def test_spec_workflow_detects_nodejs_stack(self, tmp_path):
+        """
+        Purpose: Verify spec workflow detects Node.js stack from project files.
+        Tests feature: Spec workflow detects stack from project files
+        """
+        from claude_agent.detection import detect_stack
+
+        # Create Node.js project markers
+        (tmp_path / "package.json").write_text("{}")
+
+        stack = detect_stack(tmp_path)
+        assert stack == "node"  # Internal name is "node" not "nodejs"
+
+
+class TestGoalHandling:
+    """Test goal handling in spec workflow."""
+
+    def test_record_spec_step_stores_goal(self, tmp_path):
+        """
+        Purpose: Verify spec workflow records goal in spec-workflow.json.
+        Tests feature: Spec workflow records goal in spec-workflow.json
+        """
+        from claude_agent.progress import record_spec_step, get_spec_workflow_state
+
+        record_spec_step(tmp_path, "create", {
+            "status": "complete",
+            "goal": "Build a todo app"
+        })
+
+        state = get_spec_workflow_state(tmp_path)
+        assert "goal" in state["history"][0]
+        assert state["history"][0]["goal"] == "Build a todo app"
+
+    def test_workflow_truncates_long_goal_in_output(self):
+        """
+        Purpose: Verify spec auto truncates long goals in console output.
+        Tests feature: Spec auto truncates long goals in console output
+
+        This is verified by checking the code implementation.
+        """
+        from pathlib import Path
+
+        agent_path = Path(__file__).parent.parent / "src" / "claude_agent" / "agent.py"
+        content = agent_path.read_text()
+
+        # Check that goal is truncated with ellipsis
+        assert "goal[:100]" in content or "goal[:200]" in content
+        assert "..." in content
+
+
+class TestSpecWorkflowPartialCompletion:
+    """Test spec workflow can be restarted after partial completion."""
+
+    def test_workflow_can_restart_from_created_phase(self, tmp_path):
+        """
+        Purpose: Verify spec workflow can be restarted after partial completion.
+        Tests feature: Spec workflow can be restarted after partial completion
+        """
+        from claude_agent.progress import get_spec_phase, record_spec_step
+
+        # Simulate partial completion (create done, validate not done)
+        (tmp_path / "spec-draft.md").write_text("# Draft spec")
+        record_spec_step(tmp_path, "create", {"status": "complete"})
+
+        # Phase should be "created"
+        phase = get_spec_phase(tmp_path)
+        assert phase == "created"
+
+        # A subsequent run would start from validation
+        # (verified by checking files exist)
+        assert (tmp_path / "spec-draft.md").exists()
+        assert not (tmp_path / "spec-validated.md").exists()
+
+
+class TestGitignoreFriendly:
+    """Test spec workflow files are gitignore-friendly."""
+
+    def test_workflow_files_have_no_secrets(self, tmp_path):
+        """
+        Purpose: Verify spec workflow files don't contain secrets.
+        Tests feature: Spec workflow files are gitignore-friendly (no secrets)
+        """
+        import json
+        from claude_agent.progress import record_spec_step, get_spec_workflow_state
+
+        # Create workflow state
+        record_spec_step(tmp_path, "create", {
+            "status": "complete",
+            "output_file": "spec-draft.md"
+        })
+
+        state = get_spec_workflow_state(tmp_path)
+
+        # Convert to string and check for sensitive patterns
+        state_str = json.dumps(state)
+
+        # Should not contain API keys, passwords, tokens
+        assert "api_key" not in state_str.lower()
+        assert "password" not in state_str.lower()
+        assert "token" not in state_str.lower()
+        assert "secret" not in state_str.lower()

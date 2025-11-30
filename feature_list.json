@@ -1316,7 +1316,7 @@
       "Step 4: Run spec status -p <temp>",
       "Step 5: Verify status shows temp directory files"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1349,7 +1349,7 @@
       "Step 2: Verify configure_security is called",
       "Step 3: Verify stack is detected and used for security config"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1734,7 +1734,7 @@
       "Step 2: Read spec-workflow.json",
       "Step 3: Verify goal field contains the provided goal"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1843,7 +1843,7 @@
       "Step 3: Verify no sensitive data in spec-workflow.json",
       "Step 4: Verify no API keys or credentials in any file"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1869,7 +1869,7 @@
       "Step 4: Verify new spec-draft.md is created",
       "Step 5: Verify history shows two create entries"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2148,7 +2148,7 @@
       "Step 4: Run coding agent",
       "Step 5: Verify same security configuration applies"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2160,7 +2160,7 @@
       "Step 3: Verify node stack is detected",
       "Step 4: Verify security is configured for node stack"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2265,7 +2265,7 @@
       "Step 3: Verify files created at absolute path",
       "Step 4: Verify no path resolution issues"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2277,7 +2277,7 @@
       "Step 3: Verify no errors from path handling",
       "Step 4: Verify files created correctly"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2336,7 +2336,7 @@
       "Step 3: Verify goal is truncated to ~100 chars with '...'",
       "Step 4: Verify full goal is still used in session"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {

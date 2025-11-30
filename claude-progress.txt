@@ -63,12 +63,32 @@ COMPLETED THIS SESSION (SESSION 8)
      * test_cli_resolves_relative_paths
      * test_spec_status_shows_correct_timestamp_format
 
-7. FEATURE LIST UPDATED
-   - Marked 20 additional tests as passing (from 135 to 155)
-   - Current status: 155/200 tests passing (77.5%)
+7. ADDITIONAL TESTS (2nd batch) - DONE
+   - Added TestCLIPathHandling extra tests:
+     * test_spec_workflow_works_with_absolute_paths
+     * test_spec_workflow_works_with_paths_containing_spaces
+   - Added TestSpecWorkflowConfig class with 1 test:
+     * test_spec_workflow_respects_project_dir
+   - Added TestSecurityConfiguration class with 2 tests:
+     * test_security_hooks_are_applied
+     * test_spec_workflow_uses_same_security_as_coding_agent
+   - Added TestStackDetection class with 2 tests:
+     * test_spec_workflow_detects_stack
+     * test_spec_workflow_detects_nodejs_stack
+   - Added TestGoalHandling class with 2 tests:
+     * test_record_spec_step_stores_goal
+     * test_workflow_truncates_long_goal_in_output
+   - Added TestSpecWorkflowPartialCompletion class with 1 test:
+     * test_workflow_can_restart_from_created_phase
+   - Added TestGitignoreFriendly class with 1 test:
+     * test_workflow_files_have_no_secrets
 
-8. ALL TESTS PASS
-   - 97/97 pytest tests pass (was 70, now 97)
+8. FEATURE LIST UPDATED
+   - Marked 30 additional tests as passing (from 135 to 165)
+   - Current status: 165/200 tests passing (82.5%)
+
+9. ALL TESTS PASS
+   - 108/108 pytest tests pass (was 70, now 108)
    - Tests cover all areas mentioned above plus previous session tests
 
 ================================================================================
@@ -82,7 +102,7 @@ DONE:
 - [x] All prompt templates
 - [x] Comprehensive unit test coverage (97 tests)
 
-TESTS STILL FAILING (45 remaining):
+TESTS STILL FAILING (35 remaining):
 - Error handling for Claude API errors (requires integration testing)
 - Concurrent access safety (requires complex mocking)
 - Keyboard interrupt handling (requires signal mocking)
@@ -137,10 +157,10 @@ KEY CHANGES THIS SESSION
 ================================================================================
 
 Files modified:
-- tests/test_spec_workflow.py: Added 27 new tests across 8 test classes
-- feature_list.json: Updated 20 tests to passing status
+- tests/test_spec_workflow.py: Added 38 new tests across 14 test classes
+- feature_list.json: Updated 30 tests to passing status
 
-Total pytest tests: 97 passing (was 70)
-Total feature tests: 155/200 passing (77.5%)
+Total pytest tests: 108 passing (was 70)
+Total feature tests: 165/200 passing (82.5%)
 
 ================================================================================
