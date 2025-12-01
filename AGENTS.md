@@ -417,3 +417,13 @@ Follow conventional commits:
 - Commit frequently
 - One logical change per commit
 - Never skip pre-commit hooks
+
+### Versioning
+Version numbers are maintained in two places that must be kept in sync:
+- `pyproject.toml` - The canonical version for the package
+- `src/claude_agent/__init__.py` - Runtime-accessible version (`__version__`)
+
+When bumping versions:
+1. Update both files to the same version
+2. Use semantic versioning (MAJOR.MINOR.PATCH)
+3. Include version bump in the commit with the relevant changes

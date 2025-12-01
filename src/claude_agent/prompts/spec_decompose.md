@@ -60,8 +60,11 @@ Set `requires_manual_testing: true` for features that:
 
 ### OUTPUT
 
-1. Create `feature_list.json` with all features
-2. Copy spec to `app_spec.txt` for coding agent reference
+**IMPORTANT: Save files to `specs/` directory** (create it if needed).
+Do NOT create subdirectories within `specs/` - save directly to `specs/`.
+
+1. Create `specs/feature_list.json` with all features
+2. Copy spec to `specs/app_spec.txt` for coding agent reference
 3. Print summary:
    - Total features by category
    - Number requiring manual testing

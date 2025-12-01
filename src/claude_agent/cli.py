@@ -20,6 +20,9 @@ from claude_agent.config import (
 )
 from claude_agent.detection import detect_stack, get_available_stacks
 from claude_agent.progress import (
+    find_app_spec,
+    find_feature_list,
+    find_spec_validation_report,
     get_session_state,
     print_progress_summary,
 )
@@ -140,18 +143,27 @@ def main(
             "validation-history.json",
             "validation-progress.txt",
         ]
-        existing = [f for f in agent_files if (project_dir / f).exists()]
+        # Check both project root and specs/ subdirectory
+        existing: list[Path] = []
+        for f in agent_files:
+            root_path = project_dir / f
+            specs_path = project_dir / "specs" / f
+            if root_path.exists():
+                existing.append(root_path)
+            if specs_path.exists():
+                existing.append(specs_path)
 
         if not existing:
             click.echo("No agent files to reset.")
         else:
             click.echo(f"Will delete from {project_dir}:")
             for f in existing:
-                click.echo(f"  - {f}")
+                rel_path = f.relative_to(project_dir)
+                click.echo(f"  - {rel_path}")
 
             if click.confirm("\nProceed with reset?"):
                 for f in existing:
-                    (project_dir / f).unlink()
+                    f.unlink()
                 click.echo("Reset complete.")
                 click.echo("Run 'claude-agent' again to start fresh.")
                 sys.exit(0)
@@ -191,13 +203,13 @@ def main(
 
     # Check if we have a spec - if not, check for existing or run wizard
     if not merged_config.spec_content:
-        feature_list = project_dir / "feature_list.json"
-        existing_spec = project_dir / "app_spec.txt"
+        feature_list = find_feature_list(project_dir)
+        existing_spec = find_app_spec(project_dir)
 
-        if feature_list.exists():
+        if feature_list:
             # Continuing existing project - no spec needed
             pass
-        elif existing_spec.exists():
+        elif existing_spec:
             # Found existing spec (e.g., from aborted review)
             click.echo(f"Found existing spec: {existing_spec}")
             merged_config.goal = existing_spec.read_text()
@@ -481,17 +493,21 @@ def spec_status(project_dir):
     else:
         click.echo("  - spec-validated.md: missing")
 
-    # Check spec-validation.md (only in root for now)
-    validation_path = project_dir / "spec-validation.md"
-    symbol = "+" if validation_path.exists() else "-"
-    status = "present" if validation_path.exists() else "missing"
-    click.echo(f"  {symbol} spec-validation.md: {status}")
+    # Check spec-validation.md
+    validation_path = find_spec_validation_report(project_dir)
+    if validation_path:
+        rel_path = validation_path.relative_to(project_dir)
+        click.echo(f"  + spec-validation.md: {rel_path}")
+    else:
+        click.echo("  - spec-validation.md: missing")
 
     # Check feature_list.json
-    feature_path = project_dir / "feature_list.json"
-    symbol = "+" if feature_path.exists() else "-"
-    status = "present" if feature_path.exists() else "missing"
-    click.echo(f"  {symbol} feature_list.json: {status}")
+    feature_path = find_feature_list(project_dir)
+    if feature_path:
+        rel_path = feature_path.relative_to(project_dir)
+        click.echo(f"  + feature_list.json: {rel_path}")
+    else:
+        click.echo("  - feature_list.json: missing")
 
     # Show workflow state if exists
     state = get_spec_workflow_state(project_dir)

@@ -83,6 +83,16 @@ def find_spec_validation_report(project_dir: Path) -> Optional[Path]:
     return _find_spec_file(project_dir, "spec-validation.md")
 
 
+def find_feature_list(project_dir: Path) -> Optional[Path]:
+    """Find feature_list.json in project directory or specs/ subdirectory."""
+    return _find_spec_file(project_dir, "feature_list.json")
+
+
+def find_app_spec(project_dir: Path) -> Optional[Path]:
+    """Find app_spec.txt in project directory or specs/ subdirectory."""
+    return _find_spec_file(project_dir, "app_spec.txt")
+
+
 def parse_validation_verdict(project_dir: Path) -> ValidationVerdict:
     """
     Parse the validation report to extract the actual verdict.
@@ -219,9 +229,9 @@ def count_passing_tests(project_dir: Path) -> tuple[int, int]:
     Returns:
         (passing_count, total_count) tuple
     """
-    feature_list_path = project_dir / "feature_list.json"
+    feature_list_path = find_feature_list(project_dir)
 
-    if not feature_list_path.exists():
+    if not feature_list_path:
         return 0, 0
 
     try:
@@ -248,7 +258,7 @@ def count_tests_by_type(project_dir: Path) -> dict:
         - manual_total: tests requiring manual verification
         - manual_passing: manual tests marked as passing
     """
-    feature_list_path = project_dir / "feature_list.json"
+    feature_list_path = find_feature_list(project_dir)
 
     result = {
         "total": 0,
@@ -259,7 +269,7 @@ def count_tests_by_type(project_dir: Path) -> dict:
         "manual_passing": 0,
     }
 
-    if not feature_list_path.exists():
+    if not feature_list_path:
         return result
 
     try:
@@ -309,10 +319,10 @@ def get_session_state(project_dir: Path) -> str:
         One of: "fresh", "initialized", "in_progress", "pending_validation",
         "validating", "complete"
     """
-    feature_list_path = project_dir / "feature_list.json"
+    feature_list_path = find_feature_list(project_dir)
     history_path = project_dir / "validation-history.json"
 
-    if not feature_list_path.exists():
+    if not feature_list_path:
         return "fresh"
 
     passing, total = count_passing_tests(project_dir)
@@ -496,14 +506,16 @@ def mark_tests_failed(
     Returns:
         (count_updated, list_of_errors)
     """
-    feature_list_path = project_dir / "feature_list.json"
-    temp_path = project_dir / "feature_list.json.tmp"
+    feature_list_path = find_feature_list(project_dir)
 
     errors = []
     updated = 0
 
-    if not feature_list_path.exists():
+    if not feature_list_path:
         return 0, ["feature_list.json does not exist"]
+
+    # Put temp file in same directory as feature_list.json
+    temp_path = feature_list_path.parent / "feature_list.json.tmp"
 
     try:
         with open(feature_list_path) as f:
@@ -635,10 +647,8 @@ def get_spec_phase(project_dir: Path) -> str:
     Returns:
         "none" | "created" | "validated" | "decomposed"
     """
-    feature_list = project_dir / "feature_list.json"
-
     # Check in order of completion (most complete first)
-    if feature_list.exists():
+    if find_feature_list(project_dir) is not None:
         return "decomposed"
     elif find_spec_validated(project_dir) is not None:
         return "validated"

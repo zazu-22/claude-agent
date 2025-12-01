@@ -24,6 +24,8 @@ from claude_agent.detection import (
 from claude_agent.progress import (
     count_passing_tests,
     count_tests_by_type,
+    find_app_spec,
+    find_feature_list,
     find_spec_draft,
     find_spec_validated,
     find_spec_validation_report,
@@ -366,8 +368,8 @@ async def run_autonomous_agent(config: Config) -> None:
     project_dir.mkdir(parents=True, exist_ok=True)
 
     # Check if this is a fresh start or continuation
-    tests_file = project_dir / "feature_list.json"
-    is_first_run = not tests_file.exists()
+    tests_file = find_feature_list(project_dir)
+    is_first_run = tests_file is None
 
     if is_first_run:
         # Validate we have spec content
@@ -375,8 +377,8 @@ async def run_autonomous_agent(config: Config) -> None:
 
         # Check for existing app_spec.txt (e.g., from aborted review)
         if not spec_content:
-            existing_spec = project_dir / "app_spec.txt"
-            if existing_spec.exists():
+            existing_spec = find_app_spec(project_dir)
+            if existing_spec:
                 print(f"Found existing spec: {existing_spec}")
                 spec_content = existing_spec.read_text()
             else:
@@ -914,24 +916,26 @@ async def run_spec_decompose_session(
     async with client:
         status, _ = await run_agent_session(client, prompt, project_dir)
 
-    feature_list_path = project_dir / "feature_list.json"
+    # Find feature_list.json (may be in specs/ or project root)
+    feature_list_path = find_feature_list(project_dir)
 
     record_spec_step(
         project_dir,
         "decompose",
         {
-            "status": "complete" if feature_list_path.exists() else "error",
-            "output_file": "feature_list.json",
+            "status": "complete" if feature_list_path else "error",
+            "output_file": str(feature_list_path) if feature_list_path else None,
             "feature_count": feature_count,
         },
     )
 
-    if feature_list_path.exists():
+    if feature_list_path:
         print(f"\nCreated: {feature_list_path}")
     else:
         print("\nError: feature_list.json was not created")
 
-    return status, feature_list_path
+    # Return a default path if not found (for type consistency)
+    return status, feature_list_path or (project_dir / "feature_list.json")
 
 
 async def run_spec_workflow(config: Config, goal: Optional[str]) -> bool:
@@ -1018,8 +1022,8 @@ async def run_spec_workflow(config: Config, goal: Optional[str]) -> bool:
             return False
     else:
         print("\nStep 3/3: Decomposing into features... [SKIPPED - already decomposed]")
-        feature_path = project_dir / "feature_list.json"
-        if not feature_path.exists():
+        feature_path = find_feature_list(project_dir)
+        if not feature_path:
             print("\nError: feature_list.json not found but phase indicates it should exist")
             return False
 

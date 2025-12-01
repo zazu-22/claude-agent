@@ -46,9 +46,21 @@ class TestSpecCLI:
         """
         Purpose: Verify decompose warns when using unvalidated draft.
         """
+        from unittest.mock import patch, AsyncMock
+
         (tmp_path / "spec-draft.md").write_text("# Draft spec")
-        result = runner.invoke(main, ["spec", "decompose", "-p", str(tmp_path)])
-        # Should either warn about using draft or fail asking for validation
+
+        # Mock run_spec_decompose_session to avoid actual API calls
+        with patch(
+            "claude_agent.agent.run_spec_decompose_session",
+            new_callable=AsyncMock
+        ) as mock_decompose:
+            # Return a path that doesn't exist to trigger non-zero exit
+            mock_decompose.return_value = ("success", tmp_path / "feature_list.json")
+
+            result = runner.invoke(main, ["spec", "decompose", "-p", str(tmp_path)])
+
+        # Should warn about using draft
         assert "warning" in result.output.lower() or "validate" in result.output.lower()
 
     def test_spec_auto_requires_goal(self, runner, tmp_path):
@@ -76,21 +88,24 @@ class TestSpecCLI:
         """
         Purpose: Verify spec create --from-file reads goal from file.
         Tests feature #35 (CLI: spec create accepts goal from --from-file).
-
-        Note: We can't run the full session without mocking Claude, so we
-        verify the file is read by checking it doesn't show the "no goal" error.
-        Since the agent session would fail without Claude, we accept that.
         """
+        from unittest.mock import patch, AsyncMock
+
         goal_file = tmp_path / "goal.txt"
         goal_file.write_text("Build a task management application")
 
-        # The command will fail because there's no Claude connection,
-        # but it should NOT fail with "goal required" error
-        result = runner.invoke(main, [
-            "spec", "create",
-            "--from-file", str(goal_file),
-            "-p", str(tmp_path)
-        ])
+        # Mock run_spec_create_session to avoid actual API calls
+        with patch(
+            "claude_agent.agent.run_spec_create_session",
+            new_callable=AsyncMock
+        ) as mock_create:
+            mock_create.return_value = ("success", tmp_path / "spec-draft.md")
+
+            result = runner.invoke(main, [
+                "spec", "create",
+                "--from-file", str(goal_file),
+                "-p", str(tmp_path)
+            ])
 
         # Should NOT show "goal or from-file required" error
         assert "--goal or --from-file required" not in result.output
@@ -99,19 +114,23 @@ class TestSpecCLI:
         """
         Purpose: Verify spec validate uses spec-draft.md by default.
         Tests feature #39 (CLI: spec validate defaults to spec-draft.md).
-
-        Note: Without mocking Claude, we can only verify it finds and tries
-        to use the draft file (not that it shows file not found error).
         """
+        from unittest.mock import patch, AsyncMock
+
         # Create a spec-draft.md
         (tmp_path / "spec-draft.md").write_text("# Test Spec\n\nSome content")
 
-        # The command will fail because there's no Claude connection,
-        # but it should NOT fail with "spec-draft.md not found" error
-        result = runner.invoke(main, [
-            "spec", "validate",
-            "-p", str(tmp_path)
-        ])
+        # Mock run_spec_validate_session to avoid actual API calls
+        with patch(
+            "claude_agent.agent.run_spec_validate_session",
+            new_callable=AsyncMock
+        ) as mock_validate:
+            mock_validate.return_value = ("success", True)
+
+            result = runner.invoke(main, [
+                "spec", "validate",
+                "-p", str(tmp_path)
+            ])
 
         # Should NOT show "not found" error since spec-draft.md exists
         assert "not found" not in result.output.lower()
