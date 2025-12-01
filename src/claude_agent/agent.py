@@ -27,6 +27,7 @@ from claude_agent.progress import (
     find_app_spec,
     find_feature_list,
     find_spec_draft,
+    find_spec_for_coding,
     find_spec_validated,
     find_spec_validation_report,
     get_rejection_count,
@@ -375,9 +376,9 @@ async def run_autonomous_agent(config: Config) -> None:
         # Validate we have spec content
         spec_content = config.spec_content
 
-        # Check for existing app_spec.txt (e.g., from aborted review)
+        # Check for existing spec file (e.g., from aborted review or spec workflow)
         if not spec_content:
-            existing_spec = find_app_spec(project_dir)
+            existing_spec = find_spec_for_coding(project_dir)
             if existing_spec:
                 print(f"Found existing spec: {existing_spec}")
                 spec_content = existing_spec.read_text()

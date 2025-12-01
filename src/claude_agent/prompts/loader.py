@@ -127,18 +127,57 @@ def get_validator_prompt(
     )
 
 
-def write_spec_to_project(project_dir: Path, spec_content: str) -> Path:
+def write_spec_to_project(
+    project_dir: Path,
+    spec_content: str,
+    source_path: Path | None = None,
+) -> Path:
     """
     Write spec content to project directory for agent reference.
+
+    External specs (provided via --spec) are copied to specs/app_spec.txt.
+    If the source is already inside the specs/ directory, no copy is made.
+    If specs/spec-validated.md already exists, a warning is emitted about
+    potential conflict.
 
     Args:
         project_dir: Project directory path
         spec_content: Specification content to write
+        source_path: Optional path to the source spec file (to detect if
+                     it's already in specs/)
 
     Returns:
         Path to the written spec file
     """
-    spec_path = project_dir / "app_spec.txt"
+    import sys
+
+    specs_dir = project_dir / "specs"
+
+    # Check if source is already inside specs/ directory
+    if source_path is not None:
+        try:
+            source_path.resolve().relative_to(specs_dir.resolve())
+            # Source is already in specs/ - no need to copy
+            return source_path
+        except ValueError:
+            # Source is outside specs/ - will copy
+            pass
+
+    # Check if spec-validated.md already exists (potential conflict)
+    spec_validated = specs_dir / "spec-validated.md"
+    if spec_validated.exists():
+        print(
+            "Warning: specs/spec-validated.md already exists. "
+            "The external spec will be written to specs/app_spec.txt but "
+            "spec-validated.md will take priority for coding agents.",
+            file=sys.stderr,
+        )
+
+    # Create specs/ directory if needed
+    specs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write to specs/app_spec.txt
+    spec_path = specs_dir / "app_spec.txt"
     spec_path.write_text(spec_content)
     return spec_path
 

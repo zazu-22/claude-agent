@@ -22,6 +22,7 @@ from claude_agent.detection import detect_stack, get_available_stacks
 from claude_agent.progress import (
     find_app_spec,
     find_feature_list,
+    find_spec_for_coding,
     find_spec_validation_report,
     get_session_state,
     print_progress_summary,
@@ -135,6 +136,7 @@ def main(
 
     # Handle --reset flag
     if reset:
+        # Files that can exist in both root and specs/ subdirectory
         agent_files = [
             "feature_list.json",
             "app_spec.txt",
@@ -142,6 +144,12 @@ def main(
             "claude-progress.txt",
             "validation-history.json",
             "validation-progress.txt",
+        ]
+        # Files that only exist in specs/ subdirectory (spec workflow files)
+        specs_only_files = [
+            "spec-draft.md",
+            "spec-validated.md",
+            "spec-validation.md",
         ]
         # Check both project root and specs/ subdirectory
         existing: list[Path] = []
@@ -152,6 +160,15 @@ def main(
                 existing.append(root_path)
             if specs_path.exists():
                 existing.append(specs_path)
+        # Check specs/-only files
+        for f in specs_only_files:
+            specs_path = project_dir / "specs" / f
+            if specs_path.exists():
+                existing.append(specs_path)
+        # Also check for spec-workflow.json in root
+        workflow_file = project_dir / "spec-workflow.json"
+        if workflow_file.exists():
+            existing.append(workflow_file)
 
         if not existing:
             click.echo("No agent files to reset.")
@@ -204,13 +221,13 @@ def main(
     # Check if we have a spec - if not, check for existing or run wizard
     if not merged_config.spec_content:
         feature_list = find_feature_list(project_dir)
-        existing_spec = find_app_spec(project_dir)
+        existing_spec = find_spec_for_coding(project_dir)
 
         if feature_list:
             # Continuing existing project - no spec needed
             pass
         elif existing_spec:
-            # Found existing spec (e.g., from aborted review)
+            # Found existing spec (e.g., from aborted review or spec workflow)
             click.echo(f"Found existing spec: {existing_spec}")
             merged_config.goal = existing_spec.read_text()
         else:

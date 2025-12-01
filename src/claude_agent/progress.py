@@ -93,6 +93,63 @@ def find_app_spec(project_dir: Path) -> Optional[Path]:
     return _find_spec_file(project_dir, "app_spec.txt")
 
 
+# Track whether deprecation warning has been shown for root app_spec.txt
+_root_app_spec_warning_shown = False
+
+
+def find_spec_for_coding(project_dir: Path) -> Optional[Path]:
+    """
+    Find the spec file for coding/validator agents with priority-based search.
+
+    This function searches for spec files in a specific priority order:
+    1. specs/spec-validated.md - Canonical spec workflow output
+    2. specs/app_spec.txt - External spec copied location
+    3. app_spec.txt - Legacy fallback in project root
+
+    The priority ensures that:
+    - Spec workflow users get their validated spec automatically
+    - External --spec users get their copied spec
+    - Legacy projects with root app_spec.txt still work
+
+    Args:
+        project_dir: Project directory to search in
+
+    Returns:
+        Path to the spec file if found, None otherwise
+    """
+    global _root_app_spec_warning_shown
+
+    # Handle non-existent directory gracefully
+    if not project_dir.exists():
+        return None
+
+    # Priority 1: specs/spec-validated.md (canonical spec workflow output)
+    spec_validated = project_dir / "specs" / "spec-validated.md"
+    if spec_validated.exists():
+        return spec_validated
+
+    # Priority 2: specs/app_spec.txt (external spec copied location)
+    specs_app_spec = project_dir / "specs" / "app_spec.txt"
+    if specs_app_spec.exists():
+        return specs_app_spec
+
+    # Priority 3: app_spec.txt (legacy fallback in project root)
+    root_app_spec = project_dir / "app_spec.txt"
+    if root_app_spec.exists():
+        # Emit deprecation warning (once per session)
+        if not _root_app_spec_warning_shown:
+            import sys
+            print(
+                "Warning: app_spec.txt found in project root. "
+                "Consider moving to specs/app_spec.txt for consistency.",
+                file=sys.stderr,
+            )
+            _root_app_spec_warning_shown = True
+        return root_app_spec
+
+    return None
+
+
 def parse_validation_verdict(project_dir: Path) -> ValidationVerdict:
     """
     Parse the validation report to extract the actual verdict.

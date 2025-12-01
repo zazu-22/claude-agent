@@ -64,8 +64,10 @@ Set `requires_manual_testing: true` for features that:
 Do NOT create subdirectories within `specs/` - save directly to `specs/`.
 
 1. Create `specs/feature_list.json` with all features
-2. Copy spec to `specs/app_spec.txt` for coding agent reference
-3. Print summary:
+2. Print summary:
    - Total features by category
    - Number requiring manual testing
    - Dependency chain overview
+
+Note: Do NOT copy the spec to app_spec.txt - the coding agent will find
+the spec directly from specs/spec-validated.md.

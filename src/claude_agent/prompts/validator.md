@@ -47,7 +47,15 @@ pwd
 ls -la
 
 # 3. Read the project specification
-cat app_spec.txt
+if [ -f specs/spec-validated.md ]; then
+  cat specs/spec-validated.md
+elif [ -f specs/app_spec.txt ]; then
+  cat specs/app_spec.txt
+elif [ -f app_spec.txt ]; then
+  cat app_spec.txt
+else
+  echo "ERROR: No spec file found! Check specs/spec-validated.md, specs/app_spec.txt, or app_spec.txt"
+fi
 
 # 4. Read the feature list to see all tests
 cat feature_list.json

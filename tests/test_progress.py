@@ -11,6 +11,7 @@ from claude_agent.progress import (
     find_spec_draft,
     find_spec_validated,
     find_spec_validation_report,
+    find_spec_for_coding,
 )
 
 
@@ -307,3 +308,127 @@ class TestFindSpecFiles:
 
         # Should prefer specs/ location
         assert result == specs_path
+
+
+class TestFindSpecForCoding:
+    """Test find_spec_for_coding() function for coding/validator agents.
+
+    This function implements priority-based spec file discovery:
+    1. specs/spec-validated.md (canonical spec workflow output)
+    2. specs/app_spec.txt (external spec copied location)
+    3. app_spec.txt (legacy fallback in project root)
+    """
+
+    def test_function_exists_with_correct_signature(self):
+        """F1.1: Verify find_spec_for_coding function exists with proper typing."""
+        import inspect
+        from typing import Optional
+
+        # Function should exist and be callable
+        assert callable(find_spec_for_coding)
+
+        # Check signature
+        sig = inspect.signature(find_spec_for_coding)
+        params = list(sig.parameters.keys())
+        assert params == ["project_dir"]
+
+        # Return type should be Optional[Path] (check via annotation)
+        # Note: We can't easily verify Optional[Path] at runtime,
+        # so we verify the function returns Path or None in other tests
+
+    def test_returns_spec_validated_first_priority(self, tmp_path):
+        """F1.2: Returns specs/spec-validated.md when it exists."""
+        specs_dir = tmp_path / "specs"
+        specs_dir.mkdir()
+        spec_validated = specs_dir / "spec-validated.md"
+        spec_validated.write_text("# Validated Spec")
+
+        result = find_spec_for_coding(tmp_path)
+
+        assert result == spec_validated
+        assert result.exists()
+
+    def test_returns_specs_app_spec_second_priority(self, tmp_path):
+        """F1.3: Returns specs/app_spec.txt when spec-validated.md missing."""
+        specs_dir = tmp_path / "specs"
+        specs_dir.mkdir()
+        # Only create specs/app_spec.txt (no spec-validated.md)
+        app_spec = specs_dir / "app_spec.txt"
+        app_spec.write_text("# App Spec")
+
+        result = find_spec_for_coding(tmp_path)
+
+        assert result == app_spec
+        assert result.exists()
+
+    def test_returns_root_app_spec_third_priority(self, tmp_path):
+        """F1.4: Returns root app_spec.txt as legacy fallback."""
+        # Only create root app_spec.txt (no specs/ files)
+        app_spec = tmp_path / "app_spec.txt"
+        app_spec.write_text("# Legacy App Spec")
+
+        result = find_spec_for_coding(tmp_path)
+
+        assert result == app_spec
+        assert result.exists()
+
+    def test_returns_none_when_no_spec_files_exist(self, tmp_path):
+        """F1.5: Returns None when no spec files exist."""
+        # Empty directory - no spec files
+        result = find_spec_for_coding(tmp_path)
+
+        assert result is None
+
+    def test_priority_order_spec_validated_wins(self, tmp_path):
+        """F1.6: spec-validated.md wins when multiple files exist."""
+        specs_dir = tmp_path / "specs"
+        specs_dir.mkdir()
+
+        # Create all three files
+        spec_validated = specs_dir / "spec-validated.md"
+        spec_validated.write_text("# Validated Spec")
+        specs_app_spec = specs_dir / "app_spec.txt"
+        specs_app_spec.write_text("# Specs App Spec")
+        root_app_spec = tmp_path / "app_spec.txt"
+        root_app_spec.write_text("# Root App Spec")
+
+        result = find_spec_for_coding(tmp_path)
+
+        # Should return highest priority (spec-validated.md)
+        assert result == spec_validated
+
+    def test_has_proper_docstring(self):
+        """F1.7: Function has docstring explaining search priority."""
+        docstring = find_spec_for_coding.__doc__
+
+        assert docstring is not None
+        # Docstring should mention the three search locations
+        assert "spec-validated.md" in docstring
+        assert "app_spec.txt" in docstring
+        # Should mention priority order
+        assert "priority" in docstring.lower() or "Priority" in docstring
+
+    def test_handles_nonexistent_directory(self, tmp_path):
+        """ERR.1: Handles non-existent project directory gracefully."""
+        nonexistent = tmp_path / "does_not_exist"
+
+        # Should return None without exception
+        result = find_spec_for_coding(nonexistent)
+
+        assert result is None
+
+    def test_specs_app_spec_over_root_app_spec(self, tmp_path):
+        """Verify specs/app_spec.txt is preferred over root app_spec.txt."""
+        specs_dir = tmp_path / "specs"
+        specs_dir.mkdir()
+
+        # Create both app_spec.txt files (but not spec-validated.md)
+        specs_app_spec = specs_dir / "app_spec.txt"
+        specs_app_spec.write_text("# Specs App Spec")
+        root_app_spec = tmp_path / "app_spec.txt"
+        root_app_spec.write_text("# Root App Spec")
+
+        result = find_spec_for_coding(tmp_path)
+
+        # Should return specs/app_spec.txt (priority 2 over priority 3)
+        assert result == specs_app_spec
