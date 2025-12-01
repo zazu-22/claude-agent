@@ -432,3 +432,66 @@ class TestFindSpecForCoding:
 
         # Should return specs/app_spec.txt (priority 2 over priority 3)
         assert result == specs_app_spec
+
+    def test_emits_deprecation_warning_for_root_app_spec(self, tmp_path, capsys):
+        """F9.1: Verify deprecation warning when using root app_spec.txt."""
+        import claude_agent.progress as progress_module
+
+        # Reset the warning flag for this test
+        progress_module._root_app_spec_warning_shown = False
+
+        # Only create root app_spec.txt (legacy location)
+        app_spec = tmp_path / "app_spec.txt"
+        app_spec.write_text("# Legacy App Spec")
+
+        result = find_spec_for_coding(tmp_path)
+
+        # Should still return the file
+        assert result == app_spec
+
+        # Should emit warning to stderr
+        captured = capsys.readouterr()
+        assert "Warning: app_spec.txt found in project root" in captured.err
+        assert "specs/app_spec.txt" in captured.err
+
+    def test_deprecation_warning_only_shown_once(self, tmp_path, capsys):
+        """F9.2: Verify deprecation warning only appears once per session."""
+        import claude_agent.progress as progress_module
+
+        # Reset the warning flag for this test
+        progress_module._root_app_spec_warning_shown = False
+
+        # Only create root app_spec.txt
+        app_spec = tmp_path / "app_spec.txt"
+        app_spec.write_text("# Legacy App Spec")
+
+        # Call multiple times
+        find_spec_for_coding(tmp_path)
+        find_spec_for_coding(tmp_path)
+        find_spec_for_coding(tmp_path)
+
+        # Should only have one warning
+        captured = capsys.readouterr()
+        warning_count = captured.err.count("Warning: app_spec.txt found in project root")
+        assert warning_count == 1
+
+    def test_no_deprecation_warning_for_specs_location(self, tmp_path, capsys):
+        """F9.3: Verify no warning when using specs/app_spec.txt."""
+        import claude_agent.progress as progress_module
+
+        # Reset the warning flag for this test
+        progress_module._root_app_spec_warning_shown = False
+
+        specs_dir = tmp_path / "specs"
+        specs_dir.mkdir()
+        app_spec = specs_dir / "app_spec.txt"
+        app_spec.write_text("# App Spec")
+
+        result = find_spec_for_coding(tmp_path)
+
+        # Should return the file
+        assert result == app_spec
+
+        # Should NOT emit warning
+        captured = capsys.readouterr()
+        assert "Warning" not in captured.err

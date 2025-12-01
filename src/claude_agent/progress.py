@@ -88,11 +88,6 @@ def find_feature_list(project_dir: Path) -> Optional[Path]:
     return _find_spec_file(project_dir, "feature_list.json")
 
 
-def find_app_spec(project_dir: Path) -> Optional[Path]:
-    """Find app_spec.txt in project directory or specs/ subdirectory."""
-    return _find_spec_file(project_dir, "app_spec.txt")
-
-
 # Track whether deprecation warning has been shown for root app_spec.txt
 _root_app_spec_warning_shown = False
 

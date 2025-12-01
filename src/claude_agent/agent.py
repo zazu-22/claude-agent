@@ -24,7 +24,6 @@ from claude_agent.detection import (
 from claude_agent.progress import (
     count_passing_tests,
     count_tests_by_type,
-    find_app_spec,
     find_feature_list,
     find_spec_draft,
     find_spec_for_coding,

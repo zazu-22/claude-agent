@@ -20,7 +20,6 @@ from claude_agent.config import (
 )
 from claude_agent.detection import detect_stack, get_available_stacks
 from claude_agent.progress import (
-    find_app_spec,
     find_feature_list,
     find_spec_for_coding,
     find_spec_validation_report,
