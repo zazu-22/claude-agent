@@ -65,6 +65,7 @@ specs/
 spec-workflow.json
 claude-progress.txt
 feature_list.json
+validation-history.json
 
 # Don't ignore reports directory
 !reports/
