@@ -60,6 +60,11 @@ analyze-*.sh
 
 # Generated spec workflow files (for this project's own development)
 app_spec.txt
+spec-review.md
+specs/
+spec-workflow.json
+claude-progress.txt
+feature_list.json
 
 # Don't ignore reports directory
 !reports/
