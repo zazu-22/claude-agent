@@ -478,3 +478,106 @@ suggestions: 1
         captured = capsys.readouterr()
         assert "SPEC WORKFLOW - AUTO MODE" in captured.out
         assert "Build a todo app" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_resumes_from_created_phase(self, tmp_path, mock_create_client, mock_config, capsys):
+        """
+        Purpose: Verify workflow skips create step when spec already exists.
+        Tests feature: run_spec_workflow resumes from created phase
+        """
+        from claude_agent.agent import run_spec_workflow
+
+        # Pre-create spec-draft.md to simulate "created" phase
+        (tmp_path / "spec-draft.md").write_text("# Existing Draft Spec")
+
+        call_count = [0]
+
+        def make_mock_client(**kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # First call should be validate (not create)
+                validation_content = """<!-- VALIDATION_RESULT
+verdict: PASS
+blocking: 0
+warnings: 0
+suggestions: 0
+-->
+"""
+                client = MockClient(
+                    should_succeed=True,
+                    create_files={
+                        "spec-validated.md": "# Validated",
+                        "spec-validation.md": validation_content
+                    }
+                )
+            else:
+                # Second call: decompose
+                features = [{"category": "functional", "description": "Test", "steps": [], "passes": False}]
+                client = MockClient(
+                    should_succeed=True,
+                    create_files={"feature_list.json": json.dumps(features)}
+                )
+            client.project_dir = tmp_path
+            return client
+
+        mock_create_client.side_effect = make_mock_client
+
+        # Resume without goal (should work since spec exists)
+        result = await run_spec_workflow(mock_config, None)
+
+        assert result is True
+        # Should have skipped create (only 2 calls: validate + decompose)
+        assert call_count[0] == 2
+
+        captured = capsys.readouterr()
+        assert "SKIPPED - already exists" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_resumes_from_validated_phase(self, tmp_path, mock_create_client, mock_config, capsys):
+        """
+        Purpose: Verify workflow skips create and validate when already validated.
+        Tests feature: run_spec_workflow resumes from validated phase
+        """
+        from claude_agent.agent import run_spec_workflow
+
+        # Pre-create both draft and validated specs
+        (tmp_path / "spec-draft.md").write_text("# Draft")
+        (tmp_path / "spec-validated.md").write_text("# Validated")
+
+        call_count = [0]
+
+        def make_mock_client(**kwargs):
+            call_count[0] += 1
+            # Only decompose should be called
+            features = [{"category": "functional", "description": "Test", "steps": [], "passes": False}]
+            client = MockClient(
+                should_succeed=True,
+                create_files={"feature_list.json": json.dumps(features)}
+            )
+            client.project_dir = tmp_path
+            return client
+
+        mock_create_client.side_effect = make_mock_client
+
+        result = await run_spec_workflow(mock_config, None)
+
+        assert result is True
+        # Should have only called decompose (1 call)
+        assert call_count[0] == 1
+
+        captured = capsys.readouterr()
+        assert "SKIPPED - already exists" in captured.out
+        assert "SKIPPED - already validated" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_requires_goal_when_no_spec(self, tmp_path, mock_create_client, mock_config):
+        """
+        Purpose: Verify workflow requires goal when no spec exists.
+        Tests feature: run_spec_workflow returns False without goal when phase is none
+        """
+        from claude_agent.agent import run_spec_workflow
+
+        # Don't create any files - phase should be "none"
+        result = await run_spec_workflow(mock_config, None)
+
+        assert result is False

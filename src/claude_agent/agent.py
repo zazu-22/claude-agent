@@ -934,62 +934,94 @@ async def run_spec_decompose_session(
     return status, feature_list_path
 
 
-async def run_spec_workflow(config: Config, goal: str) -> bool:
+async def run_spec_workflow(config: Config, goal: Optional[str]) -> bool:
     """
-    Run full spec workflow (auto mode).
+    Run full spec workflow (auto mode) with resume support.
 
     This orchestrates the complete spec workflow:
     1. Create: Generate detailed spec from goal
     2. Validate: Check spec for completeness
     3. Decompose: Break into feature list
 
+    If a spec already exists, resumes from the current phase.
+
     Args:
         config: Configuration object
-        goal: The user's goal or rough idea
+        goal: The user's goal or rough idea (optional if resuming)
 
     Returns:
         True if workflow completed successfully
     """
-    print("\n" + "=" * 70)
-    print("  SPEC WORKFLOW - AUTO MODE")
-    print("=" * 70)
-    print(f"\nGoal: {goal[:100]}{'...' if len(goal) > 100 else ''}")
-    print("-" * 70)
+    from claude_agent.progress import get_spec_phase
 
     project_dir = config.project_dir
 
-    # Step 1: Create
-    print("\nStep 1/3: Creating specification...")
-    status, spec_path = await run_spec_create_session(config, goal)
+    # Check current phase to determine where to resume
+    phase = get_spec_phase(project_dir)
 
-    if not spec_path.exists():
-        print("\nError: Spec creation failed - spec-draft.md not created")
-        return False
+    print("\n" + "=" * 70)
+    print("  SPEC WORKFLOW - AUTO MODE")
+    print("=" * 70)
 
-    # Step 2: Validate
-    print("\nStep 2/3: Validating specification...")
-    status, passed = await run_spec_validate_session(config, spec_path)
+    if goal:
+        print(f"\nGoal: {goal[:100]}{'...' if len(goal) > 100 else ''}")
+    if phase != "none":
+        print(f"Resuming from phase: {phase}")
+    print("-" * 70)
 
-    if not passed:
-        print("\nValidation failed - blocking issues found")
-        print("Review spec-validation.md and fix issues before continuing")
-        return False
+    # Step 1: Create (skip if already done)
+    if phase == "none":
+        if not goal:
+            print("\nError: --goal is required when no spec exists")
+            return False
+
+        print("\nStep 1/3: Creating specification...")
+        status, spec_path = await run_spec_create_session(config, goal)
+
+        if not spec_path.exists():
+            print("\nError: Spec creation failed - spec-draft.md not created")
+            return False
+    else:
+        print("\nStep 1/3: Creating specification... [SKIPPED - already exists]")
+        spec_path = find_spec_draft(project_dir)
+        if spec_path is None:
+            print("\nError: spec-draft.md not found but phase indicates it should exist")
+            return False
+
+    # Step 2: Validate (skip if already done)
+    if phase in ("none", "created"):
+        print("\nStep 2/3: Validating specification...")
+        status, passed = await run_spec_validate_session(config, spec_path)
+
+        if not passed:
+            print("\nValidation failed - blocking issues found")
+            print("Review spec-validation.md and fix issues before continuing")
+            return False
+    else:
+        print("\nStep 2/3: Validating specification... [SKIPPED - already validated]")
 
     # Find the validated spec (may be in root or specs/)
     validated_path = find_spec_validated(project_dir)
     if validated_path is None:
-        print("\nError: spec-validated.md not found after validation passed")
+        print("\nError: spec-validated.md not found")
         return False
 
-    # Step 3: Decompose
-    print("\nStep 3/3: Decomposing into features...")
-    status, feature_path = await run_spec_decompose_session(
-        config, validated_path, config.features
-    )
+    # Step 3: Decompose (skip if already done)
+    if phase in ("none", "created", "validated"):
+        print("\nStep 3/3: Decomposing into features...")
+        status, feature_path = await run_spec_decompose_session(
+            config, validated_path, config.features
+        )
 
-    if not feature_path.exists():
-        print("\nError: Decomposition failed - feature_list.json not created")
-        return False
+        if not feature_path.exists():
+            print("\nError: Decomposition failed - feature_list.json not created")
+            return False
+    else:
+        print("\nStep 3/3: Decomposing into features... [SKIPPED - already decomposed]")
+        feature_path = project_dir / "feature_list.json"
+        if not feature_path.exists():
+            print("\nError: feature_list.json not found but phase indicates it should exist")
+            return False
 
     # Summary
     print("\n" + "=" * 70)

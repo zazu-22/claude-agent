@@ -411,13 +411,32 @@ def spec_decompose(spec_file, features, project_dir):
 
 
 @spec.command("auto")
-@click.option("-g", "--goal", type=str, required=True, help="What to build")
+@click.option("-g", "--goal", type=str, help="What to build (required for new specs)")
 @click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
 def spec_auto(goal, project_dir):
-    """Run full spec workflow (create -> validate -> decompose)."""
+    """Run full spec workflow (create -> validate -> decompose).
+
+    If a spec already exists, resumes from the current phase.
+    The --goal option is only required when starting a new spec.
+    """
     from claude_agent.agent import run_spec_workflow
+    from claude_agent.progress import find_spec_draft, get_spec_phase
 
     project_dir = Path(project_dir).resolve()
+
+    # Check current phase to determine if we can resume
+    phase = get_spec_phase(project_dir)
+
+    if phase == "none" and not goal:
+        # No spec exists and no goal provided
+        click.echo("Error: --goal is required when no spec exists")
+        click.echo("Use: claude-agent spec auto --goal 'description of what to build'")
+        sys.exit(1)
+
+    if phase != "none" and not goal:
+        # Resuming - show current state
+        click.echo(f"Resuming spec workflow from phase: {phase}")
+
     config = merge_config(project_dir=project_dir)
 
     success = asyncio.run(run_spec_workflow(config, goal))
