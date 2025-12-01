@@ -193,11 +193,23 @@ class TestRunSpecValidateSession:
         spec_path.write_text("# Test Spec\n\nContent here")
 
         # Mock client that creates validated spec
+        # Uses new machine-parseable format
+        validation_content = """<!-- VALIDATION_RESULT
+verdict: PASS
+blocking: 0
+warnings: 1
+suggestions: 2
+-->
+
+# Validation Report
+
+**Verdict: PASS**
+"""
         mock_client = MockClient(
             should_succeed=True,
             create_files={
                 "spec-validated.md": "# Validated Spec",
-                "spec-validation.md": "## Validation Report\n\nPASS"
+                "spec-validation.md": validation_content
             }
         )
         mock_client.project_dir = tmp_path
@@ -227,10 +239,26 @@ class TestRunSpecValidateSession:
         spec_path.write_text("# Test Spec\n\nIncomplete content")
 
         # Mock client that creates validation report but NOT validated spec
+        # Uses new machine-parseable format with FAIL verdict
+        validation_content = """<!-- VALIDATION_RESULT
+verdict: FAIL
+blocking: 2
+warnings: 0
+suggestions: 0
+-->
+
+# Validation Report
+
+**Verdict: FAIL**
+
+## Blocking Issues
+- Missing required section
+- Incomplete requirements
+"""
         mock_client = MockClient(
             should_succeed=True,
             create_files={
-                "spec-validation.md": "## Validation Report\n\nFAIL - blocking issues"
+                "spec-validation.md": validation_content
             }
         )
         mock_client.project_dir = tmp_path
@@ -352,9 +380,17 @@ class TestRunSpecWorkflow:
                 )
             else:
                 # Second call: validate session - fails (no validated.md)
+                validation_content = """<!-- VALIDATION_RESULT
+verdict: FAIL
+blocking: 1
+warnings: 0
+suggestions: 0
+-->
+**Verdict: FAIL**
+"""
                 client = MockClient(
                     should_succeed=True,
-                    create_files={"spec-validation.md": "## Report\nFAIL"}
+                    create_files={"spec-validation.md": validation_content}
                 )
             client.project_dir = tmp_path
             return client
@@ -385,11 +421,19 @@ class TestRunSpecWorkflow:
                 )
             elif call_count[0] == 2:
                 # Validate session
+                validation_content = """<!-- VALIDATION_RESULT
+verdict: PASS
+blocking: 0
+warnings: 0
+suggestions: 1
+-->
+**Verdict: PASS**
+"""
                 client = MockClient(
                     should_succeed=True,
                     create_files={
                         "spec-validated.md": "# Validated Spec",
-                        "spec-validation.md": "## Report\nPASS"
+                        "spec-validation.md": validation_content
                     }
                 )
             else:

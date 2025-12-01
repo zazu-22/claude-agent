@@ -13,17 +13,44 @@ Analyze this specification thoroughly and create two output files.
 
 ## OUTPUT 1: spec-validation.md
 
-Save to one of these locations:
-- If a `specs/` directory exists, save to `specs/spec-validation.md`
-- Otherwise, save to `spec-validation.md` in the project root
+**IMPORTANT: Save to `specs/spec-validation.md`** (create the `specs/` directory if needed).
+Do NOT create subdirectories within `specs/` - save directly to `specs/spec-validation.md`.
 
-Create a validation report with these sections:
+Create a validation report that MUST start with this exact format:
+
+```
+<!-- VALIDATION_RESULT
+verdict: PASS
+blocking: 0
+warnings: 3
+suggestions: 5
+-->
+```
+
+Or if failing:
+
+```
+<!-- VALIDATION_RESULT
+verdict: FAIL
+blocking: 2
+warnings: 1
+suggestions: 3
+-->
+```
+
+This block MUST be at the very beginning of the file. The counts must match the actual issues found.
+
+After the validation result block, include these sections:
+
+### Executive Summary
+
+A brief table showing issue counts by severity and the verdict.
 
 ### Issues Found
 
 Categorize each issue as:
-- **BLOCKING**: Must be resolved before implementation
-- **WARNING**: Should be addressed but can proceed with caution
+- **BLOCKING**: Must be resolved before implementation (causes FAIL verdict)
+- **WARNING**: Should be addressed but can proceed (documented in validated spec)
 - **SUGGESTION**: Would improve the spec but optional
 
 For each issue, include:
@@ -54,29 +81,22 @@ For each issue, include:
    - Do any requirements conflict with each other?
    - Are priorities consistent?
 
-### Verdict
-
-State one of:
-- **PASS**: No blocking issues, proceed to decomposition
-- **FAIL**: Blocking issues must be resolved first
-
 ## OUTPUT 2: spec-validated.md (only if PASS)
 
-Save to one of these locations:
-- If a `specs/` directory exists, save to `specs/spec-validated.md`
-- Otherwise, save to `spec-validated.md` in the project root
+**IMPORTANT: Save to `specs/spec-validated.md`** (same directory as validation report).
+Do NOT create subdirectories within `specs/`.
 
-If the spec passes validation:
+If the spec passes validation (0 blocking issues):
 1. Copy the original spec
 2. Apply any non-blocking improvements inline
-3. Resolve minor ambiguities with reasonable defaults (documented)
+3. Resolve warnings with reasonable defaults (documented)
 4. Add any missing sections with sensible content
 
 This becomes the "golden" spec for decomposition.
 
 ### SUMMARY
 
-Print a brief summary:
+Print a brief summary to the console:
 - Number of issues by severity
 - Overall verdict (PASS/FAIL)
 - Key improvements made (if PASS)

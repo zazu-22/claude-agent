@@ -6,6 +6,8 @@ Utilities for tracking and displaying agent progress.
 """
 
 import json
+import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -15,47 +17,199 @@ from typing import Optional
 SPEC_WORKFLOW_FILE = "spec-workflow.json"
 
 
-def find_spec_draft(project_dir: Path) -> Optional[Path]:
-    """
-    Find spec-draft.md in project directory or specs/ subdirectory.
+@dataclass(frozen=True)
+class ValidationVerdict:
+    """Result of parsing a validation report (immutable)."""
 
-    The agent may place the draft in either location depending on context.
-    Prefers specs/ subdirectory if it exists there.
+    passed: bool  # True if verdict is PASS
+    verdict: str  # "PASS" or "FAIL"
+    blocking: int  # Count of blocking issues
+    warnings: int  # Count of warnings
+    suggestions: int  # Count of suggestions
+    error: Optional[str] = None  # Parse error if any
+
+
+def _find_spec_file(project_dir: Path, filename: str) -> Optional[Path]:
+    """
+    Generic file finder for spec workflow files.
+
+    Search order:
+    1. specs/{filename} (preferred canonical location)
+    2. {filename} (project root)
+    3. specs/*/{filename} (subdirectories, for backwards compat)
+
+    Args:
+        project_dir: Project directory
+        filename: Name of file to find
 
     Returns:
-        Path to spec-draft.md if found, None otherwise
+        Path to file if found, None otherwise
     """
     # Check specs/ subdirectory first (preferred location)
-    specs_path = project_dir / "specs" / "spec-draft.md"
+    specs_path = project_dir / "specs" / filename
     if specs_path.exists():
         return specs_path
 
     # Fall back to project root
-    root_path = project_dir / "spec-draft.md"
+    root_path = project_dir / filename
     if root_path.exists():
         return root_path
 
+    # Search recursively in specs/ subdirectories (backwards compat)
+    specs_dir = project_dir / "specs"
+    if specs_dir.is_dir():
+        try:
+            for path in specs_dir.rglob(filename):
+                return path
+        except (PermissionError, OSError):
+            # Can't access some subdirectories - continue with None
+            pass
+
     return None
+
+
+def find_spec_draft(project_dir: Path) -> Optional[Path]:
+    """Find spec-draft.md in project directory or specs/ subdirectory."""
+    return _find_spec_file(project_dir, "spec-draft.md")
 
 
 def find_spec_validated(project_dir: Path) -> Optional[Path]:
+    """Find spec-validated.md in project directory or specs/ subdirectory."""
+    return _find_spec_file(project_dir, "spec-validated.md")
+
+
+def find_spec_validation_report(project_dir: Path) -> Optional[Path]:
+    """Find spec-validation.md report in project directory or specs/ subdirectory."""
+    return _find_spec_file(project_dir, "spec-validation.md")
+
+
+def parse_validation_verdict(project_dir: Path) -> ValidationVerdict:
     """
-    Find spec-validated.md in project directory or specs/ subdirectory.
+    Parse the validation report to extract the actual verdict.
+
+    Looks for the machine-parseable VALIDATION_RESULT block at the start of
+    spec-validation.md. Falls back to heuristic parsing for older reports.
+
+    Args:
+        project_dir: Project directory containing spec-validation.md
 
     Returns:
-        Path to spec-validated.md if found, None otherwise
+        ValidationVerdict with parsed results or error
     """
-    # Check specs/ subdirectory first
-    specs_path = project_dir / "specs" / "spec-validated.md"
-    if specs_path.exists():
-        return specs_path
+    report_path = find_spec_validation_report(project_dir)
 
-    # Fall back to project root
-    root_path = project_dir / "spec-validated.md"
-    if root_path.exists():
-        return root_path
+    if report_path is None:
+        return ValidationVerdict(
+            passed=False,
+            verdict="UNKNOWN",
+            blocking=0,
+            warnings=0,
+            suggestions=0,
+            error="spec-validation.md not found",
+        )
 
-    return None
+    try:
+        content = report_path.read_text()
+    except IOError as e:
+        return ValidationVerdict(
+            passed=False,
+            verdict="UNKNOWN",
+            blocking=0,
+            warnings=0,
+            suggestions=0,
+            error=f"Failed to read spec-validation.md: {e}",
+        )
+
+    # Strategy 1: Look for machine-parseable VALIDATION_RESULT block
+    # Format: <!-- VALIDATION_RESULT\nverdict: PASS\nblocking: 0\n... -->
+    result_match = re.search(
+        r"<!--\s*VALIDATION_RESULT\s*\n(.*?)\s*-->",
+        content,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if result_match:
+        block = result_match.group(1)
+        verdict_match = re.search(r"verdict:\s*(PASS|FAIL)", block, re.IGNORECASE)
+        blocking_match = re.search(r"blocking:\s*(\d+)", block, re.IGNORECASE)
+        warnings_match = re.search(r"warnings:\s*(\d+)", block, re.IGNORECASE)
+        suggestions_match = re.search(r"suggestions:\s*(\d+)", block, re.IGNORECASE)
+
+        if verdict_match:
+            verdict = verdict_match.group(1).upper()
+            blocking = int(blocking_match.group(1)) if blocking_match else 0
+            warnings = int(warnings_match.group(1)) if warnings_match else 0
+            suggestions = int(suggestions_match.group(1)) if suggestions_match else 0
+
+            return ValidationVerdict(
+                passed=(verdict == "PASS"),
+                verdict=verdict,
+                blocking=blocking,
+                warnings=warnings,
+                suggestions=suggestions,
+            )
+
+    # Strategy 2: Fallback - look for verdict in content (older format)
+    # Look for "**Verdict: PASS**" or "Verdict: PASS" patterns
+    verdict_pattern = re.search(
+        r"\*?\*?Verdict:?\*?\*?\s*:?\s*\*?\*?(PASS|FAIL)\*?\*?",
+        content,
+        re.IGNORECASE,
+    )
+    if verdict_pattern:
+        verdict = verdict_pattern.group(1).upper()
+
+        # Try to count blocking issues from table or headings
+        blocking = 0
+        # Look for BLOCKING count in executive summary table
+        blocking_table = re.search(
+            r"BLOCKING\s*\|\s*(\d+)", content, re.IGNORECASE
+        )
+        if blocking_table:
+            blocking = int(blocking_table.group(1))
+        else:
+            # Count BLOCKING headings/items
+            blocking = len(re.findall(r"\*\*BLOCKING\*\*", content, re.IGNORECASE))
+
+        # Count warnings and suggestions similarly
+        warnings_table = re.search(r"WARNING\s*\|\s*(\d+)", content, re.IGNORECASE)
+        warnings = int(warnings_table.group(1)) if warnings_table else 0
+
+        suggestions_table = re.search(
+            r"SUGGESTION\s*\|\s*(\d+)", content, re.IGNORECASE
+        )
+        suggestions = int(suggestions_table.group(1)) if suggestions_table else 0
+
+        return ValidationVerdict(
+            passed=(verdict == "PASS"),
+            verdict=verdict,
+            blocking=blocking,
+            warnings=warnings,
+            suggestions=suggestions,
+        )
+
+    # Strategy 3: Infer from blocking count if no explicit verdict
+    blocking_table = re.search(r"BLOCKING\s*\|\s*(\d+)", content, re.IGNORECASE)
+    if blocking_table:
+        blocking = int(blocking_table.group(1))
+        passed = blocking == 0
+        return ValidationVerdict(
+            passed=passed,
+            verdict="PASS" if passed else "FAIL",
+            blocking=blocking,
+            warnings=0,
+            suggestions=0,
+            error="Inferred verdict from blocking count (no explicit verdict found)",
+        )
+
+    # Could not parse verdict
+    return ValidationVerdict(
+        passed=False,
+        verdict="UNKNOWN",
+        blocking=0,
+        warnings=0,
+        suggestions=0,
+        error="Could not parse verdict from spec-validation.md",
+    )
 
 
 def count_passing_tests(project_dir: Path) -> tuple[int, int]:

@@ -26,9 +26,11 @@ from claude_agent.progress import (
     count_tests_by_type,
     find_spec_draft,
     find_spec_validated,
+    find_spec_validation_report,
     get_rejection_count,
     is_automated_work_complete,
     mark_tests_failed,
+    parse_validation_verdict,
     print_session_header,
     print_progress_summary,
     print_startup_banner,
@@ -818,28 +820,56 @@ async def run_spec_validate_session(
     async with client:
         status, response = await run_agent_session(client, prompt, project_dir)
 
-    # Check if validation passed (spec-validated.md created in root or specs/)
-    validated_path = find_spec_validated(project_dir)
-    passed = validated_path is not None
+    # Parse the actual verdict from the validation report
+    verdict = parse_validation_verdict(project_dir)
 
+    # Also check if spec-validated.md was created (for the output_file field)
+    validated_path = find_spec_validated(project_dir)
+    validation_report_path = find_spec_validation_report(project_dir)
+
+    # Determine passed status from parsed verdict
+    passed = verdict.passed
+
+    # Record step with detailed info
     record_spec_step(
         project_dir,
         "validate",
         {
             "status": "complete",
             "passed": passed,
-            "output_file": str(validated_path.relative_to(project_dir)) if passed else None,
-            "validation_report": "spec-validation.md",
+            "verdict": verdict.verdict,
+            "blocking": verdict.blocking,
+            "warnings": verdict.warnings,
+            "suggestions": verdict.suggestions,
+            "output_file": (
+                str(validated_path.relative_to(project_dir))
+                if validated_path
+                else None
+            ),
+            "validation_report": (
+                str(validation_report_path.relative_to(project_dir))
+                if validation_report_path
+                else None
+            ),
         },
     )
 
+    # Print results
     if passed:
-        print(f"\nValidation PASSED: {validated_path}")
+        print(f"\nValidation PASSED (verdict: {verdict.verdict})")
+        print(f"  Blocking: {verdict.blocking}, Warnings: {verdict.warnings}, Suggestions: {verdict.suggestions}")
+        if validated_path:
+            print(f"  Validated spec: {validated_path}")
+        else:
+            # Passed but no validated file - this is unusual
+            print("  Warning: spec-validated.md not found (expected for PASS verdict)")
     else:
-        print("\nValidation FAILED: blocking issues found")
-        validation_report = project_dir / "spec-validation.md"
-        if validation_report.exists():
-            print(f"Review issues in: {validation_report}")
+        print(f"\nValidation FAILED (verdict: {verdict.verdict})")
+        print(f"  Blocking: {verdict.blocking}, Warnings: {verdict.warnings}, Suggestions: {verdict.suggestions}")
+        if verdict.error:
+            print(f"  Parse error: {verdict.error}")
+        if validation_report_path:
+            print(f"  Review issues in: {validation_report_path}")
 
     return status, passed
 
