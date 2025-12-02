@@ -6,11 +6,90 @@ Utilities for tracking and displaying agent progress.
 """
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
+
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Atomic Write Utilities
+# =============================================================================
+#
+# Note on claude-progress.txt: This file is written by the Claude agent during
+# sessions via shell commands (not by Python code). The Python codebase only
+# reads this file (see cli.py). Therefore, atomic writes are not applicable.
+# =============================================================================
+
+
+def atomic_write(path: Path, content: str) -> None:
+    """Write content to file atomically using temp file + rename.
+
+    This function ensures that file writes are atomic - either the complete
+    new content is written or the original file is preserved. This prevents
+    data corruption during crashes, interruptions, or power failures.
+
+    The implementation writes to a temporary file first (with .tmp suffix),
+    then renames it to the target path. On POSIX systems, rename is atomic
+    when source and target are on the same filesystem.
+
+    Args:
+        path: Target file path (must be in an existing directory)
+        content: String content to write
+
+    Raises:
+        FileNotFoundError: If the target directory does not exist
+        PermissionError: If write permission is denied
+        OSError: For other filesystem-related errors
+
+    Note:
+        The temp file is automatically cleaned up if an error occurs
+        before the rename completes.
+    """
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        temp_path.write_text(content)
+        temp_path.rename(path)
+    except Exception as e:
+        logger.warning(f"Atomic write failed for {path}: {e}")
+        if temp_path.exists():
+            logger.debug(f"Cleaning up temp file: {temp_path}")
+            temp_path.unlink()
+        raise
+
+
+def atomic_json_write(
+    path: Path,
+    data: Union[dict, list],
+    indent: int = 2,
+) -> None:
+    """Write JSON data to file atomically.
+
+    This function serializes data to JSON and writes it atomically using
+    the temp file + rename pattern. It supports both dict and list data
+    types (e.g., for feature_list.json which stores a list of features).
+
+    Args:
+        path: Target file path (must be in an existing directory)
+        data: Dict or list to serialize as JSON
+        indent: JSON indentation level (default: 2)
+
+    Raises:
+        TypeError: If data contains non-JSON-serializable objects
+        FileNotFoundError: If the target directory does not exist
+        PermissionError: If write permission is denied
+        OSError: For other filesystem-related errors
+
+    Note:
+        A trailing newline is added to the JSON output for consistency
+        with typical text file conventions and linter expectations.
+    """
+    atomic_write(path, json.dumps(data, indent=indent) + "\n")
 
 
 # Spec workflow state file
@@ -526,9 +605,8 @@ def save_validation_attempt(
     }
     data["attempts"].append(attempt)
 
-    # Write back
-    with open(history_path, "w") as f:
-        json.dump(data, f, indent=2)
+    # Write back using atomic write
+    atomic_json_write(history_path, data)
 
 
 def get_rejection_count(project_dir: Path) -> int:
@@ -566,9 +644,6 @@ def mark_tests_failed(
     if not feature_list_path:
         return 0, ["feature_list.json does not exist"]
 
-    # Put temp file in same directory as feature_list.json
-    temp_path = feature_list_path.parent / "feature_list.json.tmp"
-
     try:
         with open(feature_list_path) as f:
             features = json.load(f)
@@ -590,15 +665,11 @@ def mark_tests_failed(
             features[idx]["passes"] = False
             updated += 1
 
-    # Atomic write (temp file + rename)
+    # Write back using atomic write utility
     try:
-        with open(temp_path, "w") as f:
-            json.dump(features, f, indent=2)
-        temp_path.rename(feature_list_path)
-    except IOError as e:
+        atomic_json_write(feature_list_path, features)
+    except Exception as e:
         errors.append(f"Failed to write feature_list.json: {e}")
-        if temp_path.exists():
-            temp_path.unlink()
 
     return updated, errors
 
@@ -644,7 +715,7 @@ def get_spec_workflow_state(project_dir: Path) -> dict:
 
 
 def save_spec_workflow_state(project_dir: Path, state: dict) -> None:
-    """Save spec workflow state to file."""
+    """Save spec workflow state to file using atomic write."""
     workflow_path = project_dir / SPEC_WORKFLOW_FILE
 
     # Add/update timestamps
@@ -653,8 +724,7 @@ def save_spec_workflow_state(project_dir: Path, state: dict) -> None:
         state["created_at"] = now
     state["updated_at"] = now
 
-    with open(workflow_path, "w") as f:
-        json.dump(state, f, indent=2)
+    atomic_json_write(workflow_path, state)
 
 
 def record_spec_step(project_dir: Path, step: str, result: dict) -> None:

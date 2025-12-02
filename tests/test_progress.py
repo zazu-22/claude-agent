@@ -12,6 +12,12 @@ from claude_agent.progress import (
     find_spec_validated,
     find_spec_validation_report,
     find_spec_for_coding,
+    atomic_write,
+    atomic_json_write,
+    save_validation_attempt,
+    load_validation_history,
+    save_spec_workflow_state,
+    get_spec_workflow_state,
 )
 
 
@@ -495,3 +501,335 @@ class TestFindSpecForCoding:
         # Should NOT emit warning
         captured = capsys.readouterr()
         assert "Warning" not in captured.err
+
+
+class TestAtomicWrite:
+    """Test atomic_write function for text content."""
+
+    def test_successful_write_creates_file(self, tmp_path):
+        """F5.1: Verify atomic_write creates file with correct content."""
+        target = tmp_path / "test.txt"
+        content = "test content"
+
+        atomic_write(target, content)
+
+        assert target.exists()
+        assert target.read_text() == content
+
+    def test_overwrites_existing_file(self, tmp_path):
+        """F1.5: Verify atomic_write overwrites existing file atomically."""
+        target = tmp_path / "test.txt"
+        target.write_text("original")
+
+        atomic_write(target, "updated")
+
+        assert target.read_text() == "updated"
+        # No temp file should remain
+        tmp_files = list(tmp_path.glob("*.tmp"))
+        assert len(tmp_files) == 0
+
+    def test_no_partial_file_on_failure(self, tmp_path, monkeypatch):
+        """F5.2: Verify failed write does not leave partial file."""
+        target = tmp_path / "test.txt"
+
+        # Mock write_text to fail after being called
+        def failing_write(*args, **kwargs):
+            raise IOError("Simulated write failure")
+
+        monkeypatch.setattr(Path, "write_text", failing_write)
+
+        with pytest.raises(IOError, match="Simulated write failure"):
+            atomic_write(target, "content")
+
+        # Target file should not exist
+        assert not target.exists()
+
+    def test_temp_file_cleaned_up_on_failure(self, tmp_path, monkeypatch):
+        """F5.3: Verify temp file is cleaned up on failure."""
+        target = tmp_path / "test.txt"
+        temp_path = target.with_suffix(".txt.tmp")
+
+        # Create a temp file to simulate partial write
+        original_write_text = Path.write_text
+
+        def failing_after_write(self, content, *args, **kwargs):
+            original_write_text(self, content, *args, **kwargs)
+            raise IOError("Simulated failure after write")
+
+        monkeypatch.setattr(Path, "write_text", failing_after_write)
+
+        with pytest.raises(IOError):
+            atomic_write(target, "content")
+
+        # Temp file should be cleaned up
+        assert not temp_path.exists()
+
+    def test_fails_for_nonexistent_directory(self, tmp_path):
+        """F5.4: Verify atomic_write fails appropriately for non-existent directory."""
+        nonexistent = tmp_path / "does_not_exist"
+        target = nonexistent / "test.txt"
+
+        with pytest.raises(FileNotFoundError):
+            atomic_write(target, "content")
+
+        # No orphan files should exist
+        assert not nonexistent.exists()
+
+    def test_raises_original_exception(self, tmp_path, monkeypatch):
+        """F1.7: Verify original exception is raised, not wrapped."""
+        target = tmp_path / "test.txt"
+
+        class CustomError(Exception):
+            pass
+
+        def failing_write(*args, **kwargs):
+            raise CustomError("Custom error message")
+
+        monkeypatch.setattr(Path, "write_text", failing_write)
+
+        with pytest.raises(CustomError, match="Custom error message"):
+            atomic_write(target, "content")
+
+    def test_uses_tmp_suffix(self, tmp_path, monkeypatch):
+        """F1.3: Verify temp file uses .tmp suffix pattern."""
+        target = tmp_path / "test.txt"
+        captured_temp_path = []
+
+        original_write_text = Path.write_text
+
+        def capture_write(self, content, *args, **kwargs):
+            if str(self).endswith(".tmp"):
+                captured_temp_path.append(self)
+            return original_write_text(self, content, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", capture_write)
+
+        atomic_write(target, "content")
+
+        # Should have written to a .tmp file
+        assert len(captured_temp_path) == 1
+        assert captured_temp_path[0] == target.with_suffix(".txt.tmp")
+
+
+class TestAtomicJsonWrite:
+    """Test atomic_json_write function for JSON data."""
+
+    def test_writes_dict_data(self, tmp_path):
+        """F5.5: Verify atomic_json_write correctly serializes dict data."""
+        target = tmp_path / "test.json"
+        data = {"key": "value", "number": 42}
+
+        atomic_json_write(target, data)
+
+        assert target.exists()
+        import json
+
+        with open(target) as f:
+            loaded = json.load(f)
+        assert loaded == data
+
+    def test_writes_list_data(self, tmp_path):
+        """F5.6: Verify atomic_json_write correctly serializes list data."""
+        target = tmp_path / "test.json"
+        data = [{"item": 1}, {"item": 2}, {"item": 3}]
+
+        atomic_json_write(target, data)
+
+        import json
+
+        with open(target) as f:
+            loaded = json.load(f)
+        assert loaded == data
+
+    def test_uses_specified_indent(self, tmp_path):
+        """F1.13: Verify atomic_json_write uses specified indent level."""
+        target = tmp_path / "test.json"
+        data = {"key": "value"}
+
+        atomic_json_write(target, data, indent=4)
+
+        content = target.read_text()
+        # With indent=4, should have 4-space indentation
+        assert '    "key"' in content
+
+    def test_defaults_to_indent_2(self, tmp_path):
+        """F1.14: Verify atomic_json_write defaults to indent=2."""
+        target = tmp_path / "test.json"
+        data = {"key": "value"}
+
+        atomic_json_write(target, data)
+
+        content = target.read_text()
+        # With default indent=2, should have 2-space indentation
+        assert '  "key"' in content
+        # Should not have 4-space indentation
+        assert '    "key"' not in content
+
+    def test_adds_trailing_newline(self, tmp_path):
+        """F1.15: Verify atomic_json_write adds trailing newline."""
+        target = tmp_path / "test.json"
+        data = {"key": "value"}
+
+        atomic_json_write(target, data)
+
+        content = target.read_text()
+        # Should end with exactly one newline
+        assert content.endswith("\n")
+        assert not content.endswith("\n\n")
+
+    def test_raises_on_non_serializable_data(self, tmp_path):
+        """F1.17: Verify exception for non-serializable data."""
+        target = tmp_path / "test.json"
+        # Set is not JSON-serializable
+        data = {"key": {1, 2, 3}}
+
+        with pytest.raises(TypeError):
+            atomic_json_write(target, data)
+
+        # No file should be created
+        assert not target.exists()
+        # No temp file should remain
+        tmp_files = list(tmp_path.glob("*.tmp"))
+        assert len(tmp_files) == 0
+
+
+class TestSaveValidationAttemptAtomic:
+    """Test that save_validation_attempt uses atomic writes."""
+
+    def test_creates_new_file(self, tmp_path):
+        """F2.3: Verify save_validation_attempt creates new file when none exists."""
+        save_validation_attempt(tmp_path, "approved", [], "All tests passed")
+
+        history_path = tmp_path / "validation-history.json"
+        assert history_path.exists()
+
+        import json
+
+        with open(history_path) as f:
+            data = json.load(f)
+        assert "attempts" in data
+        assert len(data["attempts"]) == 1
+        assert data["attempts"][0]["result"] == "approved"
+
+    def test_preserves_existing_history(self, tmp_path):
+        """F2.2: Verify save_validation_attempt preserves existing history."""
+        # Create initial attempt
+        save_validation_attempt(tmp_path, "rejected", [1, 2], "First attempt")
+
+        # Add second attempt
+        save_validation_attempt(tmp_path, "approved", [], "Second attempt")
+
+        history = load_validation_history(tmp_path)
+        assert len(history) == 2
+        assert history[0]["result"] == "rejected"
+        assert history[1]["result"] == "approved"
+
+    def test_maintains_correct_structure(self, tmp_path):
+        """F2.4: Verify correct JSON structure with timestamp."""
+        save_validation_attempt(tmp_path, "rejected", [0, 1], "Test summary")
+
+        history = load_validation_history(tmp_path)
+        attempt = history[0]
+
+        assert "timestamp" in attempt
+        assert "result" in attempt
+        assert "rejected_indices" in attempt
+        assert "summary" in attempt
+        assert attempt["rejected_indices"] == [0, 1]
+
+
+class TestSaveSpecWorkflowStateAtomic:
+    """Test that save_spec_workflow_state uses atomic writes."""
+
+    def test_saves_state_correctly(self, tmp_path):
+        """F3.2: Verify save_spec_workflow_state correctly saves workflow state."""
+        state = {
+            "phase": "validated",
+            "spec_file": "specs/spec-validated.md",
+            "history": [{"step": "validate", "status": "complete"}],
+        }
+
+        save_spec_workflow_state(tmp_path, state)
+
+        loaded = get_spec_workflow_state(tmp_path)
+        assert loaded["phase"] == "validated"
+        assert loaded["spec_file"] == "specs/spec-validated.md"
+        assert len(loaded["history"]) == 1
+
+    def test_adds_created_at_on_first_save(self, tmp_path):
+        """F3.3: Verify created_at timestamp is added on first save."""
+        state = {"phase": "created", "spec_file": None, "history": []}
+
+        save_spec_workflow_state(tmp_path, state)
+
+        loaded = get_spec_workflow_state(tmp_path)
+        assert "created_at" in loaded
+        # Should be ISO format timestamp
+        assert "T" in loaded["created_at"]
+
+    def test_updates_updated_at_on_each_save(self, tmp_path):
+        """F3.4: Verify updated_at timestamp is updated on each save."""
+        state = {"phase": "created", "spec_file": None, "history": []}
+        save_spec_workflow_state(tmp_path, state)
+
+        first_loaded = get_spec_workflow_state(tmp_path)
+        first_updated = first_loaded["updated_at"]
+
+        # Small delay to ensure timestamp difference
+        import time
+
+        time.sleep(0.01)
+
+        # Update state
+        state["phase"] = "validated"
+        save_spec_workflow_state(tmp_path, state)
+
+        second_loaded = get_spec_workflow_state(tmp_path)
+        second_updated = second_loaded["updated_at"]
+
+        # updated_at should be different (or equal if very fast)
+        assert "updated_at" in second_loaded
+
+    def test_preserves_created_at_on_updates(self, tmp_path):
+        """F3.5: Verify created_at is preserved on updates."""
+        state = {
+            "phase": "created",
+            "spec_file": None,
+            "history": [],
+            "created_at": "2024-01-01T00:00:00+00:00",
+        }
+
+        save_spec_workflow_state(tmp_path, state)
+
+        loaded = get_spec_workflow_state(tmp_path)
+        assert loaded["created_at"] == "2024-01-01T00:00:00+00:00"
+
+
+class TestAtomicWriteIntegration:
+    """Integration tests for atomic write functionality."""
+
+    def test_load_after_save_validation(self, tmp_path):
+        """INT.2: Verify load correctly reads files written by save."""
+        save_validation_attempt(tmp_path, "rejected", [1, 2, 3], "Test failure")
+
+        history = load_validation_history(tmp_path)
+
+        assert len(history) == 1
+        assert history[0]["result"] == "rejected"
+        assert history[0]["rejected_indices"] == [1, 2, 3]
+        assert history[0]["summary"] == "Test failure"
+
+    def test_load_after_save_workflow(self, tmp_path):
+        """INT.3: Verify get_spec_workflow_state reads files written by save."""
+        state = {
+            "phase": "decomposed",
+            "spec_file": "specs/spec-validated.md",
+            "history": [{"step": "decompose", "output": "feature_list.json"}],
+        }
+
+        save_spec_workflow_state(tmp_path, state)
+        loaded = get_spec_workflow_state(tmp_path)
+
+        assert loaded["phase"] == "decomposed"
+        assert loaded["spec_file"] == "specs/spec-validated.md"
+        assert len(loaded["history"]) == 1
