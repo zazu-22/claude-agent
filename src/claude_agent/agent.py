@@ -141,6 +141,7 @@ async def run_review_session(
     config: Config,
     stack: str,
     spec_content: str,
+    logger: Optional[AgentLogger] = None,
 ) -> bool:
     """
     Run a spec review session before generating features.
@@ -149,6 +150,7 @@ async def run_review_session(
         config: Configuration object
         stack: Detected tech stack
         spec_content: The specification content to review
+        logger: Optional AgentLogger for structured logging
 
     Returns:
         True if user wants to proceed, False to abort
@@ -161,6 +163,22 @@ async def run_review_session(
     print("\nThe agent will analyze your spec and create a review document.")
     print("You can then decide whether to proceed or refine the spec first.\n")
 
+    # Start logging session for review
+    session_id = None
+    stats_tracker = None
+    if logger:
+        session_id = logger.start_session(
+            iteration=0,
+            model=config.agent.model,
+            stack=stack,
+            agent_type="review",
+        )
+        stats_tracker = SessionStatsTracker(
+            project_dir=project_dir,
+            session_id=session_id,
+            agent_type="review",
+        )
+
     # Write spec to project for the agent
     write_spec_to_project(project_dir, spec_content)
 
@@ -172,11 +190,22 @@ async def run_review_session(
         stack=stack,
     )
 
-    # Run review session
+    # Run review session with logging
     prompt = get_review_prompt(spec_content)
 
     async with client:
-        status, response = await run_agent_session(client, prompt, project_dir)
+        status, response = await run_agent_session(
+            client, prompt, project_dir, logger, stats_tracker
+        )
+
+    # End logging session
+    if logger:
+        logger.end_session(
+            turns_used=stats_tracker.stats.turns_used if stats_tracker else 0,
+            status=status,
+        )
+        if stats_tracker:
+            stats_tracker.save()
 
     # Check if review file was created
     review_file = project_dir / "spec-review.md"
@@ -348,6 +377,7 @@ async def run_validator_session(
     project_dir: Path,
     init_command: str,
     dev_command: str,
+    logger: Optional[AgentLogger] = None,
 ) -> ValidatorResult:
     """
     Run validator agent session and parse results.
@@ -358,10 +388,27 @@ async def run_validator_session(
         project_dir: Project directory path
         init_command: Command to install dependencies
         dev_command: Command to start development server
+        logger: Optional AgentLogger for structured logging
 
     Returns:
         ValidatorResult with verdict and any rejected tests
     """
+    # Start logging session for validator
+    session_id = None
+    stats_tracker = None
+    if logger:
+        session_id = logger.start_session(
+            iteration=0,  # Validators don't have iterations
+            model=config.validator.model,
+            stack=stack,
+            agent_type="validator",
+        )
+        stats_tracker = SessionStatsTracker(
+            project_dir=project_dir,
+            session_id=session_id,
+            agent_type="validator",
+        )
+
     # Create client with validator model, lower max_turns, and stop hook
     # Stop hook enforces verdict output before session ends
     client = create_client(
@@ -378,12 +425,28 @@ async def run_validator_session(
         dev_command=dev_command,
     )
 
-    # Run session
+    # Run session with logging
     async with client:
-        status, response = await run_agent_session(client, prompt, project_dir)
+        status, response = await run_agent_session(
+            client, prompt, project_dir, logger, stats_tracker
+        )
 
     # Parse response
     result = parse_validator_response(response)
+
+    # Log validation result and end session
+    if logger:
+        logger.log_validation_result(
+            verdict=result.verdict,
+            tests_verified=result.tests_verified,
+            rejected_count=len(result.rejected_tests),
+        )
+        logger.end_session(
+            turns_used=stats_tracker.stats.turns_used if stats_tracker else 0,
+            status=status,
+        )
+        if stats_tracker:
+            stats_tracker.save()
 
     return result
 
@@ -471,7 +534,7 @@ async def run_autonomous_agent(config: Config) -> None:
 
         # Run review session if requested
         if config.review:
-            proceed = await run_review_session(config, stack, spec_content)
+            proceed = await run_review_session(config, stack, spec_content, logger)
             if not proceed:
                 return
             print("\n" + "=" * 70)
@@ -679,6 +742,7 @@ async def run_autonomous_agent(config: Config) -> None:
                     project_dir=project_dir,
                     init_command=init_command,
                     dev_command=dev_command,
+                    logger=logger,
                 )
 
                 # Save attempt to history
@@ -839,6 +903,28 @@ async def run_spec_create_session(
     # Configure security
     configure_security(stack=stack, extra_commands=config.security.extra_commands)
 
+    # Initialize logging
+    logging_config = _create_logging_config(config)
+    logger = AgentLogger(
+        project_dir=project_dir,
+        config=logging_config,
+        verbose=config.verbose,
+    )
+    set_security_logger(logger)
+
+    # Start logging session
+    session_id = logger.start_session(
+        iteration=0,
+        model=config.agent.model,
+        stack=stack,
+        agent_type="spec_create",
+    )
+    stats_tracker = SessionStatsTracker(
+        project_dir=project_dir,
+        session_id=session_id,
+        agent_type="spec_create",
+    )
+
     # Print header
     print("\n" + "=" * 70)
     print("  SPEC WORKFLOW - STEP 1: CREATE")
@@ -856,9 +942,18 @@ async def run_spec_create_session(
     # Get prompt
     prompt = get_spec_create_prompt(goal, context)
 
-    # Run session
+    # Run session with logging
     async with client:
-        status, _ = await run_agent_session(client, prompt, project_dir)
+        status, _ = await run_agent_session(
+            client, prompt, project_dir, logger, stats_tracker
+        )
+
+    # End logging session
+    logger.end_session(
+        turns_used=stats_tracker.stats.turns_used,
+        status=status,
+    )
+    stats_tracker.save()
 
     # Find spec-draft.md in project root or specs/ subdirectory
     spec_path = find_spec_draft(project_dir)
@@ -910,6 +1005,28 @@ async def run_spec_validate_session(
 
     configure_security(stack=stack, extra_commands=config.security.extra_commands)
 
+    # Initialize logging
+    logging_config = _create_logging_config(config)
+    logger = AgentLogger(
+        project_dir=project_dir,
+        config=logging_config,
+        verbose=config.verbose,
+    )
+    set_security_logger(logger)
+
+    # Start logging session
+    session_id = logger.start_session(
+        iteration=0,
+        model=config.agent.model,
+        stack=stack,
+        agent_type="spec_validate",
+    )
+    stats_tracker = SessionStatsTracker(
+        project_dir=project_dir,
+        session_id=session_id,
+        agent_type="spec_validate",
+    )
+
     print("\n" + "=" * 70)
     print("  SPEC WORKFLOW - STEP 2: VALIDATE")
     print("  Validating specification for completeness...")
@@ -928,7 +1045,16 @@ async def run_spec_validate_session(
     prompt = get_spec_validate_prompt(spec_content)
 
     async with client:
-        status, response = await run_agent_session(client, prompt, project_dir)
+        status, response = await run_agent_session(
+            client, prompt, project_dir, logger, stats_tracker
+        )
+
+    # End logging session
+    logger.end_session(
+        turns_used=stats_tracker.stats.turns_used,
+        status=status,
+    )
+    stats_tracker.save()
 
     # Parse the actual verdict from the validation report
     verdict = parse_validation_verdict(project_dir)
@@ -1005,6 +1131,28 @@ async def run_spec_decompose_session(
 
     configure_security(stack=stack, extra_commands=config.security.extra_commands)
 
+    # Initialize logging
+    logging_config = _create_logging_config(config)
+    logger = AgentLogger(
+        project_dir=project_dir,
+        config=logging_config,
+        verbose=config.verbose,
+    )
+    set_security_logger(logger)
+
+    # Start logging session
+    session_id = logger.start_session(
+        iteration=0,
+        model=config.agent.model,
+        stack=stack,
+        agent_type="spec_decompose",
+    )
+    stats_tracker = SessionStatsTracker(
+        project_dir=project_dir,
+        session_id=session_id,
+        agent_type="spec_decompose",
+    )
+
     print("\n" + "=" * 70)
     print("  SPEC WORKFLOW - STEP 3: DECOMPOSE")
     print(f"  Decomposing specification into ~{feature_count} features...")
@@ -1022,7 +1170,16 @@ async def run_spec_decompose_session(
     prompt = get_spec_decompose_prompt(spec_content, feature_count)
 
     async with client:
-        status, _ = await run_agent_session(client, prompt, project_dir)
+        status, _ = await run_agent_session(
+            client, prompt, project_dir, logger, stats_tracker
+        )
+
+    # End logging session
+    logger.end_session(
+        turns_used=stats_tracker.stats.turns_used,
+        status=status,
+    )
+    stats_tracker.save()
 
     # Find feature_list.json (may be in specs/ or project root)
     feature_list_path = find_feature_list(project_dir)
