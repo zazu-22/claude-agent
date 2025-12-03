@@ -238,23 +238,61 @@ When using CONTINUE:
 
 ### STEP 6: IF REJECTING, UPDATE PROGRESS NOTES
 
-If you reject any features, append detailed feedback to `claude-progress.txt`:
+If you reject any features, append detailed feedback to `claude-progress.txt`
+using this structured format (compatible with coding agent format):
 
+```markdown
+=== VALIDATION SESSION: {TIMESTAMP} ===
+Status: REJECTED - {tests_verified} features tested, {rejected_count} issues found
+
+Rejected Features:
+- Feature #{test_index}: {feature_description}
+  - Issue: {what the problem is - be specific}
+  - Evidence: {screenshot name or what you observed}
+  - Fix: {what needs to be done}
+  - Files: {relevant files to modify}
+
+Issues Found:
+- Feature #{test_index}: {brief issue summary}
+
+Next Steps:
+- Fix Feature #{test_index} - {brief description of fix needed}
+- Re-run validation after fixes
+
+Tests Verified: {tests_verified}/{total_tested}
+=========================================
 ```
-=== VALIDATION FEEDBACK (include timestamp) ===
-Validator tested features through UI and found issues:
 
-FEATURE #X: [feature description]
-- Issue: [what the problem is - be specific]
-- Evidence: [screenshot name or what you observed]
-- Fix: [what needs to be done]
-- Files: [relevant files to modify]
+**Example Filled Template:**
 
-[repeat for each rejected feature]
+```markdown
+=== VALIDATION SESSION: 2024-01-15T16:45:00Z ===
+Status: REJECTED - 15 features tested, 2 issues found
 
-Tests verified through UI: X/Y
-Priority: Address these issues before other work.
-============================================
+Rejected Features:
+- Feature #5: User login form submission
+  - Issue: Submit button does nothing when clicked
+  - Evidence: screenshot_login_button.png
+  - Fix: Add onClick handler to submit button
+  - Files: src/components/LoginForm.tsx
+
+- Feature #12: Contact form validation
+  - Issue: Email validation accepts invalid format 'test@'
+  - Evidence: Tested with invalid email, form submitted anyway
+  - Fix: Update email regex validation
+  - Files: src/utils/validation.ts
+
+Issues Found:
+- Feature #5: Submit button non-functional
+- Feature #12: Email validation too permissive
+
+Next Steps:
+- Fix Feature #5 - add submit handler
+- Fix Feature #12 - improve email validation
+- Re-run validation after fixes
+
+Tests Verified: 15/50
+=========================================
 ```
 
 ---

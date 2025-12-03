@@ -18,6 +18,13 @@ from claude_agent.progress import (
     load_validation_history,
     save_spec_workflow_state,
     get_spec_workflow_state,
+    # Structured progress notes
+    ProgressStatus,
+    CompletedFeature,
+    ProgressEntry,
+    parse_progress_notes,
+    get_latest_session_entry,
+    format_progress_entry,
 )
 
 
@@ -833,3 +840,595 @@ class TestAtomicWriteIntegration:
         assert loaded["phase"] == "decomposed"
         assert loaded["spec_file"] == "specs/spec-validated.md"
         assert len(loaded["history"]) == 1
+
+
+# =============================================================================
+# Structured Progress Notes Tests
+# =============================================================================
+
+
+class TestProgressStatus:
+    """Test ProgressStatus dataclass."""
+
+    def test_creates_with_correct_fields(self):
+        """Verify ProgressStatus stores fields correctly."""
+        status = ProgressStatus(passing=25, total=50, percentage=50.0)
+
+        assert status.passing == 25
+        assert status.total == 50
+        assert status.percentage == 50.0
+
+    def test_is_immutable(self):
+        """Verify ProgressStatus is frozen (immutable)."""
+        status = ProgressStatus(passing=25, total=50, percentage=50.0)
+
+        with pytest.raises(AttributeError):
+            status.passing = 30
+
+
+class TestCompletedFeature:
+    """Test CompletedFeature dataclass."""
+
+    def test_creates_with_correct_fields(self):
+        """Verify CompletedFeature stores fields correctly."""
+        feature = CompletedFeature(
+            index=5,
+            description="User login form",
+            verification_method="browser automation",
+        )
+
+        assert feature.index == 5
+        assert feature.description == "User login form"
+        assert feature.verification_method == "browser automation"
+
+    def test_is_immutable(self):
+        """Verify CompletedFeature is frozen (immutable)."""
+        feature = CompletedFeature(
+            index=5,
+            description="User login form",
+            verification_method="browser automation",
+        )
+
+        with pytest.raises(AttributeError):
+            feature.index = 10
+
+
+class TestProgressEntry:
+    """Test ProgressEntry dataclass."""
+
+    def test_creates_with_required_fields(self):
+        """Verify ProgressEntry creates with minimal required fields."""
+        status = ProgressStatus(passing=10, total=50, percentage=20.0)
+        entry = ProgressEntry(
+            session_number=1,
+            timestamp="2024-01-15T10:30:00Z",
+            status=status,
+        )
+
+        assert entry.session_number == 1
+        assert entry.timestamp == "2024-01-15T10:30:00Z"
+        assert entry.status.passing == 10
+        assert entry.completed_features == ()
+        assert entry.issues_found == ()
+        assert entry.next_steps == ()
+        assert entry.files_modified == ()
+        assert entry.git_commits == ()
+        assert entry.is_validation_session is False
+
+    def test_creates_with_all_fields(self):
+        """Verify ProgressEntry creates with all fields populated."""
+        status = ProgressStatus(passing=25, total=50, percentage=50.0)
+        features = (
+            CompletedFeature(
+                index=1, description="Feature 1", verification_method="test"
+            ),
+        )
+        entry = ProgressEntry(
+            session_number=3,
+            timestamp="2024-01-15T14:30:00Z",
+            status=status,
+            completed_features=features,
+            issues_found=("Bug in login",),
+            next_steps=("Fix login bug",),
+            files_modified=("src/login.py",),
+            git_commits=("abc123",),
+            is_validation_session=False,
+        )
+
+        assert entry.session_number == 3
+        assert len(entry.completed_features) == 1
+        assert len(entry.issues_found) == 1
+        assert len(entry.next_steps) == 1
+        assert len(entry.files_modified) == 1
+        assert len(entry.git_commits) == 1
+
+    def test_is_immutable(self):
+        """Verify ProgressEntry is frozen (immutable)."""
+        status = ProgressStatus(passing=10, total=50, percentage=20.0)
+        entry = ProgressEntry(
+            session_number=1,
+            timestamp="2024-01-15T10:30:00Z",
+            status=status,
+        )
+
+        with pytest.raises(AttributeError):
+            entry.session_number = 2
+
+
+class TestParseProgressNotes:
+    """Test parse_progress_notes function."""
+
+    SAMPLE_SESSION = """=== SESSION 3: 2024-01-15T14:30:00Z ===
+Status: 25/50 features passing (50%)
+
+Completed This Session:
+- Feature #12: User can submit contact form - browser automation with screenshot
+- Feature #13: Form shows validation errors - tested invalid inputs
+
+Issues Found:
+- Button hover state missing on dark mode
+- Console warning about deprecated API
+
+Next Steps:
+- Work on Feature #14 next
+- Fix hover state issue before moving on
+
+Files Modified:
+- src/components/ContactForm.tsx
+- src/styles/forms.css
+- tests/contact.test.ts
+
+Git Commits: a1b2c3d, e4f5g6h
+=========================================
+"""
+
+    def test_parses_basic_session(self):
+        """Verify parsing of a complete session entry."""
+        entries = parse_progress_notes(self.SAMPLE_SESSION)
+
+        assert len(entries) == 1
+        entry = entries[0]
+
+        assert entry.session_number == 3
+        assert entry.timestamp == "2024-01-15T14:30:00Z"
+        assert entry.status.passing == 25
+        assert entry.status.total == 50
+        assert entry.status.percentage == 50.0
+
+    def test_parses_completed_features(self):
+        """Verify parsing of completed features list."""
+        entries = parse_progress_notes(self.SAMPLE_SESSION)
+        entry = entries[0]
+
+        assert len(entry.completed_features) == 2
+        assert entry.completed_features[0].index == 12
+        assert "contact form" in entry.completed_features[0].description.lower()
+        assert "browser automation" in entry.completed_features[0].verification_method
+
+    def test_parses_issues_found(self):
+        """Verify parsing of issues found list."""
+        entries = parse_progress_notes(self.SAMPLE_SESSION)
+        entry = entries[0]
+
+        assert len(entry.issues_found) == 2
+        assert any("hover state" in issue.lower() for issue in entry.issues_found)
+
+    def test_parses_next_steps(self):
+        """Verify parsing of next steps list."""
+        entries = parse_progress_notes(self.SAMPLE_SESSION)
+        entry = entries[0]
+
+        assert len(entry.next_steps) == 2
+        assert any("Feature #14" in step for step in entry.next_steps)
+
+    def test_parses_files_modified(self):
+        """Verify parsing of files modified list."""
+        entries = parse_progress_notes(self.SAMPLE_SESSION)
+        entry = entries[0]
+
+        assert len(entry.files_modified) == 3
+        assert "src/components/ContactForm.tsx" in entry.files_modified
+
+    def test_parses_git_commits(self):
+        """Verify parsing of git commits."""
+        entries = parse_progress_notes(self.SAMPLE_SESSION)
+        entry = entries[0]
+
+        assert len(entry.git_commits) == 2
+        assert "a1b2c3d" in entry.git_commits
+        assert "e4f5g6h" in entry.git_commits
+
+    def test_parses_multiple_sessions(self):
+        """Verify parsing of multiple session entries."""
+        content = """=== SESSION 1: 2024-01-15T10:00:00Z ===
+Status: 5/50 features passing (10%)
+
+Completed This Session:
+- Feature #1: Setup project - manual verification
+
+Issues Found:
+- None
+
+Next Steps:
+- Work on Feature #2 next
+
+Files Modified:
+- package.json
+
+Git Commits: abc1234
+=========================================
+
+=== SESSION 2: 2024-01-15T12:00:00Z ===
+Status: 10/50 features passing (20%)
+
+Completed This Session:
+- Feature #2: User registration - browser automation
+
+Issues Found:
+- Minor styling issue
+
+Next Steps:
+- Work on Feature #3 next
+
+Files Modified:
+- src/register.tsx
+
+Git Commits: def5678
+=========================================
+"""
+        entries = parse_progress_notes(content)
+
+        assert len(entries) == 2
+        assert entries[0].session_number == 1
+        assert entries[1].session_number == 2
+        assert entries[0].status.passing == 5
+        assert entries[1].status.passing == 10
+
+    def test_handles_empty_content(self):
+        """Verify empty content returns empty list."""
+        entries = parse_progress_notes("")
+
+        assert entries == []
+
+    def test_handles_none_issues(self):
+        """Verify 'None' in Issues Found section is excluded."""
+        content = """=== SESSION 1: 2024-01-15T10:00:00Z ===
+Status: 5/50 features passing (10%)
+
+Completed This Session:
+- Feature #1: Setup project - manual verification
+
+Issues Found:
+- None
+
+Next Steps:
+- Work on Feature #2 next
+
+Files Modified:
+- package.json
+
+Git Commits: abc1234
+=========================================
+"""
+        entries = parse_progress_notes(content)
+        entry = entries[0]
+
+        assert len(entry.issues_found) == 0
+
+    def test_handles_legacy_freeform_notes(self):
+        """Verify legacy freeform notes return empty list (no crash)."""
+        content = """Session notes from previous coding session:
+
+- Worked on login feature
+- Fixed some bugs
+- Need to continue tomorrow
+
+Progress: 25% complete
+"""
+        entries = parse_progress_notes(content)
+
+        # Should return empty list, not crash
+        assert entries == []
+
+    def test_handles_missing_sections(self):
+        """Verify missing sections don't cause errors."""
+        content = """=== SESSION 1: 2024-01-15T10:00:00Z ===
+Status: 5/50 features passing (10%)
+
+Git Commits: abc1234
+=========================================
+"""
+        entries = parse_progress_notes(content)
+        entry = entries[0]
+
+        # Missing sections should be empty tuples
+        assert entry.completed_features == ()
+        assert entry.issues_found == ()
+        assert entry.next_steps == ()
+        assert entry.files_modified == ()
+
+    def test_accepts_path_input(self, tmp_path):
+        """Verify function accepts Path object as input."""
+        progress_file = tmp_path / "claude-progress.txt"
+        progress_file.write_text(self.SAMPLE_SESSION)
+
+        entries = parse_progress_notes(progress_file)
+
+        assert len(entries) == 1
+        assert entries[0].session_number == 3
+
+    def test_handles_nonexistent_file(self, tmp_path):
+        """Verify nonexistent file returns empty list."""
+        nonexistent = tmp_path / "does_not_exist.txt"
+
+        entries = parse_progress_notes(nonexistent)
+
+        assert entries == []
+
+    def test_parses_validation_session(self):
+        """Verify parsing of validation session format."""
+        content = """=== VALIDATION SESSION: 2024-01-15T16:45:00Z ===
+Status: 15/50 features passing (30%)
+
+Rejected Features:
+- Feature #5: User login form submission
+  - Issue: Submit button does nothing
+
+Issues Found:
+- Feature #5: Submit button non-functional
+
+Next Steps:
+- Fix Feature #5 - add submit handler
+- Re-run validation after fixes
+
+Tests Verified: 15/50
+=========================================
+"""
+        entries = parse_progress_notes(content)
+
+        assert len(entries) == 1
+        entry = entries[0]
+
+        assert entry.is_validation_session is True
+        assert entry.timestamp == "2024-01-15T16:45:00Z"
+
+    def test_handles_percentage_with_decimal(self):
+        """Verify parsing of percentage with decimal places."""
+        content = """=== SESSION 1: 2024-01-15T10:00:00Z ===
+Status: 33/100 features passing (33.33%)
+
+Completed This Session:
+- None
+
+Issues Found:
+- None
+
+Next Steps:
+- Continue work
+
+Files Modified:
+- None
+
+Git Commits: None
+=========================================
+"""
+        entries = parse_progress_notes(content)
+        entry = entries[0]
+
+        assert entry.status.percentage == 33.33
+
+    def test_handles_feature_without_hash(self):
+        """Verify parsing of feature format without # symbol."""
+        content = """=== SESSION 1: 2024-01-15T10:00:00Z ===
+Status: 5/50 features passing (10%)
+
+Completed This Session:
+- Feature 5: Login feature - browser automation
+
+Issues Found:
+- None
+
+Next Steps:
+- Work on Feature 6
+
+Files Modified:
+- None
+
+Git Commits: abc1234
+=========================================
+"""
+        entries = parse_progress_notes(content)
+        entry = entries[0]
+
+        # Should still extract the feature
+        assert len(entry.completed_features) == 1
+        assert entry.completed_features[0].index == 5
+
+
+class TestGetLatestSessionEntry:
+    """Test get_latest_session_entry function."""
+
+    def test_returns_none_for_empty_file(self, tmp_path):
+        """Verify returns None for empty progress file."""
+        progress_file = tmp_path / "claude-progress.txt"
+        progress_file.write_text("")
+
+        result = get_latest_session_entry(tmp_path)
+
+        assert result is None
+
+    def test_returns_none_for_missing_file(self, tmp_path):
+        """Verify returns None when file doesn't exist."""
+        result = get_latest_session_entry(tmp_path)
+
+        assert result is None
+
+    def test_returns_last_entry(self, tmp_path):
+        """Verify returns the last session entry."""
+        content = """=== SESSION 1: 2024-01-15T10:00:00Z ===
+Status: 5/50 features passing (10%)
+
+Completed This Session:
+- Feature #1: Setup - manual
+
+Issues Found:
+- None
+
+Next Steps:
+- Continue
+
+Files Modified:
+- None
+
+Git Commits: abc1234
+=========================================
+
+=== SESSION 2: 2024-01-15T14:00:00Z ===
+Status: 15/50 features passing (30%)
+
+Completed This Session:
+- Feature #2: Login - browser automation
+
+Issues Found:
+- None
+
+Next Steps:
+- Continue
+
+Files Modified:
+- None
+
+Git Commits: def5678
+=========================================
+"""
+        progress_file = tmp_path / "claude-progress.txt"
+        progress_file.write_text(content)
+
+        result = get_latest_session_entry(tmp_path)
+
+        assert result is not None
+        assert result.session_number == 2
+        assert result.status.passing == 15
+
+
+class TestFormatProgressEntry:
+    """Test format_progress_entry function."""
+
+    def test_formats_basic_entry(self):
+        """Verify basic entry formatting."""
+        status = ProgressStatus(passing=25, total=50, percentage=50.0)
+        entry = ProgressEntry(
+            session_number=3,
+            timestamp="2024-01-15T14:30:00Z",
+            status=status,
+        )
+
+        result = format_progress_entry(entry)
+
+        assert "=== SESSION 3: 2024-01-15T14:30:00Z ===" in result
+        assert "Status: 25/50 features passing (50.0%)" in result
+        assert "=========================================" in result
+
+    def test_formats_completed_features(self):
+        """Verify completed features formatting."""
+        status = ProgressStatus(passing=25, total=50, percentage=50.0)
+        features = (
+            CompletedFeature(
+                index=12,
+                description="Contact form",
+                verification_method="browser automation",
+            ),
+        )
+        entry = ProgressEntry(
+            session_number=3,
+            timestamp="2024-01-15T14:30:00Z",
+            status=status,
+            completed_features=features,
+        )
+
+        result = format_progress_entry(entry)
+
+        assert "Completed This Session:" in result
+        assert "- Feature #12: Contact form - browser automation" in result
+
+    def test_formats_validation_session(self):
+        """Verify validation session formatting."""
+        status = ProgressStatus(passing=15, total=50, percentage=30.0)
+        entry = ProgressEntry(
+            session_number=0,
+            timestamp="2024-01-15T16:45:00Z",
+            status=status,
+            is_validation_session=True,
+        )
+
+        result = format_progress_entry(entry)
+
+        assert "=== VALIDATION SESSION: 2024-01-15T16:45:00Z ===" in result
+
+    def test_formats_empty_sections_as_none(self):
+        """Verify empty sections are formatted as 'None'."""
+        status = ProgressStatus(passing=10, total=50, percentage=20.0)
+        entry = ProgressEntry(
+            session_number=1,
+            timestamp="2024-01-15T10:00:00Z",
+            status=status,
+        )
+
+        result = format_progress_entry(entry)
+
+        # Check for "- None" in various sections
+        lines = result.split("\n")
+        completed_idx = next(
+            i for i, l in enumerate(lines) if "Completed This Session" in l
+        )
+        assert lines[completed_idx + 1] == "- None"
+
+
+class TestProgressRoundTrip:
+    """Test round-trip parsing (format -> parse -> format)."""
+
+    def test_round_trip_preserves_data(self):
+        """Verify format -> parse -> format preserves all data."""
+        status = ProgressStatus(passing=25, total=50, percentage=50.0)
+        features = (
+            CompletedFeature(
+                index=12,
+                description="Contact form",
+                verification_method="browser automation",
+            ),
+            CompletedFeature(
+                index=13,
+                description="Validation errors",
+                verification_method="tested inputs",
+            ),
+        )
+        original = ProgressEntry(
+            session_number=3,
+            timestamp="2024-01-15T14:30:00Z",
+            status=status,
+            completed_features=features,
+            issues_found=("Bug in hover state",),
+            next_steps=("Fix hover state", "Continue with Feature #14"),
+            files_modified=("src/form.tsx", "src/styles.css"),
+            git_commits=("abc123", "def456"),
+            is_validation_session=False,
+        )
+
+        # Format to string
+        formatted = format_progress_entry(original)
+
+        # Parse back
+        parsed_list = parse_progress_notes(formatted)
+        assert len(parsed_list) == 1
+        parsed = parsed_list[0]
+
+        # Verify key fields match
+        assert parsed.session_number == original.session_number
+        assert parsed.timestamp == original.timestamp
+        assert parsed.status.passing == original.status.passing
+        assert parsed.status.total == original.status.total
+        assert len(parsed.completed_features) == len(original.completed_features)
+        assert len(parsed.issues_found) == len(original.issues_found)
+        assert len(parsed.next_steps) == len(original.next_steps)
+        assert len(parsed.files_modified) == len(original.files_modified)
+        assert len(parsed.git_commits) == len(original.git_commits)

@@ -179,14 +179,88 @@ git commit -m "Implement [feature name] - verified end-to-end
 "
 ```
 
-### STEP 9: UPDATE PROGRESS NOTES
+### STEP 9: UPDATE PROGRESS NOTES (USE STRUCTURED FORMAT)
 
-Update `claude-progress.txt` with:
-- What you accomplished this session
-- Which test(s) you completed
-- Any issues discovered or fixed
-- What should be worked on next
-- Current completion status (e.g., "45/100 tests passing")
+Update `claude-progress.txt` using this structured template. This format is
+machine-parseable and ensures consistency across sessions.
+
+**IMPORTANT:** Append a new session entry - do not overwrite previous entries.
+
+```markdown
+=== SESSION {N}: {TIMESTAMP} ===
+Status: {X}/{Y} features passing ({percentage}%)
+
+Completed This Session:
+- Feature #{index}: {description} - {verification_method}
+- Feature #{index}: {description} - {verification_method}
+
+Issues Found:
+- {issue description}
+
+Next Steps:
+- Work on Feature #{index} next
+- {other planned work}
+
+Files Modified:
+- {file_path}
+- {file_path}
+
+Git Commits: {commit_hashes}
+=========================================
+```
+
+**Template Field Explanations:**
+
+| Field | Format | Example |
+|-------|--------|---------|
+| `{N}` | Session number (increment from previous) | `3` |
+| `{TIMESTAMP}` | ISO format or human-readable | `2024-01-15T10:30:00Z` or `2024-01-15 10:30 AM` |
+| `{X}/{Y}` | Passing/Total feature count | `25/50` |
+| `{percentage}` | Percentage with up to 1 decimal | `50%` or `50.0%` |
+| `{index}` | Feature index from feature_list.json | `#5` |
+| `{description}` | Brief feature description | `User login form validation` |
+| `{verification_method}` | How you verified it works | `browser automation`, `screenshot verified` |
+| `{file_path}` | Relative path to modified file | `src/components/Login.tsx` |
+| `{commit_hashes}` | Short commit hashes, comma-separated | `abc1234, def5678` |
+
+**Example Filled Template:**
+
+```markdown
+=== SESSION 3: 2024-01-15T14:30:00Z ===
+Status: 25/50 features passing (50%)
+
+Completed This Session:
+- Feature #12: User can submit contact form - browser automation with screenshot
+- Feature #13: Form shows validation errors - tested invalid inputs
+
+Issues Found:
+- Button hover state missing on dark mode
+- Console warning about deprecated API
+
+Next Steps:
+- Work on Feature #14 next
+- Fix hover state issue before moving on
+
+Files Modified:
+- src/components/ContactForm.tsx
+- src/styles/forms.css
+- tests/contact.test.ts
+
+Git Commits: a1b2c3d, e4f5g6h
+=========================================
+```
+
+**If no issues found, write:**
+```
+Issues Found:
+- None
+```
+
+**If no files modified, write:**
+```
+Files Modified:
+- None (research/investigation only)
+```
 
 ### STEP 10: END SESSION CLEANLY
 

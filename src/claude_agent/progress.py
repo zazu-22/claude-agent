@@ -8,13 +8,354 @@ Utilities for tracking and displaying agent progress.
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Union
 
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Structured Progress Notes Data Classes
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class ProgressStatus:
+    """Status counts from a session entry."""
+
+    passing: int
+    total: int
+    percentage: float
+
+
+@dataclass(frozen=True)
+class CompletedFeature:
+    """A completed feature entry with verification details."""
+
+    index: int
+    description: str
+    verification_method: str
+
+
+@dataclass(frozen=True)
+class ProgressEntry:
+    """A single session entry from claude-progress.txt (immutable)."""
+
+    session_number: int
+    timestamp: str
+    status: ProgressStatus
+    completed_features: tuple[CompletedFeature, ...] = field(default_factory=tuple)
+    issues_found: tuple[str, ...] = field(default_factory=tuple)
+    next_steps: tuple[str, ...] = field(default_factory=tuple)
+    files_modified: tuple[str, ...] = field(default_factory=tuple)
+    git_commits: tuple[str, ...] = field(default_factory=tuple)
+    is_validation_session: bool = False
+
+
+# =============================================================================
+# Progress Notes Parsing
+# =============================================================================
+
+# Regex patterns for parsing structured progress notes
+SESSION_HEADER_PATTERN = re.compile(
+    r"===\s*SESSION\s+(\d+):\s*(.+?)\s*===", re.IGNORECASE
+)
+VALIDATION_HEADER_PATTERN = re.compile(
+    r"===\s*VALIDATION\s+SESSION:\s*(.+?)\s*===", re.IGNORECASE
+)
+STATUS_PATTERN = re.compile(
+    r"Status:\s*(\d+)/(\d+)\s*features?\s*passing\s*\((\d+(?:\.\d+)?)\s*%\)",
+    re.IGNORECASE,
+)
+FEATURE_PATTERN = re.compile(
+    r"-\s*Feature\s*#?(\d+):\s*(.+?)\s*-\s*(.+)", re.IGNORECASE
+)
+BULLET_PATTERN = re.compile(r"^\s*-\s*(.+)$", re.MULTILINE)
+
+
+def parse_progress_notes(content: Union[str, Path]) -> list[ProgressEntry]:
+    """
+    Parse structured progress notes into ProgressEntry objects.
+
+    Handles both coding session format and validation session format.
+    Returns empty list if no structured entries are found (e.g., legacy format).
+
+    Args:
+        content: Either a string of progress notes content or a Path to the file
+
+    Returns:
+        List of ProgressEntry objects in chronological order
+    """
+    if isinstance(content, Path):
+        if not content.exists():
+            return []
+        try:
+            content = content.read_text()
+        except IOError:
+            return []
+
+    if not content or not content.strip():
+        return []
+
+    entries = []
+
+    # Split by session delimiters and find session blocks
+    # Look for === SESSION or === VALIDATION SESSION headers
+    session_starts = []
+
+    for match in SESSION_HEADER_PATTERN.finditer(content):
+        session_starts.append(
+            (match.start(), int(match.group(1)), match.group(2).strip(), False)
+        )
+
+    for match in VALIDATION_HEADER_PATTERN.finditer(content):
+        # Validation sessions don't have a session number, use -1 as marker
+        session_starts.append((match.start(), -1, match.group(1).strip(), True))
+
+    # Sort by position in file
+    session_starts.sort(key=lambda x: x[0])
+
+    if not session_starts:
+        return []
+
+    # Extract content for each session
+    for i, (start_pos, session_num, timestamp, is_validation) in enumerate(
+        session_starts
+    ):
+        # Find the end of this session (start of next session or end of file)
+        if i + 1 < len(session_starts):
+            end_pos = session_starts[i + 1][0]
+        else:
+            end_pos = len(content)
+
+        session_content = content[start_pos:end_pos]
+
+        try:
+            entry = _parse_session_block(
+                session_content, session_num, timestamp, is_validation
+            )
+            if entry:
+                entries.append(entry)
+        except Exception as e:
+            logger.debug(f"Failed to parse session block: {e}")
+            continue
+
+    return entries
+
+
+def _parse_session_block(
+    content: str, session_number: int, timestamp: str, is_validation: bool
+) -> Optional[ProgressEntry]:
+    """Parse a single session block into a ProgressEntry."""
+
+    # Parse status line
+    status_match = STATUS_PATTERN.search(content)
+    if status_match:
+        passing = int(status_match.group(1))
+        total = int(status_match.group(2))
+        percentage = float(status_match.group(3))
+        status = ProgressStatus(passing=passing, total=total, percentage=percentage)
+    else:
+        # Default status if not found
+        status = ProgressStatus(passing=0, total=0, percentage=0.0)
+
+    # Parse completed features (only for coding sessions typically)
+    completed_features = []
+    completed_section = _extract_section(content, "Completed This Session:")
+    if completed_section:
+        for match in FEATURE_PATTERN.finditer(completed_section):
+            completed_features.append(
+                CompletedFeature(
+                    index=int(match.group(1)),
+                    description=match.group(2).strip(),
+                    verification_method=match.group(3).strip(),
+                )
+            )
+
+    # Parse issues found
+    issues_found = []
+    issues_section = _extract_section(content, "Issues Found:")
+    if issues_section:
+        for match in BULLET_PATTERN.finditer(issues_section):
+            issue = match.group(1).strip()
+            if issue.lower() != "none":
+                issues_found.append(issue)
+
+    # Parse next steps
+    next_steps = []
+    next_section = _extract_section(content, "Next Steps:")
+    if next_section:
+        for match in BULLET_PATTERN.finditer(next_section):
+            next_steps.append(match.group(1).strip())
+
+    # Parse files modified
+    files_modified = []
+    files_section = _extract_section(content, "Files Modified:")
+    if files_section:
+        for match in BULLET_PATTERN.finditer(files_section):
+            file_path = match.group(1).strip()
+            if not file_path.lower().startswith("none"):
+                files_modified.append(file_path)
+
+    # Parse git commits
+    git_commits = []
+    commits_match = re.search(r"Git Commits?:\s*(.+?)(?:\n|$)", content, re.IGNORECASE)
+    if commits_match:
+        commits_str = commits_match.group(1).strip()
+        if commits_str.lower() != "none":
+            # Split by comma or space
+            git_commits = [
+                c.strip() for c in re.split(r"[,\s]+", commits_str) if c.strip()
+            ]
+
+    # Handle validation session number (-1 means we need to assign one)
+    if session_number == -1:
+        session_number = 0  # Validation sessions get 0
+
+    return ProgressEntry(
+        session_number=session_number,
+        timestamp=timestamp,
+        status=status,
+        completed_features=tuple(completed_features),
+        issues_found=tuple(issues_found),
+        next_steps=tuple(next_steps),
+        files_modified=tuple(files_modified),
+        git_commits=tuple(git_commits),
+        is_validation_session=is_validation,
+    )
+
+
+def _extract_section(content: str, header: str) -> Optional[str]:
+    """
+    Extract content between a section header and the next section or delimiter.
+
+    Args:
+        content: Full session block content
+        header: Section header to find (e.g., "Completed This Session:")
+
+    Returns:
+        Section content or None if header not found
+    """
+    # Find the header
+    header_pattern = re.compile(re.escape(header), re.IGNORECASE)
+    header_match = header_pattern.search(content)
+    if not header_match:
+        return None
+
+    start_pos = header_match.end()
+
+    # Find the end (next section header or delimiter)
+    # Match section headers (capital letter, then letters/spaces/digits, then colon)
+    # or delimiter lines (5+ equals signs)
+    section_end_pattern = re.compile(r"(?:^[A-Z][a-zA-Z\s\d]+:|^={5,})", re.MULTILINE)
+
+    remaining_content = content[start_pos:]
+    end_match = section_end_pattern.search(remaining_content)
+
+    if end_match:
+        return remaining_content[: end_match.start()]
+    else:
+        return remaining_content
+
+
+def get_latest_session_entry(project_dir: Path) -> Optional[ProgressEntry]:
+    """
+    Get the most recent session entry from claude-progress.txt.
+
+    Args:
+        project_dir: Project directory containing claude-progress.txt
+
+    Returns:
+        Most recent ProgressEntry or None if no entries found
+    """
+    progress_path = project_dir / "claude-progress.txt"
+    entries = parse_progress_notes(progress_path)
+
+    if not entries:
+        return None
+
+    # Return the last entry (most recent)
+    return entries[-1]
+
+
+def format_progress_entry(entry: ProgressEntry) -> str:
+    """
+    Format a ProgressEntry back into the structured text format.
+
+    This enables round-trip parsing (parse -> modify -> format -> parse).
+
+    Args:
+        entry: ProgressEntry to format
+
+    Returns:
+        Formatted string matching the structured template
+    """
+    lines = []
+
+    # Header
+    if entry.is_validation_session:
+        lines.append(f"=== VALIDATION SESSION: {entry.timestamp} ===")
+    else:
+        lines.append(f"=== SESSION {entry.session_number}: {entry.timestamp} ===")
+
+    # Status
+    lines.append(
+        f"Status: {entry.status.passing}/{entry.status.total} features passing "
+        f"({entry.status.percentage:.1f}%)"
+    )
+    lines.append("")
+
+    # Completed features
+    lines.append("Completed This Session:")
+    if entry.completed_features:
+        for feature in entry.completed_features:
+            lines.append(
+                f"- Feature #{feature.index}: {feature.description} - "
+                f"{feature.verification_method}"
+            )
+    else:
+        lines.append("- None")
+    lines.append("")
+
+    # Issues found
+    lines.append("Issues Found:")
+    if entry.issues_found:
+        for issue in entry.issues_found:
+            lines.append(f"- {issue}")
+    else:
+        lines.append("- None")
+    lines.append("")
+
+    # Next steps
+    lines.append("Next Steps:")
+    if entry.next_steps:
+        for step in entry.next_steps:
+            lines.append(f"- {step}")
+    else:
+        lines.append("- None")
+    lines.append("")
+
+    # Files modified
+    lines.append("Files Modified:")
+    if entry.files_modified:
+        for file_path in entry.files_modified:
+            lines.append(f"- {file_path}")
+    else:
+        lines.append("- None")
+    lines.append("")
+
+    # Git commits
+    if entry.git_commits:
+        lines.append(f"Git Commits: {', '.join(entry.git_commits)}")
+    else:
+        lines.append("Git Commits: None")
+
+    lines.append("=========================================")
+
+    return "\n".join(lines)
 
 
 # =============================================================================
@@ -213,6 +554,7 @@ def find_spec_for_coding(project_dir: Path) -> Optional[Path]:
         # Emit deprecation warning (once per session)
         if not _root_app_spec_warning_shown:
             import sys
+
             print(
                 "Warning: app_spec.txt found in project root. "
                 "Consider moving to specs/app_spec.txt for consistency.",
@@ -302,9 +644,7 @@ def parse_validation_verdict(project_dir: Path) -> ValidationVerdict:
         # Try to count blocking issues from table or headings
         blocking = 0
         # Look for BLOCKING count in executive summary table
-        blocking_table = re.search(
-            r"BLOCKING\s*\|\s*(\d+)", content, re.IGNORECASE
-        )
+        blocking_table = re.search(r"BLOCKING\s*\|\s*(\d+)", content, re.IGNORECASE)
         if blocking_table:
             blocking = int(blocking_table.group(1))
         else:
