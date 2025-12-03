@@ -49,7 +49,13 @@ from claude_agent.prompts.loader import (
     get_spec_decompose_prompt,
     write_spec_to_project,
 )
-from claude_agent.security import configure_security
+from claude_agent.security import configure_security, set_security_logger
+from claude_agent.logging import (
+    AgentLogger,
+    LoggingConfig as LoggingConfigClass,
+    LogLevel,
+    SessionStatsTracker,
+)
 
 
 @dataclass
@@ -209,6 +215,8 @@ async def run_agent_session(
     client: ClaudeSDKClient,
     message: str,
     project_dir: Path,
+    logger: Optional[AgentLogger] = None,
+    stats_tracker: Optional[SessionStatsTracker] = None,
 ) -> tuple[str, str]:
     """
     Run a single agent session using Claude Agent SDK.
@@ -217,6 +225,8 @@ async def run_agent_session(
         client: Claude SDK client
         message: The prompt to send
         project_dir: Project directory path
+        logger: Optional AgentLogger for structured logging
+        stats_tracker: Optional SessionStatsTracker for statistics
 
     Returns:
         (status, response_text) where status is:
@@ -224,6 +234,10 @@ async def run_agent_session(
         - "error" if an error occurred
     """
     print("Sending prompt to Claude Agent SDK...\n")
+
+    # Track last tool name for result logging
+    last_tool_name = None
+    turns_used = 0
 
     try:
         await client.query(message)
@@ -241,13 +255,24 @@ async def run_agent_session(
                         response_text += block.text
                         print(block.text, end="", flush=True)
                     elif block_type == "ToolUseBlock" and hasattr(block, "name"):
-                        print(f"\n[Tool: {block.name}]", flush=True)
+                        tool_name = block.name
+                        last_tool_name = tool_name
+                        print(f"\n[Tool: {tool_name}]", flush=True)
+
+                        tool_input = None
                         if hasattr(block, "input"):
-                            input_str = str(block.input)
+                            tool_input = block.input
+                            input_str = str(tool_input)
                             if len(input_str) > 200:
                                 print(f"   Input: {input_str[:200]}...", flush=True)
                             else:
                                 print(f"   Input: {input_str}", flush=True)
+
+                        # Log tool call
+                        if logger:
+                            logger.log_tool_call(tool_name, tool_input)
+                        if stats_tracker:
+                            stats_tracker.record_tool_call(tool_name)
 
             # Handle UserMessage (tool results)
             elif msg_type == "UserMessage" and hasattr(msg, "content"):
@@ -260,11 +285,20 @@ async def run_agent_session(
 
                         if "blocked" in str(result_content).lower():
                             print(f"   [BLOCKED] {result_content}", flush=True)
+                            # Note: security blocks are already logged by security.py
+                            if stats_tracker:
+                                stats_tracker.record_security_block()
                         elif is_error:
                             error_str = str(result_content)[:500]
                             print(f"   [Error] {error_str}", flush=True)
+                            if stats_tracker:
+                                stats_tracker.record_error()
                         else:
                             print("   [Done]", flush=True)
+
+                        # Log tool result
+                        if logger and last_tool_name:
+                            logger.log_tool_result(last_tool_name, is_error, result_content)
 
             # Handle ResultMessage (session end - critical diagnostic info)
             elif msg_type == "ResultMessage":
@@ -284,11 +318,27 @@ async def run_agent_session(
                         flush=True,
                     )
 
+                # Track turns used
+                if isinstance(num_turns, int):
+                    turns_used = num_turns
+                    if stats_tracker:
+                        stats_tracker.set_turns_used(turns_used)
+
         print("\n" + "-" * 70 + "\n")
         return "continue", response_text
 
     except Exception as e:
         print(f"Error during agent session: {e}")
+        # Log error
+        if logger:
+            import traceback
+            logger.log_error(
+                error_type=type(e).__name__,
+                message=str(e),
+                stack_trace=traceback.format_exc(),
+            )
+        if stats_tracker:
+            stats_tracker.record_error()
         return "error", str(e)
 
 
@@ -338,6 +388,26 @@ async def run_validator_session(
     return result
 
 
+def _create_logging_config(config: Config) -> LoggingConfigClass:
+    """Create a LoggingConfigClass from the config object's logging settings."""
+    level_map = {
+        "debug": LogLevel.DEBUG,
+        "info": LogLevel.INFO,
+        "warning": LogLevel.WARNING,
+        "error": LogLevel.ERROR,
+    }
+    return LoggingConfigClass(
+        enabled=config.logging.enabled,
+        level=level_map.get(config.logging.level, LogLevel.INFO),
+        include_tool_results=config.logging.include_tool_results,
+        include_allowed_commands=config.logging.include_allowed_commands,
+        max_summary_length=config.logging.max_summary_length,
+        max_size_mb=config.logging.max_size_mb,
+        max_files=config.logging.max_files,
+        retention_days=config.logging.retention_days,
+    )
+
+
 async def run_autonomous_agent(config: Config) -> None:
     """
     Run the autonomous agent loop.
@@ -355,6 +425,17 @@ async def run_autonomous_agent(config: Config) -> None:
         stack=stack,
         extra_commands=config.security.extra_commands or None,
     )
+
+    # Initialize logging
+    logging_config = _create_logging_config(config)
+    logger = AgentLogger(
+        project_dir=project_dir,
+        config=logging_config,
+        verbose=config.verbose,
+    )
+
+    # Set up security logger for security decision logging
+    set_security_logger(logger)
 
     # Print startup banner
     print_startup_banner(
@@ -470,6 +551,24 @@ async def run_autonomous_agent(config: Config) -> None:
             # Run coding session
             print_session_header(iteration, is_first_run)
 
+            # Determine agent type for logging
+            agent_type = "initializer" if is_first_run else "coding"
+
+            # Start logging session
+            session_id = logger.start_session(
+                iteration=iteration,
+                model=config.agent.model,
+                stack=stack,
+                agent_type=agent_type,
+            )
+
+            # Create stats tracker for this session
+            stats_tracker = SessionStatsTracker(
+                project_dir=project_dir,
+                session_id=session_id,
+                agent_type=agent_type,
+            )
+
             # Create client (fresh context)
             client = create_client(
                 project_dir=project_dir,
@@ -493,9 +592,18 @@ async def run_autonomous_agent(config: Config) -> None:
                     dev_command=dev_command,
                 )
 
-            # Run session
+            # Run session with logging
             async with client:
-                status, response = await run_agent_session(client, prompt, project_dir)
+                status, response = await run_agent_session(
+                    client, prompt, project_dir, logger, stats_tracker
+                )
+
+            # End logging session and save stats
+            logger.end_session(
+                turns_used=stats_tracker.stats.turns_used,
+                status=status,
+            )
+            stats_tracker.save()
 
             # Re-check after coding session
             passing, total = count_passing_tests(project_dir)

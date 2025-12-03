@@ -53,6 +53,21 @@ class WorkflowConfig:
 
 
 @dataclass
+class LoggingConfig:
+    """Logging and observability configuration."""
+
+    enabled: bool = True
+    level: str = "info"  # debug, info, warning, error
+    include_tool_results: bool = False  # Log full tool results (can be verbose)
+    include_allowed_commands: bool = False  # Log security allows (verbose)
+    max_summary_length: int = 500  # Truncate long fields
+    # Rotation settings
+    max_size_mb: int = 10  # Rotate when file exceeds this size
+    max_files: int = 5  # Keep this many rotated files
+    retention_days: int = 30  # Delete files older than this
+
+
+@dataclass
 class Config:
     """Complete configuration for a claude-agent run."""
 
@@ -75,6 +90,12 @@ class Config:
 
     # Workflow settings
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
+
+    # Logging settings
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+
+    # Runtime flags (not persisted to config file)
+    verbose: bool = False
 
     @property
     def spec_content(self) -> Optional[str]:
@@ -114,6 +135,7 @@ def merge_config(
     cli_max_iterations: Optional[int] = None,
     cli_config_path: Optional[Path] = None,
     cli_review: bool = False,
+    cli_verbose: bool = False,
 ) -> Config:
     """
     Merge configuration from all sources.
@@ -127,6 +149,7 @@ def merge_config(
         project_dir: Project directory path
         cli_*: CLI argument values (None means not specified)
         cli_config_path: Explicit config file path
+        cli_verbose: Enable verbose output
 
     Returns:
         Merged Config object
@@ -200,6 +223,37 @@ def merge_config(
                         "skip_if_feature_list_exists"
                     ]
 
+        # Logging settings
+        if "logging" in file_config:
+            logging_config = file_config["logging"]
+            if "enabled" in logging_config:
+                config.logging.enabled = logging_config["enabled"]
+            if "level" in logging_config:
+                config.logging.level = logging_config["level"]
+            if "include_tool_results" in logging_config:
+                config.logging.include_tool_results = logging_config["include_tool_results"]
+            if "include_allowed_commands" in logging_config:
+                config.logging.include_allowed_commands = logging_config["include_allowed_commands"]
+            if "max_summary_length" in logging_config:
+                config.logging.max_summary_length = logging_config["max_summary_length"]
+            # Handle nested rotation section or flat keys
+            if "rotation" in logging_config:
+                rotation = logging_config["rotation"]
+                if "max_size_mb" in rotation:
+                    config.logging.max_size_mb = rotation["max_size_mb"]
+                if "max_files" in rotation:
+                    config.logging.max_files = rotation["max_files"]
+                if "retention_days" in rotation:
+                    config.logging.retention_days = rotation["retention_days"]
+            else:
+                # Also support flat keys for rotation settings
+                if "max_size_mb" in logging_config:
+                    config.logging.max_size_mb = logging_config["max_size_mb"]
+                if "max_files" in logging_config:
+                    config.logging.max_files = logging_config["max_files"]
+                if "retention_days" in logging_config:
+                    config.logging.retention_days = logging_config["retention_days"]
+
     # Apply CLI overrides (highest priority)
     if cli_spec is not None:
         config.spec_file = cli_spec
@@ -221,6 +275,9 @@ def merge_config(
 
     if cli_review:
         config.review = cli_review
+
+    if cli_verbose:
+        config.verbose = cli_verbose
 
     return config
 
@@ -269,4 +326,16 @@ workflow:
   auto_spec:
     enabled: false
     skip_if_feature_list_exists: true
+
+# Logging settings
+logging:
+  enabled: true
+  level: info  # debug, info, warning, error
+  # include_tool_results: false  # Log full tool results (can be verbose)
+  # include_allowed_commands: false  # Log security allows (verbose)
+  # max_summary_length: 500  # Truncate long fields
+  rotation:
+    max_size_mb: 10  # Rotate when file exceeds this size
+    max_files: 5  # Keep this many rotated files
+    retention_days: 30  # Delete files older than this
 """

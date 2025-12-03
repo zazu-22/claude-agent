@@ -43,6 +43,27 @@ class SecurityConfig:
 # Module-level configuration - set by CLI before running agent
 _security_config: Optional[SecurityConfig] = None
 
+# Module-level logger - set by agent.py before running sessions
+# This is an AgentLogger instance (or None if logging is disabled)
+_security_logger: Optional[any] = None
+
+
+def set_security_logger(logger) -> None:
+    """
+    Set the logger for security decision logging.
+
+    Args:
+        logger: AgentLogger instance or None to disable logging
+    """
+    global _security_logger
+    _security_logger = logger
+
+
+def get_security_logger():
+    """Get the current security logger (may be None)."""
+    global _security_logger
+    return _security_logger
+
 
 def configure_security(
     stack: str,
@@ -303,6 +324,7 @@ async def bash_security_hook(input_data, tool_use_id=None, context=None):
     Pre-tool-use hook that validates bash commands using an allowlist.
 
     Only commands in the configured allowlist are permitted.
+    Logs all security decisions when a logger is configured.
     """
     if input_data.get("tool_name") != "Bash":
         return {}
@@ -312,21 +334,30 @@ async def bash_security_hook(input_data, tool_use_id=None, context=None):
         return {}
 
     config = get_security_config()
+    logger = get_security_logger()
     commands = extract_commands(command)
 
     if not commands:
+        reason = f"Could not parse command for security validation: {command}"
+        # Log security block
+        if logger:
+            logger.log_security_block(command, reason, config.stack)
         return {
             "decision": "block",
-            "reason": f"Could not parse command for security validation: {command}",
+            "reason": reason,
         }
 
     segments = split_command_segments(command)
 
     for cmd in commands:
         if cmd not in config.commands:
+            reason = f"Command '{cmd}' is not in the allowed commands list for {config.stack} stack"
+            # Log security block
+            if logger:
+                logger.log_security_block(command, reason, config.stack)
             return {
                 "decision": "block",
-                "reason": f"Command '{cmd}' is not in the allowed commands list for {config.stack} stack",
+                "reason": reason,
             }
 
         # Additional validation for sensitive commands
@@ -338,14 +369,27 @@ async def bash_security_hook(input_data, tool_use_id=None, context=None):
             if cmd == "pkill":
                 allowed, reason = validate_pkill_command(cmd_segment)
                 if not allowed:
+                    # Log security block
+                    if logger:
+                        logger.log_security_block(command, reason, config.stack)
                     return {"decision": "block", "reason": reason}
             elif cmd == "chmod":
                 allowed, reason = validate_chmod_command(cmd_segment)
                 if not allowed:
+                    # Log security block
+                    if logger:
+                        logger.log_security_block(command, reason, config.stack)
                     return {"decision": "block", "reason": reason}
             elif cmd in ("init.sh", "setup.sh"):
                 allowed, reason = validate_init_script(cmd_segment)
                 if not allowed:
+                    # Log security block
+                    if logger:
+                        logger.log_security_block(command, reason, config.stack)
                     return {"decision": "block", "reason": reason}
+
+    # Log security allow (only in verbose mode - handled by logger)
+    if logger:
+        logger.log_security_allow(command, config.stack)
 
     return {}

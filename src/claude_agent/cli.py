@@ -93,6 +93,12 @@ from claude_agent.progress import (
     is_flag=True,
     help="Run spec workflow before coding (create -> validate -> decompose)",
 )
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Enable real-time structured log output to stderr",
+)
 @click.version_option(version=__version__)
 @click.pass_context
 def main(
@@ -108,6 +114,7 @@ def main(
     review: bool,
     reset: bool,
     auto_spec: bool,
+    verbose: bool,
 ):
     """
     Claude Agent - Autonomous coding agent powered by Claude.
@@ -198,6 +205,7 @@ def main(
         cli_max_iterations=max_iterations,
         cli_config_path=config,
         cli_review=review,
+        cli_verbose=verbose,
     )
 
     # Handle --auto-spec flag
@@ -534,6 +542,280 @@ def spec_status(project_dir):
             timestamp = entry.get("timestamp", "unknown")
             status = entry.get("status", "unknown")
             click.echo(f"  - {step}: {status} ({timestamp})")
+
+
+# =============================================================================
+# Logging Command Group
+# =============================================================================
+
+
+@main.command()
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+@click.option("--session", "-s", type=str, help="Filter by session ID")
+@click.option("--security", is_flag=True, help="Show only security events")
+@click.option("--errors", is_flag=True, help="Show only error events")
+@click.option("--features", is_flag=True, help="Show only feature events")
+@click.option("--tools", is_flag=True, help="Show only tool events")
+@click.option("--limit", "-n", type=int, default=50, help="Number of entries to show")
+@click.option("--since", type=str, help="Show entries since (e.g., '1h', '2d', '2024-01-15')")
+@click.option("--json", "output_json", is_flag=True, help="Output raw JSON")
+@click.option("--compact", is_flag=True, help="One-line per event summary")
+def logs(
+    project_dir: Path,
+    session: Optional[str],
+    security: bool,
+    errors: bool,
+    features: bool,
+    tools: bool,
+    limit: int,
+    since: Optional[str],
+    output_json: bool,
+    compact: bool,
+):
+    """View and filter log history.
+
+    \b
+    Examples:
+      claude-agent logs                  # Recent 50 entries
+      claude-agent logs --security       # Security events only
+      claude-agent logs --errors         # Error events only
+      claude-agent logs --since 1h       # Last hour
+      claude-agent logs --session abc123 # Specific session
+      claude-agent logs --json           # Raw JSON output
+    """
+    import json
+    import os
+
+    from claude_agent.logging import (
+        EventType,
+        LogLevel,
+        LogReader,
+        parse_since_value,
+    )
+
+    project_dir = Path(project_dir).resolve()
+    reader = LogReader(project_dir)
+
+    # Build event type filter
+    event_types = None
+    if security or errors or features or tools:
+        event_types = []
+        if security:
+            event_types.extend([EventType.SECURITY_BLOCK, EventType.SECURITY_ALLOW])
+        if errors:
+            event_types.append(EventType.ERROR)
+        if features:
+            event_types.extend([EventType.FEATURE_COMPLETE, EventType.FEATURE_FAILED])
+        if tools:
+            event_types.extend([EventType.TOOL_CALL, EventType.TOOL_RESULT])
+
+    # Parse since value
+    since_dt = None
+    if since:
+        try:
+            since_dt = parse_since_value(since)
+        except ValueError as e:
+            click.echo(f"Error: {e}", err=True)
+            return
+
+    # Read entries
+    entries = reader.read_entries(
+        session_id=session,
+        event_types=event_types,
+        since=since_dt,
+        limit=limit,
+    )
+
+    if not entries:
+        click.echo("No log entries found.")
+        if not (project_dir / ".claude-agent" / "logs" / "agent.log").exists():
+            click.echo("(Log file does not exist yet - run an agent session first)")
+        return
+
+    # Check if session is active
+    is_active = reader.is_session_active()
+
+    # Output format
+    if output_json:
+        # Raw JSON array
+        output = [
+            {
+                "ts": e.ts.isoformat(),
+                "level": e.level.value,
+                "event": e.event.value,
+                "session_id": e.session_id,
+                **e.data,
+            }
+            for e in entries
+        ]
+        click.echo(json.dumps(output, indent=2))
+    else:
+        # Check NO_COLOR
+        use_color = os.environ.get("NO_COLOR") is None
+
+        # Header
+        click.echo(f"\nRecent Agent Activity (last {len(entries)} events):")
+        if is_active:
+            click.echo("(session in progress - log may be incomplete)")
+        click.echo("-" * 70)
+
+        # Color codes
+        colors = {
+            LogLevel.DEBUG: "\033[90m" if use_color else "",
+            LogLevel.INFO: "" if use_color else "",
+            LogLevel.WARNING: "\033[33m" if use_color else "",
+            LogLevel.ERROR: "\033[31m" if use_color else "",
+        }
+        reset = "\033[0m" if use_color else ""
+
+        # Reverse to show oldest first (chronological order)
+        for entry in reversed(entries):
+            timestamp = entry.ts.strftime("%H:%M:%S")
+            event_name = entry.event.value.upper().replace("_", " ")
+            color = colors.get(entry.level, "")
+
+            if compact:
+                # One-line format
+                click.echo(f"{color}{timestamp} {event_name:<16} {entry.session_id[:8]}{reset}")
+            else:
+                # Detailed format
+                if entry.event == EventType.SESSION_START:
+                    details = f"iter={entry.data.get('iteration')} model={entry.data.get('model')} agent={entry.data.get('agent_type')}"
+                elif entry.event == EventType.SESSION_END:
+                    details = f"turns={entry.data.get('turns_used')} status={entry.data.get('status')}"
+                elif entry.event == EventType.TOOL_CALL:
+                    details = f"{entry.data.get('tool_name')}: {entry.data.get('input_summary', '')[:50]}"
+                elif entry.event == EventType.TOOL_RESULT:
+                    status = "error" if entry.data.get("is_error") else "success"
+                    details = f"{entry.data.get('tool_name')}: [{status}]"
+                elif entry.event == EventType.SECURITY_BLOCK:
+                    details = f"{entry.data.get('command', '')[:40]} -> \"{entry.data.get('reason', '')[:30]}\""
+                elif entry.event == EventType.SECURITY_ALLOW:
+                    details = entry.data.get("command", "")[:50]
+                elif entry.event == EventType.FEATURE_COMPLETE:
+                    details = f"#{entry.data.get('index')}: {entry.data.get('description', '')[:40]}"
+                elif entry.event == EventType.FEATURE_FAILED:
+                    details = f"#{entry.data.get('index')}: {entry.data.get('reason', '')[:40]}"
+                elif entry.event == EventType.ERROR:
+                    details = f"{entry.data.get('error_type')}: {entry.data.get('message', '')[:40]}"
+                else:
+                    details = str(entry.data)[:60]
+
+                click.echo(f"{color}{timestamp} {event_name:<16} {details}{reset}")
+
+        click.echo("-" * 70)
+
+
+@main.command()
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+@click.option("--session", "-s", type=str, help="Show stats for specific session")
+@click.option("--last", type=int, help="Show stats for last N sessions")
+@click.option("--reset", "do_reset", is_flag=True, help="Reset accumulated statistics")
+@click.option("--json", "output_json", is_flag=True, help="Output raw JSON")
+def stats(
+    project_dir: Path,
+    session: Optional[str],
+    last: Optional[int],
+    do_reset: bool,
+    output_json: bool,
+):
+    """Show session statistics.
+
+    \b
+    Examples:
+      claude-agent stats                 # Summary of all sessions
+      claude-agent stats --last 5        # Last 5 sessions
+      claude-agent stats --session abc   # Specific session
+      claude-agent stats --reset         # Clear statistics
+      claude-agent stats --json          # Raw JSON output
+    """
+    import json
+
+    from claude_agent.logging import LogReader, reset_session_stats
+
+    project_dir = Path(project_dir).resolve()
+
+    if do_reset:
+        if click.confirm("Reset all session statistics?"):
+            if reset_session_stats(project_dir):
+                click.echo("Statistics reset successfully.")
+            else:
+                click.echo("Failed to reset statistics.", err=True)
+        return
+
+    reader = LogReader(project_dir)
+    stats_data = reader.get_sessions_stats()
+
+    if not stats_data.get("sessions"):
+        click.echo("No session statistics found.")
+        if not (project_dir / ".claude-agent" / "logs" / "sessions.json").exists():
+            click.echo("(Statistics file does not exist yet - run an agent session first)")
+        return
+
+    sessions = stats_data["sessions"]
+    aggregate = stats_data.get("aggregate", {})
+
+    # Filter sessions
+    if session:
+        sessions = [s for s in sessions if s["session_id"].startswith(session)]
+        if not sessions:
+            click.echo(f"No sessions found matching '{session}'")
+            return
+    elif last:
+        sessions = sessions[-last:]
+
+    if output_json:
+        output = {"sessions": sessions, "aggregate": aggregate}
+        click.echo(json.dumps(output, indent=2))
+        return
+
+    # Summary output
+    click.echo(f"\nSession Statistics for {project_dir.name}")
+    click.echo("=" * 70)
+
+    # Aggregate stats
+    if aggregate and not session:
+        click.echo("\nAggregate:")
+        click.echo(f"  Total sessions:      {aggregate.get('total_sessions', 0)}")
+        click.echo(f"  Total turns:         {aggregate.get('total_turns', 0)}")
+        total_duration = aggregate.get("total_duration_seconds", 0)
+        if total_duration:
+            hours = int(total_duration // 3600)
+            minutes = int((total_duration % 3600) // 60)
+            click.echo(f"  Total time:          {hours}h {minutes}m")
+        click.echo(f"  Features completed:  {aggregate.get('total_features_completed', 0)}")
+        click.echo(f"  Security blocks:     {aggregate.get('total_security_blocks', 0)}")
+
+    # Individual sessions
+    if sessions:
+        click.echo(f"\n{'Sessions' if not session else 'Session Details'}:")
+        click.echo("-" * 70)
+
+        for s in sessions[-10:]:  # Show last 10 by default
+            session_id = s["session_id"]
+            agent_type = s.get("agent_type", "unknown")
+            turns = s.get("turns_used", 0)
+            duration = s.get("duration_seconds", 0)
+            features = len(s.get("features_completed", []))
+            blocks = s.get("security_blocks", 0)
+
+            # Format duration
+            if duration:
+                mins = int(duration // 60)
+                secs = int(duration % 60)
+                dur_str = f"{mins}m {secs}s"
+            else:
+                dur_str = "?"
+
+            click.echo(
+                f"  {session_id}  {agent_type:<12} turns={turns:<4} time={dur_str:<8} features={features} blocks={blocks}"
+            )
+
+            # Show tool breakdown for detailed view
+            if session and s.get("tools_called"):
+                click.echo(f"    Tools: {s['tools_called']}")
+
+    click.echo("-" * 70)
 
 
 if __name__ == "__main__":
