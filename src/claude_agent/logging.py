@@ -12,8 +12,10 @@ Comprehensive structured logging system for claude-agent that enables:
 
 import json
 import os
+import platform
 import sys
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -21,6 +23,7 @@ from pathlib import Path
 from typing import Optional, Any
 
 from claude_agent.progress import atomic_write
+from claude_agent import __version__ as SDK_VERSION
 
 
 class LogLevel(str, Enum):
@@ -177,6 +180,19 @@ def truncate_string(s: str, max_length: int) -> str:
     return s[: max_length - 3] + "..."
 
 
+def get_environment_info() -> dict[str, str]:
+    """Get environment information for logging.
+
+    Returns:
+        Dict with python_version, sdk_version, and os fields.
+    """
+    return {
+        "python_version": platform.python_version(),
+        "sdk_version": SDK_VERSION,
+        "os": platform.system().lower(),
+    }
+
+
 class AgentLogger:
     """
     Main logger for agent sessions.
@@ -206,6 +222,10 @@ class AgentLogger:
         self._buffer: list[str] = []
         self._buffer_size = 10
         self._last_flush = datetime.now(timezone.utc)
+
+        # Circular buffer for recent events (for error context)
+        # Uses deque with maxlen for efficient O(1) operations
+        self._recent_events: deque[str] = deque(maxlen=5)
 
         # Log directory and file paths
         self._log_dir = project_dir / ".claude-agent" / "logs"
@@ -251,12 +271,16 @@ class AgentLogger:
         """
         self.session_id = generate_session_id()
 
+        # Get environment info for this session
+        env_info = get_environment_info()
+
         self.log_event(
             EventType.SESSION_START,
             iteration=iteration,
             model=model,
             stack=stack,
             agent_type=agent_type,
+            environment=env_info,
         )
 
         return self.session_id
@@ -341,6 +365,12 @@ class AgentLogger:
 
         # Add to buffer
         self._buffer.append(entry.to_json())
+
+        # Track recent events for error context (exclude errors themselves)
+        # Format: "event_type:tool_name" for debugging context
+        if event_type != EventType.ERROR:
+            event_summary = f"{event_type.value}:{truncated_data.get('tool_name', '')}"
+            self._recent_events.append(event_summary)  # deque auto-maintains maxlen
 
         # Verbose output to stderr
         if self.verbose:
@@ -450,6 +480,7 @@ class AgentLogger:
             message=truncate_string(message, self.config.max_summary_length),
             context=context or {},
             stack_trace=stack_trace,
+            recent_events=list(self._recent_events),  # Include recent event context
         )
 
     def _print_verbose(self, entry: LogEntry) -> None:
@@ -529,6 +560,8 @@ class AgentLogger:
         try:
             size_mb = self._log_file.stat().st_size / (1024 * 1024)
             if size_mb < self.config.max_size_mb:
+                # Even if no rotation needed, clean up old files by retention
+                self._cleanup_old_files()
                 return
 
             # Rotate files
@@ -545,8 +578,38 @@ class AgentLogger:
             rotated_path = self._log_dir / "agent.log.1"
             self._log_file.rename(rotated_path)
 
+            # Clean up files older than retention_days
+            self._cleanup_old_files()
+
         except OSError:
             pass  # Rotation failed - continue with current file
+
+    def _cleanup_old_files(self) -> None:
+        """Delete rotated log files older than retention_days."""
+        if self.config.retention_days <= 0:
+            return
+
+        try:
+            now = datetime.now(timezone.utc)
+            cutoff_seconds = self.config.retention_days * 86400
+
+            # Check all rotated files
+            for i in range(1, self.config.max_files + 1):
+                log_path = self._log_dir / f"agent.log.{i}"
+                if not log_path.exists():
+                    continue
+
+                try:
+                    mtime = datetime.fromtimestamp(
+                        log_path.stat().st_mtime, tz=timezone.utc
+                    )
+                    age_seconds = (now - mtime).total_seconds()
+                    if age_seconds > cutoff_seconds:
+                        log_path.unlink()
+                except OSError:
+                    continue
+        except OSError:
+            pass  # Cleanup failed - not critical
 
     def _find_session_start(self) -> Optional[LogEntry]:
         """Find the session start entry for the current session."""

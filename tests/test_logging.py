@@ -508,3 +508,211 @@ class TestHelperFunctions:
         """truncate_string should handle exact length."""
         result = truncate_string("hello", 5)
         assert result == "hello"
+
+
+class TestRetentionDaysCleanup:
+    """Tests for retention_days log file cleanup (Feature 45)."""
+
+    def test_cleanup_old_files_deletes_expired_files(self, tmp_path):
+        """_cleanup_old_files should delete files older than retention_days."""
+        import os
+        import time
+
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create a rotated log file
+        old_log = log_dir / "agent.log.1"
+        old_log.write_text('{"test": "old data"}\n')
+
+        # Set modification time to be older than retention period (2 days ago)
+        old_time = time.time() - (3 * 86400)  # 3 days ago
+        os.utime(old_log, (old_time, old_time))
+
+        # Create logger with 1 day retention
+        config = LoggingConfig(retention_days=1)
+        logger = AgentLogger(tmp_path, config=config)
+
+        # Manually call cleanup
+        logger._cleanup_old_files()
+
+        # File should be deleted
+        assert not old_log.exists()
+
+    def test_cleanup_old_files_keeps_recent_files(self, tmp_path):
+        """_cleanup_old_files should keep files within retention period."""
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create a recent rotated log file (mtime is now)
+        recent_log = log_dir / "agent.log.1"
+        recent_log.write_text('{"test": "recent data"}\n')
+
+        # Create logger with 30 day retention
+        config = LoggingConfig(retention_days=30)
+        logger = AgentLogger(tmp_path, config=config)
+
+        # Manually call cleanup
+        logger._cleanup_old_files()
+
+        # File should still exist
+        assert recent_log.exists()
+
+    def test_cleanup_disabled_when_retention_zero(self, tmp_path):
+        """_cleanup_old_files should do nothing when retention_days is 0."""
+        import os
+        import time
+
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create an old file
+        old_log = log_dir / "agent.log.1"
+        old_log.write_text('{"test": "data"}\n')
+        old_time = time.time() - (365 * 86400)  # 1 year ago
+        os.utime(old_log, (old_time, old_time))
+
+        # Create logger with 0 retention (disabled)
+        config = LoggingConfig(retention_days=0)
+        logger = AgentLogger(tmp_path, config=config)
+
+        # Manually call cleanup
+        logger._cleanup_old_files()
+
+        # File should still exist (cleanup disabled)
+        assert old_log.exists()
+
+
+class TestRecentEventsContext:
+    """Tests for recent_events context in error logs (Feature 53)."""
+
+    def test_error_includes_recent_events(self, tmp_path):
+        """log_error should include recent_events context."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        # Generate some events
+        logger.log_tool_call("Bash", "ls -la")
+        logger.log_tool_result("Bash", is_error=False, result="file.txt")
+        logger.log_tool_call("Read", "/path/to/file")
+
+        # Log an error
+        logger.log_error("TestError", "Something went wrong")
+
+        # Flush and check log
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        # Find the error entry
+        error_entry = next(e for e in entries if e["event"] == "error")
+
+        # Should have recent_events field
+        assert "recent_events" in error_entry
+        assert isinstance(error_entry["recent_events"], list)
+        assert len(error_entry["recent_events"]) > 0
+
+    def test_recent_events_limited_to_5(self, tmp_path):
+        """recent_events should be limited to 5 entries."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        # Generate more than 5 events
+        for i in range(10):
+            logger.log_tool_call(f"Tool{i}", f"command {i}")
+
+        # Log an error
+        logger.log_error("TestError", "Something went wrong")
+
+        # Flush and check log
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        # Find the error entry
+        error_entry = next(e for e in entries if e["event"] == "error")
+
+        # Should have exactly 5 recent events
+        assert len(error_entry["recent_events"]) == 5
+
+    def test_recent_events_excludes_errors(self, tmp_path):
+        """recent_events should not include error events themselves."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        # Log an error, then another event, then another error
+        logger.log_error("FirstError", "First problem")
+        logger.log_tool_call("Bash", "command")
+        logger.log_error("SecondError", "Second problem")
+
+        # Flush and check log
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        # Find the second error entry
+        error_entries = [e for e in entries if e["event"] == "error"]
+        second_error = error_entries[1]
+
+        # recent_events should contain the tool_call, but not the first error
+        assert any("tool_call" in ev for ev in second_error["recent_events"])
+
+
+class TestEnvironmentInfo:
+    """Tests for environment info in session logs (Feature 54)."""
+
+    def test_session_start_includes_environment(self, tmp_path):
+        """session_start event should include environment info."""
+        logger = AgentLogger(tmp_path)
+        session_id = logger.start_session(
+            iteration=1,
+            model="claude-opus",
+            stack="python",
+            agent_type="coding",
+        )
+
+        # Flush buffer
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        # Find session_start entry
+        start_entry = next(e for e in entries if e["event"] == "session_start")
+
+        # Should have environment field
+        assert "environment" in start_entry
+        env = start_entry["environment"]
+
+        # Check required fields
+        assert "python_version" in env
+        assert "sdk_version" in env
+        assert "os" in env
+
+        # Values should be non-empty strings
+        assert isinstance(env["python_version"], str) and len(env["python_version"]) > 0
+        assert isinstance(env["sdk_version"], str) and len(env["sdk_version"]) > 0
+        assert isinstance(env["os"], str) and len(env["os"]) > 0
+
+    def test_get_environment_info_returns_correct_structure(self):
+        """get_environment_info should return dict with required fields."""
+        from claude_agent.logging import get_environment_info
+        import platform
+
+        env = get_environment_info()
+
+        assert "python_version" in env
+        assert "sdk_version" in env
+        assert "os" in env
+
+        # Verify Python version matches actual version
+        assert env["python_version"] == platform.python_version()
+
+        # Verify OS is lowercase
+        assert env["os"] == platform.system().lower()
