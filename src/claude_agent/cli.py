@@ -291,7 +291,7 @@ def status(project_dir: Path):
 
     PROJECT_DIR is the project to check (default: current directory).
     """
-    from claude_agent.progress import count_tests_by_type
+    from claude_agent.progress import count_tests_by_type, get_latest_session_entry
 
     project_dir = Path(project_dir).resolve()
 
@@ -322,9 +322,26 @@ def status(project_dir: Path):
     # Show progress
     print_progress_summary(project_dir)
 
-    # Show recent progress notes if available
+    # Show structured progress summary from progress notes
+    latest_entry = get_latest_session_entry(project_dir)
+    if latest_entry:
+        click.echo("\nLast Session:")
+        click.echo(f"  Session:   {latest_entry.session_number}")
+        click.echo(f"  Timestamp: {latest_entry.timestamp}")
+        click.echo(
+            f"  Status:    {latest_entry.status.passing}/{latest_entry.status.total} "
+            f"features passing ({latest_entry.status.percentage:.1f}%)"
+        )
+        if latest_entry.completed_features:
+            click.echo(f"  Completed: {len(latest_entry.completed_features)} feature(s)")
+        if latest_entry.issues_found:
+            click.echo(f"  Issues:    {len(latest_entry.issues_found)} found")
+        if latest_entry.git_commits:
+            click.echo(f"  Commits:   {', '.join(latest_entry.git_commits)}")
+
+    # Show recent progress notes if available (fallback for legacy format)
     progress_file = project_dir / "claude-progress.txt"
-    if progress_file.exists():
+    if progress_file.exists() and not latest_entry:
         click.echo("\nRecent progress notes:")
         content = progress_file.read_text()
         # Show last 20 lines
@@ -456,7 +473,7 @@ def spec_auto(goal, project_dir):
     The --goal option is only required when starting a new spec.
     """
     from claude_agent.agent import run_spec_workflow
-    from claude_agent.progress import find_spec_draft, get_spec_phase
+    from claude_agent.progress import get_spec_phase
 
     project_dir = Path(project_dir).resolve()
 

@@ -1432,3 +1432,260 @@ class TestProgressRoundTrip:
         assert len(parsed.next_steps) == len(original.next_steps)
         assert len(parsed.files_modified) == len(original.files_modified)
         assert len(parsed.git_commits) == len(original.git_commits)
+
+
+class TestCLIStatusStructuredProgress:
+    """Test CLI status command shows structured progress summary."""
+
+    def test_status_shows_last_session_number(self, tmp_path):
+        """F33.1: Verify status output shows last session number."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create feature_list.json
+        (tmp_path / "feature_list.json").write_text('[{"description": "test", "passes": true}]')
+
+        # Create structured progress notes
+        progress_content = """=== SESSION 5: 2024-12-02T15:30:00Z ===
+Status: 25/50 features passing (50.0%)
+
+Completed This Session:
+- Feature #10: User login - browser automation verified
+
+Issues Found:
+- None
+
+Next Steps:
+- Work on Feature #11 next
+
+Files Modified:
+- src/auth.py
+
+Git Commits: abc1234
+=========================================
+"""
+        (tmp_path / "claude-progress.txt").write_text(progress_content)
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["status", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "Session:   5" in result.output
+
+    def test_status_shows_last_session_timestamp(self, tmp_path):
+        """F33.2: Verify status output shows last session timestamp."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create feature_list.json
+        (tmp_path / "feature_list.json").write_text('[{"description": "test", "passes": true}]')
+
+        # Create structured progress notes
+        progress_content = """=== SESSION 1: 2024-12-02T10:15:00Z ===
+Status: 10/20 features passing (50.0%)
+
+Completed This Session:
+- None
+
+Issues Found:
+- None
+
+Next Steps:
+- None
+
+Files Modified:
+- None
+
+Git Commits: None
+=========================================
+"""
+        (tmp_path / "claude-progress.txt").write_text(progress_content)
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["status", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "Timestamp: 2024-12-02T10:15:00Z" in result.output
+
+    def test_status_shows_feature_count_from_progress(self, tmp_path):
+        """F33.3: Verify status output shows current feature count."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create feature_list.json
+        (tmp_path / "feature_list.json").write_text('[{"description": "test", "passes": true}]')
+
+        # Create structured progress notes with specific counts
+        progress_content = """=== SESSION 3: 2024-12-01T08:00:00Z ===
+Status: 35/100 features passing (35.0%)
+
+Completed This Session:
+- Feature #35: API endpoint - verified
+
+Issues Found:
+- None
+
+Next Steps:
+- Work on Feature #36 next
+
+Files Modified:
+- src/api.py
+
+Git Commits: def5678
+=========================================
+"""
+        (tmp_path / "claude-progress.txt").write_text(progress_content)
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["status", str(tmp_path)])
+
+        assert result.exit_code == 0
+        # Check for the status line from Last Session section
+        assert "Status:    35/100 features passing" in result.output
+
+    def test_status_fallback_for_legacy_progress(self, tmp_path):
+        """F33.4: Verify status works with legacy freeform progress notes."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create feature_list.json
+        (tmp_path / "feature_list.json").write_text('[{"description": "test", "passes": true}]')
+
+        # Create legacy freeform progress notes (no structured format)
+        legacy_content = """Session started at 10:00 AM
+Working on login feature
+Made progress on authentication
+Need to finish tomorrow
+"""
+        (tmp_path / "claude-progress.txt").write_text(legacy_content)
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["status", str(tmp_path)])
+
+        assert result.exit_code == 0
+        # Should show the legacy notes as fallback
+        assert "Recent progress notes:" in result.output
+        assert "login feature" in result.output
+
+    def test_status_no_progress_file(self, tmp_path):
+        """F33.5: Verify status works without progress file."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Only create feature_list.json
+        (tmp_path / "feature_list.json").write_text('[{"description": "test", "passes": true}]')
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["status", str(tmp_path)])
+
+        assert result.exit_code == 0
+        # Should not show Last Session section
+        assert "Last Session:" not in result.output
+
+    def test_status_shows_completed_count(self, tmp_path):
+        """F33.6: Verify status shows completed features count."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create feature_list.json
+        (tmp_path / "feature_list.json").write_text('[{"description": "test", "passes": true}]')
+
+        # Create structured progress notes with multiple completed features
+        progress_content = """=== SESSION 2: 2024-12-02T12:00:00Z ===
+Status: 20/50 features passing (40.0%)
+
+Completed This Session:
+- Feature #5: Login form - browser verified
+- Feature #6: Logout button - browser verified
+- Feature #7: Session timeout - unit test
+
+Issues Found:
+- None
+
+Next Steps:
+- Work on Feature #8 next
+
+Files Modified:
+- src/auth.py
+
+Git Commits: 123abc
+=========================================
+"""
+        (tmp_path / "claude-progress.txt").write_text(progress_content)
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["status", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "Completed: 3 feature(s)" in result.output
+
+    def test_status_shows_issues_count(self, tmp_path):
+        """F33.7: Verify status shows issues found count."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create feature_list.json
+        (tmp_path / "feature_list.json").write_text('[{"description": "test", "passes": true}]')
+
+        # Create structured progress notes with issues
+        progress_content = """=== SESSION 4: 2024-12-02T14:00:00Z ===
+Status: 30/50 features passing (60.0%)
+
+Completed This Session:
+- Feature #10: Test feature - verified
+
+Issues Found:
+- CSS alignment issue on mobile
+- API timeout in production
+
+Next Steps:
+- Fix mobile CSS
+
+Files Modified:
+- src/mobile.css
+
+Git Commits: xyz789
+=========================================
+"""
+        (tmp_path / "claude-progress.txt").write_text(progress_content)
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["status", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "Issues:    2 found" in result.output
+
+    def test_status_shows_git_commits(self, tmp_path):
+        """F33.8: Verify status shows git commit hashes."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create feature_list.json
+        (tmp_path / "feature_list.json").write_text('[{"description": "test", "passes": true}]')
+
+        # Create structured progress notes with commits
+        progress_content = """=== SESSION 1: 2024-12-02T09:00:00Z ===
+Status: 5/10 features passing (50.0%)
+
+Completed This Session:
+- Feature #1: Initial setup - verified
+
+Issues Found:
+- None
+
+Next Steps:
+- Continue development
+
+Files Modified:
+- src/main.py
+
+Git Commits: abc1234, def5678
+=========================================
+"""
+        (tmp_path / "claude-progress.txt").write_text(progress_content)
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["status", str(tmp_path)])
+
+        assert result.exit_code == 0
+        assert "Commits:   abc1234, def5678" in result.output
