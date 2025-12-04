@@ -4,27 +4,23 @@ build-backend = "hatchling.build"
 
 [project]
 name = "claude-agent"
-version = "0.4.1"
+version = "0.4.2"
 description = "Autonomous coding agent CLI powered by Claude"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
-    "claude-code-sdk>=0.0.25",
-    "click>=8.0",
-    "pyyaml>=6.0",
-    "questionary>=2.0",
+  "claude-code-sdk>=0.0.25",
+  "click>=8.0",
+  "pyyaml>=6.0",
+  "questionary>=2.0",
 ]
 
 [project.scripts]
 claude-agent = "claude_agent.cli:main"
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
-    "ruff>=0.8.0",
-]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "ruff>=0.8.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/claude_agent"]
