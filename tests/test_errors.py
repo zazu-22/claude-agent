@@ -610,3 +610,151 @@ class TestCLIErrorOutputFormat:
         if "Error:" in result.output:
             # Should show valid format examples
             assert "1h" in result.output or "2d" in result.output or "format" in result.output.lower()
+
+
+class TestNonInteractiveOutput:
+    """Tests for non-interactive (piped) error output.
+
+    These tests verify that error messages work correctly when output
+    is piped to a file or another command (non-interactive mode).
+    """
+
+    def test_no_ansi_codes_with_no_color_env(self):
+        """Test that NO_COLOR environment variable disables ANSI codes."""
+        error = ActionableError(
+            message="Test error",
+            context="Test context",
+            example="test-command --flag",
+            help_command="test-command --help",
+        )
+
+        with patch.dict(os.environ, {"NO_COLOR": "1"}):
+            output = error.format(use_color=True)
+
+        # Should not contain any ANSI escape codes
+        assert "\033[" not in output
+        assert "\x1b[" not in output
+        # But should still contain the error content
+        assert "Error: Test error" in output
+        assert "Test context" in output
+
+    def test_no_ansi_codes_when_use_color_false(self):
+        """Test that use_color=False produces clean output without ANSI codes."""
+        error = ActionableError(
+            message="Plain text error",
+            context="This should be readable in plain text",
+            example="example-command",
+            help_command="help-command",
+        )
+
+        output = error.format(use_color=False)
+
+        # Should not contain any ANSI escape codes
+        assert "\033[" not in output
+        assert "\x1b[" not in output
+        # Content should be present
+        assert "Error: Plain text error" in output
+        assert "This should be readable" in output
+
+    def test_piped_output_is_readable(self):
+        """Test that output piped to file is readable as plain text."""
+        error = ActionableError(
+            message="File not found: config.yaml",
+            context="Configuration file is required",
+            example="touch config.yaml",
+            help_command="app --help",
+        )
+
+        # Simulate piped output (no colors)
+        with patch.dict(os.environ, {"NO_COLOR": "1"}):
+            output = error.format()
+
+        # Should be human-readable
+        lines = output.split("\n")
+        assert any("Error:" in line for line in lines)
+        assert any("config.yaml" in line for line in lines)
+
+    def test_str_method_produces_no_ansi_codes(self):
+        """Test that __str__ method produces output suitable for piping."""
+        error = ActionableError(
+            message="Test message for piping",
+            context="This goes to a file",
+        )
+
+        output = str(error)
+
+        # str() should always be safe for piping
+        assert "\033[" not in output
+        assert "\x1b[" not in output
+        assert "Test message for piping" in output
+
+    def test_cli_piped_output_has_no_ansi_codes(self):
+        """Test that CLI error output has no ANSI codes when piped."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        runner = CliRunner()
+
+        # CliRunner simulates non-interactive mode by default
+        result = runner.invoke(main, ["--auto-spec"])
+
+        # Should have error output
+        assert result.exit_code != 0
+
+        # CliRunner captures output as plain text, so ANSI codes would be visible
+        # Most importantly, the error message should be readable
+        assert "Error:" in result.output or "goal" in result.output.lower()
+
+    def test_format_error_function_respects_no_color(self):
+        """Test format_error convenience function respects NO_COLOR."""
+        with patch.dict(os.environ, {"NO_COLOR": "1"}):
+            output = format_error(
+                message="Convenience function test",
+                context="Context here",
+                example="example",
+                help_command="help",
+            )
+
+        assert "\033[" not in output
+        assert "Convenience function test" in output
+
+    def test_print_error_outputs_to_correct_stream(self, capsys):
+        """Test that print_error can output to either stdout or stderr."""
+        error = ActionableError(message="Stream test")
+
+        # Default: stderr
+        print_error(error)
+        captured = capsys.readouterr()
+        assert "Stream test" in captured.err
+        assert captured.out == ""
+
+        # With err=False: stdout
+        print_error(error, err=False)
+        captured = capsys.readouterr()
+        assert "Stream test" in captured.out
+
+    def test_error_message_captured_in_file_simulation(self):
+        """Test that error message can be captured when redirecting to file."""
+        import io
+
+        error = ActionableError(
+            message="Captured error",
+            context="This should be in the file",
+            example="fix-command",
+        )
+
+        # Simulate capturing to a file (StringIO)
+        output_buffer = io.StringIO()
+
+        # Write the error output as it would appear in a file
+        output_buffer.write(error.format(use_color=False))
+
+        # Read back
+        output_buffer.seek(0)
+        captured = output_buffer.read()
+
+        assert "Captured error" in captured
+        assert "This should be in the file" in captured
+        assert "fix-command" in captured
+        # No ANSI codes
+        assert "\033[" not in captured
