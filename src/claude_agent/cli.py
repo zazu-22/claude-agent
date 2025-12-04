@@ -19,6 +19,7 @@ from claude_agent.config import (
     merge_config,
 )
 from claude_agent.detection import detect_stack, get_available_stacks
+from claude_agent.errors import ActionableError, ConfigParseError, print_error
 from claude_agent.progress import (
     find_feature_list,
     find_spec_for_coding,
@@ -179,15 +180,21 @@ def main(
         if not existing:
             click.echo("No agent files to reset.")
         else:
-            click.echo(f"Will delete from {project_dir}:")
+            # Use consistent warning format for destructive operation
+            click.echo(click.style("Warning:", fg="yellow", bold=True) + " This will delete agent state files")
+            click.echo("")
+            click.echo(f"  Files to be deleted from {project_dir}:")
             for f in existing:
                 rel_path = f.relative_to(project_dir)
-                click.echo(f"  - {rel_path}")
+                click.echo(f"    - {rel_path}")
+            click.echo("")
+            click.echo("  This action cannot be undone. You will need to re-run the spec workflow.")
 
             if click.confirm("\nProceed with reset?"):
                 for f in existing:
                     f.unlink()
-                click.echo("Reset complete.")
+                click.echo("")
+                click.echo(click.style("Reset complete.", fg="green", bold=True))
                 click.echo("Run 'claude-agent' again to start fresh.")
                 sys.exit(0)
             else:
@@ -195,23 +202,32 @@ def main(
                 sys.exit(0)
 
     # Merge configuration from all sources
-    merged_config = merge_config(
-        project_dir=project_dir,
-        cli_spec=spec,
-        cli_goal=goal,
-        cli_features=features,
-        cli_stack=stack,
-        cli_model=model,
-        cli_max_iterations=max_iterations,
-        cli_config_path=config,
-        cli_review=review,
-        cli_verbose=verbose,
-    )
+    try:
+        merged_config = merge_config(
+            project_dir=project_dir,
+            cli_spec=spec,
+            cli_goal=goal,
+            cli_features=features,
+            cli_stack=stack,
+            cli_model=model,
+            cli_max_iterations=max_iterations,
+            cli_config_path=config,
+            cli_review=review,
+            cli_verbose=verbose,
+        )
+    except ConfigParseError as e:
+        print_error(e.get_actionable_error())
+        sys.exit(1)
 
     # Handle --auto-spec flag
     if auto_spec:
         if not goal:
-            click.echo("Error: --auto-spec requires --goal")
+            print_error(ActionableError(
+                message="--auto-spec requires --goal",
+                context="The auto-spec workflow needs a goal to generate a specification from.",
+                example='claude-agent --auto-spec --goal "Build a REST API for user management"',
+                help_command="claude-agent --help",
+            ))
             sys.exit(1)
 
         from claude_agent.agent import run_spec_workflow
@@ -255,7 +271,13 @@ def main(
         click.echo("\n\nInterrupted by user")
         click.echo("To resume, run the same command again")
     except Exception as e:
-        click.echo(f"\nFatal error: {e}")
+        print_error(ActionableError(
+            message=f"Unexpected error: {type(e).__name__}",
+            context=str(e),
+            example="claude-agent logs --errors",
+            help_command="claude-agent --help",
+        ))
+        click.echo("\n  If this persists, check the logs and consider filing a bug report.")
         raise
 
 
@@ -387,10 +409,20 @@ def spec_create(goal, from_file, interactive, project_dir):
             sys.exit(0)
 
     if not goal:
-        click.echo("Error: --goal or --from-file required (or use -i for interactive)")
+        print_error(ActionableError(
+            message="--goal or --from-file required",
+            context="A goal is needed to generate a specification. Provide what you want to build.",
+            example='claude-agent spec create --goal "Build a REST API for user management"',
+            help_command="claude-agent spec create --help",
+        ))
+        click.echo("\n  Tip: Use -i for interactive mode to be guided through spec creation.")
         sys.exit(1)
 
-    config = merge_config(project_dir=project_dir)
+    try:
+        config = merge_config(project_dir=project_dir)
+    except ConfigParseError as e:
+        print_error(e.get_actionable_error())
+        sys.exit(1)
     asyncio.run(run_spec_create_session(config, goal, context))
 
 
@@ -411,16 +443,30 @@ def spec_validate(spec_file, interactive, project_dir):
         # Check both project root and specs/ subdirectory
         spec_path = find_spec_draft(project_dir)
         if spec_path is None:
-            click.echo("Error: spec-draft.md not found")
-            click.echo("Run 'claude-agent spec create' first or specify a spec file")
+            print_error(ActionableError(
+                message="spec-draft.md not found",
+                context="Validation requires a draft specification to validate.",
+                example='claude-agent spec create --goal "Build a REST API"',
+                help_command="claude-agent spec create --help",
+            ))
+            click.echo("\n  Or specify a spec file: claude-agent spec validate path/to/spec.md")
             sys.exit(1)
 
     if not spec_path.exists():
-        click.echo(f"Error: {spec_path} not found")
-        click.echo("Run 'claude-agent spec create' first or specify a spec file")
+        print_error(ActionableError(
+            message=f"{spec_path} not found",
+            context="The specified spec file does not exist.",
+            example='claude-agent spec create --goal "Build a REST API"',
+            help_command="claude-agent spec validate --help",
+        ))
+        click.echo("\n  Check the file path and try again.")
         sys.exit(1)
 
-    config = merge_config(project_dir=project_dir)
+    try:
+        config = merge_config(project_dir=project_dir)
+    except ConfigParseError as e:
+        print_error(e.get_actionable_error())
+        sys.exit(1)
     status, passed = asyncio.run(run_spec_validate_session(config, spec_path))
 
     sys.exit(0 if passed else 1)
@@ -451,11 +497,21 @@ def spec_decompose(spec_file, features, project_dir):
             click.echo("Consider running 'claude-agent spec validate' first")
             spec_path = draft_path
         else:
-            click.echo("Error: No spec file found")
-            click.echo("Run 'claude-agent spec validate' first or specify a spec file")
+            print_error(ActionableError(
+                message="No spec file found",
+                context="Decomposition needs a validated spec to break into features.",
+                example='claude-agent spec create --goal "Build a REST API"',
+                help_command="claude-agent spec decompose --help",
+            ))
+            click.echo("\n  Workflow: spec create -> spec validate -> spec decompose")
+            click.echo("  Or specify a spec file: claude-agent spec decompose path/to/spec.md")
             sys.exit(1)
 
-    config = merge_config(project_dir=project_dir, cli_features=features)
+    try:
+        config = merge_config(project_dir=project_dir, cli_features=features)
+    except ConfigParseError as e:
+        print_error(e.get_actionable_error())
+        sys.exit(1)
     status, feature_path = asyncio.run(
         run_spec_decompose_session(config, spec_path, features)
     )
@@ -482,15 +538,24 @@ def spec_auto(goal, project_dir):
 
     if phase == "none" and not goal:
         # No spec exists and no goal provided
-        click.echo("Error: --goal is required when no spec exists")
-        click.echo("Use: claude-agent spec auto --goal 'description of what to build'")
+        print_error(ActionableError(
+            message="--goal is required when no spec exists",
+            context="The spec auto command creates a new specification from a goal.",
+            example='claude-agent spec auto --goal "Build a REST API for user management"',
+            help_command="claude-agent spec auto --help",
+        ))
+        click.echo("\n  Note: --goal is optional when resuming an existing workflow.")
         sys.exit(1)
 
     if phase != "none" and not goal:
         # Resuming - show current state
         click.echo(f"Resuming spec workflow from phase: {phase}")
 
-    config = merge_config(project_dir=project_dir)
+    try:
+        config = merge_config(project_dir=project_dir)
+    except ConfigParseError as e:
+        print_error(e.get_actionable_error())
+        sys.exit(1)
 
     success = asyncio.run(run_spec_workflow(config, goal))
     sys.exit(0 if success else 1)
@@ -632,7 +697,12 @@ def logs(
         try:
             since_dt = parse_since_value(since)
         except ValueError as e:
-            click.echo(f"Error: {e}", err=True)
+            print_error(ActionableError(
+                message=f"Invalid time format: {since}",
+                context=str(e),
+                example="Valid formats: '1h', '2d', '30m', or '2024-01-15'",
+                help_command="claude-agent logs --help",
+            ))
             return
 
     # Read entries

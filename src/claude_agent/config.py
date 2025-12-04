@@ -119,10 +119,40 @@ def find_config_file(project_dir: Path) -> Optional[Path]:
 
 
 def load_config_file(config_path: Path) -> dict[str, Any]:
-    """Load configuration from YAML file."""
-    with open(config_path) as f:
-        data = yaml.safe_load(f) or {}
-    return data
+    """Load configuration from YAML file.
+
+    Args:
+        config_path: Path to the YAML configuration file.
+
+    Returns:
+        Dictionary of configuration values.
+
+    Raises:
+        ConfigParseError: If the YAML file has syntax errors.
+    """
+    from claude_agent.errors import ConfigParseError
+
+    try:
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+        return data
+    except yaml.YAMLError as e:
+        # Extract line number if available
+        line_number = None
+        error_msg = str(e)
+
+        # yaml.YAMLError subclasses have mark attribute with line info
+        if hasattr(e, 'problem_mark') and e.problem_mark is not None:
+            line_number = e.problem_mark.line + 1  # 0-indexed to 1-indexed
+            error_msg = e.problem if hasattr(e, 'problem') and e.problem else str(e)
+        elif hasattr(e, 'context_mark') and e.context_mark is not None:
+            line_number = e.context_mark.line + 1
+
+        raise ConfigParseError(
+            config_path=str(config_path),
+            original_error=error_msg,
+            line_number=line_number,
+        ) from e
 
 
 def merge_config(
