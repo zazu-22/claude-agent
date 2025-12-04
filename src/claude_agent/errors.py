@@ -138,11 +138,24 @@ class ActionableError:
 def print_error(error: ActionableError, err: bool = True) -> None:
     """Print an ActionableError to the console.
 
+    Gracefully degrades if formatting fails - will always output something
+    rather than crashing silently.
+
     Args:
         error: The ActionableError to print.
         err: If True, prints to stderr; otherwise stdout.
     """
-    click.echo(error.format(), err=err)
+    try:
+        click.echo(error.format(), err=err)
+    except Exception:
+        # Graceful degradation: if formatting fails, output basic error message
+        # This ensures the user always sees something useful
+        try:
+            click.echo(f"Error: {error.message}", err=err)
+        except Exception:
+            # Last resort: raw print to stderr
+            import sys
+            print(f"Error: {error.message}", file=sys.stderr if err else sys.stdout)
 
 
 def format_error(
@@ -156,6 +169,9 @@ def format_error(
     Convenience function for one-off error formatting without
     creating an ActionableError instance.
 
+    Gracefully degrades if formatting fails - will always return
+    at least a basic error message rather than raising an exception.
+
     Args:
         message: What went wrong (required)
         context: Why it matters or additional context (optional)
@@ -165,13 +181,17 @@ def format_error(
     Returns:
         Formatted error string.
     """
-    error = ActionableError(
-        message=message,
-        context=context,
-        example=example,
-        help_command=help_command,
-    )
-    return error.format()
+    try:
+        error = ActionableError(
+            message=message,
+            context=context,
+            example=example,
+            help_command=help_command,
+        )
+        return error.format()
+    except Exception:
+        # Graceful degradation: return basic error format
+        return f"Error: {message}"
 
 
 def format_error_with_context(

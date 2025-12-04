@@ -373,3 +373,113 @@ class TestIntegration:
         lines = output.strip().split("\n")
 
         assert len(lines) <= 5, f"Simple error has too many lines: {len(lines)}"
+
+
+class TestGracefulDegradation:
+    """Tests for graceful degradation when formatting fails."""
+
+    def test_print_error_degrades_gracefully_on_format_failure(self, capsys):
+        """Test that print_error outputs basic message when format() raises."""
+        error = ActionableError(message="Test error message")
+
+        # Mock format() to raise an exception
+        with patch.object(error, "format", side_effect=RuntimeError("Format failed")):
+            print_error(error)
+
+        captured = capsys.readouterr()
+        # Should fall back to basic error message
+        assert "Error: Test error message" in captured.err
+
+    def test_print_error_degrades_gracefully_on_click_failure(self, capsys):
+        """Test that print_error uses raw print when click.echo fails."""
+        import sys
+        import io
+
+        error = ActionableError(message="Fallback test")
+
+        # Capture stderr manually since click.echo might fail
+        old_stderr = sys.stderr
+        sys.stderr = io.StringIO()
+
+        try:
+            # Mock both format() and click.echo to fail
+            with patch.object(error, "format", side_effect=RuntimeError("Format failed")):
+                with patch("click.echo", side_effect=RuntimeError("Click failed")):
+                    print_error(error)
+
+            output = sys.stderr.getvalue()
+            # Should fall back to raw print
+            assert "Error: Fallback test" in output
+        finally:
+            sys.stderr = old_stderr
+
+    def test_format_error_degrades_gracefully(self):
+        """Test that format_error returns basic message when ActionableError fails."""
+        # Mock ActionableError to raise on instantiation
+        with patch(
+            "claude_agent.errors.ActionableError",
+            side_effect=RuntimeError("ActionableError failed"),
+        ):
+            result = format_error(message="Degraded error test")
+
+        # Should fall back to basic format
+        assert result == "Error: Degraded error test"
+
+    def test_format_error_degrades_on_format_method_failure(self):
+        """Test format_error degrades when format() method fails."""
+        original_actionable_error = ActionableError
+
+        class FailingActionableError(original_actionable_error):
+            def format(self, use_color=True):
+                raise RuntimeError("Format method failed")
+
+        with patch(
+            "claude_agent.errors.ActionableError",
+            FailingActionableError,
+        ):
+            result = format_error(message="Method failure test")
+
+        # Should fall back to basic format
+        assert result == "Error: Method failure test"
+
+    def test_print_error_preserves_message_content(self, capsys):
+        """Test that degraded output preserves the original error message."""
+        error = ActionableError(
+            message="Configuration file '/path/to/config.yaml' not found",
+            context="This context should not appear in degraded output",
+            example="This example should not appear in degraded output",
+        )
+
+        with patch.object(error, "format", side_effect=RuntimeError("Format failed")):
+            print_error(error)
+
+        captured = capsys.readouterr()
+        # Message should be preserved
+        assert "Configuration file '/path/to/config.yaml' not found" in captured.err
+        # But rich formatting should not
+        assert "context should not appear" not in captured.err
+
+    def test_print_error_no_silent_failure(self, capsys):
+        """Test that print_error always outputs something, never silently fails."""
+        error = ActionableError(message="Must always output")
+
+        # Even with format failure, something should be output
+        with patch.object(error, "format", side_effect=RuntimeError("Format failed")):
+            print_error(error)
+
+        captured = capsys.readouterr()
+        # Must have some output
+        assert len(captured.err) > 0 or len(captured.out) > 0
+        assert "Error:" in captured.err
+
+    def test_degraded_output_to_stdout_when_requested(self, capsys):
+        """Test that degraded output respects err=False parameter."""
+        error = ActionableError(message="Stdout test")
+
+        with patch.object(error, "format", side_effect=RuntimeError("Format failed")):
+            print_error(error, err=False)
+
+        captured = capsys.readouterr()
+        # Should go to stdout, not stderr
+        assert "Error: Stdout test" in captured.out
+        assert captured.err == ""
