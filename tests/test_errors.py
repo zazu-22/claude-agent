@@ -1,0 +1,375 @@
+"""
+Tests for ActionableError Module
+================================
+
+Tests for the actionable error formatting system.
+"""
+
+import os
+from unittest.mock import patch
+
+import pytest
+
+from claude_agent.errors import (
+    ActionableError,
+    format_error,
+    format_error_with_context,
+    missing_file_error,
+    missing_option_error,
+    print_error,
+    quote_path,
+    workflow_error,
+)
+
+
+class TestActionableError:
+    """Tests for ActionableError class."""
+
+    def test_error_with_all_fields(self):
+        """Test ActionableError with all fields populated."""
+        error = ActionableError(
+            message="--auto-spec requires --goal",
+            context="The auto-spec workflow needs a goal to generate a specification from.",
+            example='claude-agent --auto-spec --goal "Build a REST API"',
+            help_command="claude-agent --help",
+        )
+
+        # Format without colors for testing
+        output = error.format(use_color=False)
+
+        assert "Error: --auto-spec requires --goal" in output
+        assert "The auto-spec workflow needs a goal" in output
+        assert "Example: claude-agent --auto-spec" in output
+        assert "Help: Run 'claude-agent --help'" in output
+
+    def test_error_with_message_only(self):
+        """Test ActionableError with only message (minimal)."""
+        error = ActionableError(message="File not found")
+
+        output = error.format(use_color=False)
+
+        assert output == "Error: File not found"
+        assert "Context:" not in output
+        assert "Example:" not in output
+        assert "Help:" not in output
+
+    def test_error_with_message_and_example(self):
+        """Test ActionableError with message and example only."""
+        error = ActionableError(
+            message="--goal required",
+            example='claude-agent --goal "Build an API"',
+        )
+
+        output = error.format(use_color=False)
+
+        assert "Error: --goal required" in output
+        assert "Example: claude-agent --goal" in output
+        # Should not have context or help sections
+        lines = output.split("\n")
+        # Filter empty lines
+        non_empty = [l for l in lines if l.strip()]
+        assert len(non_empty) == 2  # Error line and Example line
+
+    def test_error_with_message_and_context(self):
+        """Test ActionableError with message and context only."""
+        error = ActionableError(
+            message="spec-draft.md not found",
+            context="Validation requires a draft specification.",
+        )
+
+        output = error.format(use_color=False)
+
+        assert "Error: spec-draft.md not found" in output
+        assert "Validation requires a draft" in output
+        assert "Example:" not in output
+        assert "Help:" not in output
+
+    def test_str_method(self):
+        """Test __str__ returns uncolored output."""
+        error = ActionableError(
+            message="Test error",
+            context="Test context",
+        )
+
+        # str() should be same as format(use_color=False)
+        assert str(error) == error.format(use_color=False)
+
+    def test_color_output_with_no_color_env(self):
+        """Test that NO_COLOR environment variable disables colors."""
+        error = ActionableError(
+            message="Test error",
+            context="Test context",
+        )
+
+        # Set NO_COLOR
+        with patch.dict(os.environ, {"NO_COLOR": "1"}):
+            output = error.format(use_color=True)
+
+        # Should not contain ANSI escape codes
+        assert "\033[" not in output
+
+    def test_optional_sections_empty(self):
+        """Test that empty sections are not displayed."""
+        error = ActionableError(
+            message="Simple error",
+            context=None,
+            example=None,
+            help_command=None,
+        )
+
+        output = error.format(use_color=False)
+
+        # Should only contain the error line
+        assert output.strip() == "Error: Simple error"
+
+
+class TestFormatError:
+    """Tests for format_error convenience function."""
+
+    def test_format_error_full(self):
+        """Test format_error with all parameters."""
+        # Set NO_COLOR to get predictable output
+        with patch.dict(os.environ, {"NO_COLOR": "1"}):
+            output = format_error(
+                message="Test message",
+                context="Test context",
+                example="test-command --flag",
+                help_command="test-command --help",
+            )
+
+        assert "Error: Test message" in output
+        assert "Test context" in output
+        assert "Example: test-command --flag" in output
+        assert "Help:" in output
+
+    def test_format_error_minimal(self):
+        """Test format_error with only message."""
+        with patch.dict(os.environ, {"NO_COLOR": "1"}):
+            output = format_error(message="Simple error")
+
+        assert output.strip() == "Error: Simple error"
+
+
+class TestFormatErrorWithContext:
+    """Tests for format_error_with_context function."""
+
+    def test_variable_substitution(self):
+        """Test template variable substitution."""
+        output = format_error_with_context(
+            message="File {path} not found",
+            context_dict={"path": "/foo/bar.txt"},
+            context="Looking for {path}",
+            example="Check path: {path}",
+        )
+
+        assert "/foo/bar.txt" in output
+        assert "{path}" not in output
+
+    def test_missing_variable_graceful(self):
+        """Test that missing variables don't crash."""
+        output = format_error_with_context(
+            message="File {path} not found",
+            context_dict={},  # No variables provided
+        )
+
+        # Should still produce output (with unresolved variable)
+        assert "Error:" in output
+        assert "{path}" in output  # Unresolved but not crashed
+
+    def test_partial_substitution(self):
+        """Test with some variables provided."""
+        with patch.dict(os.environ, {"NO_COLOR": "1"}):
+            output = format_error_with_context(
+                message="{file} at {path}",
+                context_dict={"file": "config.yaml"},
+            )
+
+        assert "config.yaml" in output
+        assert "{path}" in output  # Unresolved
+
+
+class TestMissingFileError:
+    """Tests for missing_file_error helper."""
+
+    def test_basic_missing_file(self):
+        """Test basic missing file error."""
+        error = missing_file_error("spec-draft.md")
+
+        assert error.message == "spec-draft.md not found"
+        assert error.help_command == "claude-agent --help"
+
+    def test_missing_file_with_create_command(self):
+        """Test missing file with create command."""
+        error = missing_file_error(
+            "spec-draft.md",
+            create_command="claude-agent spec create --goal '...'",
+        )
+
+        assert error.message == "spec-draft.md not found"
+        assert error.example == "claude-agent spec create --goal '...'"
+
+    def test_missing_file_with_context(self):
+        """Test missing file with custom context."""
+        error = missing_file_error(
+            "config.yaml",
+            context="Configuration file is required for this operation.",
+        )
+
+        assert error.context == "Configuration file is required for this operation."
+
+    def test_missing_file_quotes_spaces(self):
+        """Test that paths with spaces are quoted."""
+        error = missing_file_error("my file.txt")
+
+        assert '"my file.txt"' in error.message
+
+
+class TestMissingOptionError:
+    """Tests for missing_option_error helper."""
+
+    def test_basic_missing_option(self):
+        """Test basic missing option error."""
+        error = missing_option_error(
+            "--goal",
+            example='claude-agent --goal "Build an API"',
+        )
+
+        assert error.message == "--goal is required"
+        assert 'claude-agent --goal "Build an API"' in error.example
+        assert error.help_command == "claude-agent --help"
+
+    def test_missing_option_with_context(self):
+        """Test missing option with custom context."""
+        error = missing_option_error(
+            "--config",
+            example="claude-agent --config path/to/config.yaml",
+            context="Configuration is required for this mode.",
+        )
+
+        assert error.context == "Configuration is required for this mode."
+
+    def test_missing_option_custom_help(self):
+        """Test missing option with custom help command."""
+        error = missing_option_error(
+            "--spec",
+            example="claude-agent --spec ./SPEC.md",
+            help_command="claude-agent spec --help",
+        )
+
+        assert error.help_command == "claude-agent spec --help"
+
+
+class TestWorkflowError:
+    """Tests for workflow_error helper."""
+
+    def test_basic_workflow_error(self):
+        """Test basic workflow error."""
+        error = workflow_error(
+            "Validation",
+            suggestion="Run 'claude-agent spec validate' to retry",
+        )
+
+        assert error.message == "Validation failed"
+        assert "claude-agent spec validate" in error.example
+        assert error.help_command == "claude-agent spec status"
+
+    def test_workflow_error_with_context(self):
+        """Test workflow error with custom context."""
+        error = workflow_error(
+            "Decomposition",
+            suggestion="Run 'claude-agent spec decompose' to retry",
+            context="The spec may have issues.",
+        )
+
+        assert error.context == "The spec may have issues."
+
+
+class TestQuotePath:
+    """Tests for quote_path function."""
+
+    def test_simple_path(self):
+        """Test path without special characters."""
+        assert quote_path("/foo/bar.txt") == "/foo/bar.txt"
+
+    def test_path_with_space(self):
+        """Test path with spaces."""
+        assert quote_path("/foo/bar baz.txt") == '"/foo/bar baz.txt"'
+
+    def test_path_with_quotes(self):
+        """Test path with existing quotes."""
+        result = quote_path('/foo/"bar".txt')
+        assert result == '"/foo/\\"bar\\".txt"'
+
+    def test_path_with_special_chars(self):
+        """Test path with various special characters."""
+        assert quote_path("/foo/$bar.txt") == '"/foo/$bar.txt"'
+        assert quote_path("/foo/(bar).txt") == '"/foo/(bar).txt"'
+
+
+class TestPrintError:
+    """Tests for print_error function."""
+
+    def test_print_error_basic(self, capsys):
+        """Test that print_error outputs to stderr by default."""
+        error = ActionableError(message="Test error")
+        print_error(error)
+
+        captured = capsys.readouterr()
+        assert "Error: Test error" in captured.err
+
+    def test_print_error_to_stdout(self, capsys):
+        """Test print_error with err=False."""
+        error = ActionableError(message="Test error")
+        print_error(error, err=False)
+
+        captured = capsys.readouterr()
+        assert "Error: Test error" in captured.out
+        assert captured.err == ""
+
+
+class TestIntegration:
+    """Integration tests for error module."""
+
+    def test_cli_style_usage(self):
+        """Test typical CLI error pattern."""
+        # This tests the pattern used in cli.py
+        error = ActionableError(
+            message="--auto-spec requires --goal",
+            context="The auto-spec workflow needs a goal to generate a specification from.",
+            example='claude-agent --auto-spec --goal "Build a REST API for user management"',
+            help_command="claude-agent --help",
+        )
+
+        output = error.format(use_color=False)
+
+        # Verify structure
+        lines = [l for l in output.split("\n") if l.strip()]
+        assert lines[0].startswith("Error:")
+        assert any("Example:" in l for l in lines)
+        assert any("Help:" in l for l in lines)
+
+    def test_error_formatting_consistency(self):
+        """Test that all errors have consistent indentation."""
+        error = ActionableError(
+            message="Test",
+            context="Context line",
+            example="Example line",
+            help_command="help",
+        )
+
+        output = error.format(use_color=False)
+        lines = output.split("\n")
+
+        # Non-error lines should be indented with 2 spaces
+        for line in lines[1:]:
+            if line.strip():  # Skip empty lines
+                assert line.startswith("  "), f"Line not indented: {line!r}"
+
+    def test_concise_simple_errors(self):
+        """Test that simple errors are concise (under 5 lines)."""
+        error = ActionableError(message="Missing option")
+
+        output = error.format(use_color=False)
+        lines = output.strip().split("\n")
+
+        assert len(lines) <= 5, f"Simple error has too many lines: {len(lines)}"
