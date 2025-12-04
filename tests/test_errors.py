@@ -758,3 +758,121 @@ class TestNonInteractiveOutput:
         assert "fix-command" in captured
         # No ANSI codes
         assert "\033[" not in captured
+
+
+class TestVerboseModeIntegration:
+    """Tests for error module integration with --verbose flag.
+
+    Verifies that actionable errors work correctly regardless of
+    verbose mode settings.
+    """
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+        return CliRunner()
+
+    @pytest.fixture
+    def cli_main(self):
+        """Import the main CLI entry point."""
+        from claude_agent.cli import main
+        return main
+
+    def test_verbose_mode_preserves_error_format(self, runner, cli_main, tmp_path):
+        """Test that --verbose flag doesn't break actionable error format."""
+        result = runner.invoke(
+            cli_main,
+            ["--verbose", "--auto-spec", "-p", str(tmp_path)]
+        )
+
+        assert result.exit_code != 0
+        # Error should still have actionable format
+        assert "Error:" in result.output
+        # Should still show example or help
+        assert "Example:" in result.output or "Help:" in result.output or "--help" in result.output
+
+    def test_non_verbose_mode_shows_actionable_error(self, runner, cli_main, tmp_path):
+        """Test that non-verbose mode shows standard actionable error."""
+        result = runner.invoke(
+            cli_main,
+            ["--auto-spec", "-p", str(tmp_path)]  # No --verbose
+        )
+
+        assert result.exit_code != 0
+        assert "Error:" in result.output
+        # Should have example usage
+        assert "Example:" in result.output or "claude-agent" in result.output
+
+    def test_verbose_and_non_verbose_both_have_error_prefix(self, runner, cli_main, tmp_path):
+        """Test both modes use Error: prefix consistently."""
+        # With verbose
+        verbose_result = runner.invoke(
+            cli_main,
+            ["--verbose", "--auto-spec", "-p", str(tmp_path)]
+        )
+
+        # Without verbose
+        non_verbose_result = runner.invoke(
+            cli_main,
+            ["--auto-spec", "-p", str(tmp_path)]
+        )
+
+        # Both should have Error: prefix
+        assert "Error:" in verbose_result.output
+        assert "Error:" in non_verbose_result.output
+
+    def test_verbose_mode_with_spec_create_error(self, runner, cli_main, tmp_path):
+        """Test verbose mode with spec create error."""
+        result = runner.invoke(
+            cli_main,
+            ["--verbose", "spec", "create", "-p", str(tmp_path)]
+        )
+
+        assert result.exit_code != 0
+        # Should have actionable error format
+        assert "Error:" in result.output
+        assert "goal" in result.output.lower()
+
+    def test_verbose_mode_with_spec_validate_error(self, runner, cli_main, tmp_path):
+        """Test verbose mode with spec validate error (missing file)."""
+        result = runner.invoke(
+            cli_main,
+            ["--verbose", "spec", "validate", "-p", str(tmp_path)]
+        )
+
+        assert result.exit_code != 0
+        assert "Error:" in result.output
+        assert "not found" in result.output.lower()
+
+    def test_error_format_is_consistent_across_modes(self, runner, cli_main, tmp_path):
+        """Test that error format structure is consistent in both modes."""
+        verbose_result = runner.invoke(
+            cli_main,
+            ["--verbose", "spec", "auto", "-p", str(tmp_path)]
+        )
+
+        non_verbose_result = runner.invoke(
+            cli_main,
+            ["spec", "auto", "-p", str(tmp_path)]
+        )
+
+        # Both should fail with similar error structure
+        assert verbose_result.exit_code != 0
+        assert non_verbose_result.exit_code != 0
+
+        # Both should mention goal
+        assert "goal" in verbose_result.output.lower()
+        assert "goal" in non_verbose_result.output.lower()
+
+        # Both should have actionable format elements
+        for result in [verbose_result, non_verbose_result]:
+            assert "Error:" in result.output
+
+    def test_verbose_flag_is_recognized(self, runner, cli_main):
+        """Test that --verbose flag is recognized by CLI."""
+        # Run with --verbose --help to verify flag exists
+        result = runner.invoke(cli_main, ["--help"])
+
+        assert result.exit_code == 0
+        assert "--verbose" in result.output or "-v" in result.output
