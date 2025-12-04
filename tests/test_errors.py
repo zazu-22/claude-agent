@@ -483,3 +483,130 @@ class TestGracefulDegradation:
         # Should go to stdout, not stderr
         assert "Error: Stdout test" in captured.out
         assert captured.err == ""
+
+
+class TestCLIErrorOutputFormat:
+    """Integration tests verifying CLI error output format.
+
+    These tests invoke CLI commands with invalid arguments and verify
+    that the error output follows the actionable error format with
+    proper sections and exit codes.
+    """
+
+    @pytest.fixture
+    def runner(self):
+        """Create Click CLI test runner."""
+        from click.testing import CliRunner
+        return CliRunner()
+
+    @pytest.fixture
+    def cli_main(self):
+        """Import the main CLI entry point."""
+        from claude_agent.cli import main
+        return main
+
+    def test_auto_spec_without_goal_shows_actionable_error(self, runner, cli_main, tmp_path):
+        """Test --auto-spec without --goal shows actionable error format."""
+        result = runner.invoke(cli_main, ["--auto-spec", "-p", str(tmp_path)])
+
+        assert result.exit_code != 0
+        # Should contain Error: prefix
+        assert "Error:" in result.output
+        # Should contain example usage
+        assert "Example:" in result.output or "claude-agent --auto-spec --goal" in result.output
+        # Should suggest help
+        assert "Help:" in result.output or "--help" in result.output
+
+    def test_spec_create_without_goal_shows_actionable_error(self, runner, cli_main, tmp_path):
+        """Test spec create without goal shows actionable error format."""
+        result = runner.invoke(cli_main, ["spec", "create", "-p", str(tmp_path)])
+
+        assert result.exit_code != 0
+        # Should contain Error: prefix
+        assert "Error:" in result.output
+        # Should contain example usage
+        assert "Example:" in result.output or "spec create" in result.output
+        # Should mention --goal option
+        assert "goal" in result.output.lower()
+
+    def test_spec_validate_missing_file_shows_actionable_error(self, runner, cli_main, tmp_path):
+        """Test spec validate on missing file shows actionable error format."""
+        result = runner.invoke(cli_main, ["spec", "validate", "-p", str(tmp_path)])
+
+        assert result.exit_code != 0
+        # Should contain Error: prefix
+        assert "Error:" in result.output
+        # Should indicate file not found
+        assert "not found" in result.output.lower()
+        # Should suggest how to create the file
+        assert "spec create" in result.output or "Example:" in result.output
+
+    def test_spec_auto_without_goal_shows_actionable_error(self, runner, cli_main, tmp_path):
+        """Test spec auto without goal on new project shows actionable error format."""
+        result = runner.invoke(cli_main, ["spec", "auto", "-p", str(tmp_path)])
+
+        assert result.exit_code != 0
+        # Should contain Error: prefix
+        assert "Error:" in result.output
+        # Should mention goal is required
+        assert "goal" in result.output.lower()
+        # Should show example
+        assert "Example:" in result.output or "spec auto --goal" in result.output
+
+    def test_spec_decompose_no_spec_shows_actionable_error(self, runner, cli_main, tmp_path):
+        """Test spec decompose with no spec files shows actionable error format."""
+        result = runner.invoke(cli_main, ["spec", "decompose", "-p", str(tmp_path)])
+
+        assert result.exit_code != 0
+        # Should contain Error: prefix
+        assert "Error:" in result.output
+        # Should indicate no spec found
+        assert "not found" in result.output.lower() or "no spec" in result.output.lower()
+
+    def test_error_output_has_proper_structure(self, runner, cli_main, tmp_path):
+        """Test that error output has proper multi-line structure."""
+        result = runner.invoke(cli_main, ["--auto-spec", "-p", str(tmp_path)])
+
+        assert result.exit_code != 0
+
+        # Error output should be multi-line with sections
+        lines = result.output.strip().split("\n")
+        non_empty_lines = [l for l in lines if l.strip()]
+
+        # Should have at least the error line and one guidance line
+        assert len(non_empty_lines) >= 2, f"Expected multi-line output, got: {result.output}"
+
+        # First non-empty line should start with "Error:"
+        assert non_empty_lines[0].strip().startswith("Error:")
+
+    def test_error_exit_code_is_1(self, runner, cli_main, tmp_path):
+        """Test that errors exit with code 1."""
+        result = runner.invoke(cli_main, ["--auto-spec", "-p", str(tmp_path)])
+        assert result.exit_code == 1
+
+    def test_spec_validate_custom_path_not_found_shows_actionable_error(self, runner, cli_main, tmp_path):
+        """Test spec validate with nonexistent custom path shows actionable error."""
+        result = runner.invoke(
+            cli_main,
+            ["spec", "validate", str(tmp_path / "nonexistent.md"), "-p", str(tmp_path)]
+        )
+
+        # Click validates path existence for exists=True
+        # This test verifies the error is informative
+        assert result.exit_code != 0
+        # Should mention the file doesn't exist
+        assert "does not exist" in result.output.lower() or "no such file" in result.output.lower()
+
+    def test_logs_invalid_since_shows_actionable_error(self, runner, cli_main, tmp_path):
+        """Test logs --since with invalid format shows actionable error."""
+        result = runner.invoke(
+            cli_main,
+            ["logs", "--since", "invalid_format", "-p", str(tmp_path)]
+        )
+
+        # Should return without crash
+        assert result.exit_code == 0 or "Error:" in result.output
+        # If there's an error, it should be actionable
+        if "Error:" in result.output:
+            # Should show valid format examples
+            assert "1h" in result.output or "2d" in result.output or "format" in result.output.lower()
