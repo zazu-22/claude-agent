@@ -19,7 +19,7 @@ from claude_agent.config import (
     merge_config,
 )
 from claude_agent.detection import detect_stack, get_available_stacks
-from claude_agent.errors import ActionableError, print_error
+from claude_agent.errors import ActionableError, ConfigParseError, print_error
 from claude_agent.progress import (
     find_feature_list,
     find_spec_for_coding,
@@ -180,15 +180,21 @@ def main(
         if not existing:
             click.echo("No agent files to reset.")
         else:
-            click.echo(f"Will delete from {project_dir}:")
+            # Use consistent warning format for destructive operation
+            click.echo(click.style("Warning:", fg="yellow", bold=True) + " This will delete agent state files")
+            click.echo("")
+            click.echo(f"  Files to be deleted from {project_dir}:")
             for f in existing:
                 rel_path = f.relative_to(project_dir)
-                click.echo(f"  - {rel_path}")
+                click.echo(f"    - {rel_path}")
+            click.echo("")
+            click.echo("  This action cannot be undone. You will need to re-run the spec workflow.")
 
             if click.confirm("\nProceed with reset?"):
                 for f in existing:
                     f.unlink()
-                click.echo("Reset complete.")
+                click.echo("")
+                click.echo(click.style("Reset complete.", fg="green", bold=True))
                 click.echo("Run 'claude-agent' again to start fresh.")
                 sys.exit(0)
             else:
@@ -196,18 +202,22 @@ def main(
                 sys.exit(0)
 
     # Merge configuration from all sources
-    merged_config = merge_config(
-        project_dir=project_dir,
-        cli_spec=spec,
-        cli_goal=goal,
-        cli_features=features,
-        cli_stack=stack,
-        cli_model=model,
-        cli_max_iterations=max_iterations,
-        cli_config_path=config,
-        cli_review=review,
-        cli_verbose=verbose,
-    )
+    try:
+        merged_config = merge_config(
+            project_dir=project_dir,
+            cli_spec=spec,
+            cli_goal=goal,
+            cli_features=features,
+            cli_stack=stack,
+            cli_model=model,
+            cli_max_iterations=max_iterations,
+            cli_config_path=config,
+            cli_review=review,
+            cli_verbose=verbose,
+        )
+    except ConfigParseError as e:
+        print_error(e.get_actionable_error())
+        sys.exit(1)
 
     # Handle --auto-spec flag
     if auto_spec:
@@ -408,7 +418,11 @@ def spec_create(goal, from_file, interactive, project_dir):
         click.echo("\n  Tip: Use -i for interactive mode to be guided through spec creation.")
         sys.exit(1)
 
-    config = merge_config(project_dir=project_dir)
+    try:
+        config = merge_config(project_dir=project_dir)
+    except ConfigParseError as e:
+        print_error(e.get_actionable_error())
+        sys.exit(1)
     asyncio.run(run_spec_create_session(config, goal, context))
 
 
@@ -448,7 +462,11 @@ def spec_validate(spec_file, interactive, project_dir):
         click.echo("\n  Check the file path and try again.")
         sys.exit(1)
 
-    config = merge_config(project_dir=project_dir)
+    try:
+        config = merge_config(project_dir=project_dir)
+    except ConfigParseError as e:
+        print_error(e.get_actionable_error())
+        sys.exit(1)
     status, passed = asyncio.run(run_spec_validate_session(config, spec_path))
 
     sys.exit(0 if passed else 1)
@@ -489,7 +507,11 @@ def spec_decompose(spec_file, features, project_dir):
             click.echo("  Or specify a spec file: claude-agent spec decompose path/to/spec.md")
             sys.exit(1)
 
-    config = merge_config(project_dir=project_dir, cli_features=features)
+    try:
+        config = merge_config(project_dir=project_dir, cli_features=features)
+    except ConfigParseError as e:
+        print_error(e.get_actionable_error())
+        sys.exit(1)
     status, feature_path = asyncio.run(
         run_spec_decompose_session(config, spec_path, features)
     )
@@ -529,7 +551,11 @@ def spec_auto(goal, project_dir):
         # Resuming - show current state
         click.echo(f"Resuming spec workflow from phase: {phase}")
 
-    config = merge_config(project_dir=project_dir)
+    try:
+        config = merge_config(project_dir=project_dir)
+    except ConfigParseError as e:
+        print_error(e.get_actionable_error())
+        sys.exit(1)
 
     success = asyncio.run(run_spec_workflow(config, goal))
     sys.exit(0 if success else 1)

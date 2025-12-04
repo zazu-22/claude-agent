@@ -65,6 +65,38 @@ from typing import Optional
 import click
 
 
+class ConfigParseError(Exception):
+    """Exception raised when config file parsing fails.
+
+    Attributes:
+        config_path: Path to the config file that failed to parse
+        original_error: The original YAML parse error message
+        line_number: Line number where the error occurred (if available)
+        actionable_error: Pre-formatted ActionableError for display
+    """
+
+    def __init__(
+        self,
+        config_path: str,
+        original_error: str,
+        line_number: Optional[int] = None,
+    ):
+        self.config_path = config_path
+        self.original_error = original_error
+        self.line_number = line_number
+        location = f" at line {line_number}" if line_number else ""
+        super().__init__(f"Failed to parse {config_path}{location}: {original_error}")
+
+    def get_actionable_error(self) -> "ActionableError":
+        """Get an ActionableError for display."""
+        from claude_agent.errors import config_parse_error
+        return config_parse_error(
+            self.config_path,
+            self.original_error,
+            self.line_number,
+        )
+
+
 @dataclass
 class ActionableError:
     """Structured error with actionable guidance.
@@ -339,6 +371,103 @@ def workflow_error(
         context=context,
         example=suggestion,
         help_command="claude-agent spec status",
+    )
+
+
+def config_parse_error(
+    config_path: str,
+    error_message: str,
+    line_number: Optional[int] = None,
+) -> ActionableError:
+    """Create an error for YAML config parsing failures.
+
+    Args:
+        config_path: Path to the config file that failed to parse
+        error_message: The parse error message from YAML library
+        line_number: Line number where the error occurred (optional)
+
+    Returns:
+        ActionableError configured for config parse error scenario.
+
+    Example:
+        >>> error = config_parse_error(
+        ...     ".claude-agent.yaml",
+        ...     "expected <block end>, but found '<scalar>'",
+        ...     line_number=15
+        ... )
+    """
+    location = f" at line {line_number}" if line_number else ""
+    return ActionableError(
+        message=f"Failed to parse {config_path}{location}",
+        context=f"YAML syntax error: {error_message}",
+        example="Check YAML syntax: proper indentation, colons after keys, quoted strings with special characters",
+        help_command="claude-agent init",
+    )
+
+
+def permission_error(
+    path: str,
+    operation: str = "access",
+    context: Optional[str] = None,
+) -> ActionableError:
+    """Create an error for permission/access denied issues.
+
+    Args:
+        path: Path to the file/directory with permission issues
+        operation: What operation failed (read, write, access)
+        context: Additional context about the operation (optional)
+
+    Returns:
+        ActionableError configured for permission error scenario.
+
+    Example:
+        >>> error = permission_error(
+        ...     "/etc/config.yaml",
+        ...     operation="write"
+        ... )
+    """
+    # Quote paths with spaces
+    display_path = quote_path(path)
+
+    return ActionableError(
+        message=f"Permission denied: cannot {operation} {display_path}",
+        context=context or f"Check that you have {operation} permissions for this path.",
+        example=f"ls -la {display_path}  # Check current permissions",
+        help_command=None,
+    )
+
+
+def network_error(
+    operation: str,
+    error_message: Optional[str] = None,
+    suggestion: Optional[str] = None,
+) -> ActionableError:
+    """Create an error for network/connectivity issues.
+
+    Args:
+        operation: What network operation failed
+        error_message: The original error message (optional)
+        suggestion: Custom suggestion for recovery (optional)
+
+    Returns:
+        ActionableError configured for network error scenario.
+
+    Example:
+        >>> error = network_error(
+        ...     "API connection",
+        ...     error_message="Connection refused"
+        ... )
+    """
+    context_parts = []
+    if error_message:
+        context_parts.append(error_message)
+    context_parts.append("This may be a temporary network issue.")
+
+    return ActionableError(
+        message=f"{operation} failed due to network error",
+        context=" ".join(context_parts),
+        example=suggestion or "Check your network connection and try again",
+        help_command=None,
     )
 
 

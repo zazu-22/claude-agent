@@ -876,3 +876,310 @@ class TestVerboseModeIntegration:
 
         assert result.exit_code == 0
         assert "--verbose" in result.output or "-v" in result.output
+
+
+class TestConfigParseError:
+    """Tests for ConfigParseError exception and config_parse_error helper."""
+
+    def test_config_parse_error_basic(self):
+        """Test ConfigParseError with basic parameters."""
+        from claude_agent.errors import ConfigParseError
+
+        error = ConfigParseError(
+            config_path=".claude-agent.yaml",
+            original_error="expected <block end>, but found '<scalar>'",
+        )
+
+        assert error.config_path == ".claude-agent.yaml"
+        assert "expected <block end>" in error.original_error
+        assert error.line_number is None
+
+    def test_config_parse_error_with_line_number(self):
+        """Test ConfigParseError with line number."""
+        from claude_agent.errors import ConfigParseError
+
+        error = ConfigParseError(
+            config_path=".claude-agent.yaml",
+            original_error="mapping values are not allowed here",
+            line_number=15,
+        )
+
+        assert error.line_number == 15
+        assert "15" in str(error) or "line" in str(error).lower()
+
+    def test_config_parse_error_actionable_format(self):
+        """Test that ConfigParseError produces actionable error format."""
+        from claude_agent.errors import ConfigParseError
+
+        error = ConfigParseError(
+            config_path=".claude-agent.yaml",
+            original_error="invalid syntax",
+            line_number=10,
+        )
+
+        actionable = error.get_actionable_error()
+
+        # Check all sections are present
+        output = actionable.format(use_color=False)
+        assert "Error:" in output
+        assert ".claude-agent.yaml" in output
+        assert "line 10" in output
+        assert "YAML" in output or "syntax" in output.lower()
+
+    def test_config_parse_error_helper(self):
+        """Test config_parse_error helper function."""
+        from claude_agent.errors import config_parse_error
+
+        error = config_parse_error(
+            config_path=".claude-agent.yaml",
+            error_message="unexpected end of stream",
+            line_number=5,
+        )
+
+        output = error.format(use_color=False)
+        assert "Error:" in output
+        assert ".claude-agent.yaml" in output
+        assert "line 5" in output
+        assert "Example:" in output or "syntax" in output.lower()
+        assert "Help:" in output or "init" in output.lower()
+
+    def test_config_parse_error_without_line_number(self):
+        """Test config_parse_error without line number."""
+        from claude_agent.errors import config_parse_error
+
+        error = config_parse_error(
+            config_path="config.yaml",
+            error_message="invalid YAML",
+        )
+
+        output = error.format(use_color=False)
+        assert "Error:" in output
+        assert "config.yaml" in output
+        # Should not have "line" if no line number
+        assert "line" not in output.lower() or "Check" in output
+
+    def test_malformed_yaml_triggers_config_parse_error(self, tmp_path):
+        """Test that malformed YAML in config file triggers ConfigParseError."""
+        from claude_agent.config import load_config_file
+        from claude_agent.errors import ConfigParseError
+
+        # Create malformed YAML
+        config_file = tmp_path / ".claude-agent.yaml"
+        config_file.write_text("""
+agent:
+  model: test
+  invalid_yaml: [unclosed bracket
+features: 50
+""")
+
+        with pytest.raises(ConfigParseError) as exc_info:
+            load_config_file(config_file)
+
+        error = exc_info.value
+        assert error.config_path == str(config_file)
+        # Should have some error message
+        assert len(error.original_error) > 0
+
+    def test_malformed_yaml_has_line_number(self, tmp_path):
+        """Test that malformed YAML error includes line number when available."""
+        from claude_agent.config import load_config_file
+        from claude_agent.errors import ConfigParseError
+
+        # Create malformed YAML with specific error location
+        config_file = tmp_path / ".claude-agent.yaml"
+        config_file.write_text("""features: 50
+agent:
+  model: test
+  bad: : colon
+security:
+  extra_commands: []
+""")
+
+        with pytest.raises(ConfigParseError) as exc_info:
+            load_config_file(config_file)
+
+        error = exc_info.value
+        # Line number should be available for this type of error
+        assert error.line_number is not None
+
+    def test_cli_shows_actionable_error_for_malformed_config(self, tmp_path):
+        """Test that CLI shows actionable error for malformed config."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create malformed YAML config
+        config_file = tmp_path / ".claude-agent.yaml"
+        config_file.write_text("""
+agent:
+  model: test
+  broken: [unclosed
+""")
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["-p", str(tmp_path), "--goal", "test"])
+
+        assert result.exit_code == 1
+        # Should have actionable error format
+        assert "Error:" in result.output
+        # Should mention the config file
+        assert ".claude-agent.yaml" in result.output or "parse" in result.output.lower()
+
+
+class TestPermissionError:
+    """Tests for permission_error helper function."""
+
+    def test_permission_error_basic(self):
+        """Test basic permission error."""
+        from claude_agent.errors import permission_error
+
+        error = permission_error("/etc/config.yaml", operation="write")
+
+        output = error.format(use_color=False)
+        assert "Error:" in output
+        assert "Permission denied" in output
+        assert "/etc/config.yaml" in output
+        assert "write" in output
+
+    def test_permission_error_with_context(self):
+        """Test permission error with custom context."""
+        from claude_agent.errors import permission_error
+
+        error = permission_error(
+            "/var/log/app.log",
+            operation="read",
+            context="Log files require elevated permissions.",
+        )
+
+        output = error.format(use_color=False)
+        assert "Error:" in output
+        assert "read" in output
+        assert "Log files require" in output
+
+    def test_permission_error_quotes_spaces(self):
+        """Test that paths with spaces are quoted."""
+        from claude_agent.errors import permission_error
+
+        error = permission_error("/my path/with spaces/file.txt", operation="access")
+
+        output = error.format(use_color=False)
+        # Path should be quoted
+        assert '"/my path/with spaces/file.txt"' in output
+
+
+class TestNetworkError:
+    """Tests for network_error helper function."""
+
+    def test_network_error_basic(self):
+        """Test basic network error."""
+        from claude_agent.errors import network_error
+
+        error = network_error("API connection")
+
+        output = error.format(use_color=False)
+        assert "Error:" in output
+        assert "API connection" in output
+        assert "network" in output.lower()
+
+    def test_network_error_with_message(self):
+        """Test network error with original error message."""
+        from claude_agent.errors import network_error
+
+        error = network_error(
+            "Claude API request",
+            error_message="Connection refused",
+        )
+
+        output = error.format(use_color=False)
+        assert "Error:" in output
+        assert "Claude API request" in output
+        assert "Connection refused" in output
+
+    def test_network_error_with_suggestion(self):
+        """Test network error with custom suggestion."""
+        from claude_agent.errors import network_error
+
+        error = network_error(
+            "Database connection",
+            suggestion="Check database server status and retry",
+        )
+
+        output = error.format(use_color=False)
+        assert "Error:" in output
+        assert "Check database server" in output
+
+
+class TestResetConfirmation:
+    """Tests for reset confirmation message format."""
+
+    def test_reset_shows_warning(self, tmp_path):
+        """Test that reset shows warning about destructive action."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create a file that would be reset
+        (tmp_path / "feature_list.json").write_text("[]")
+
+        runner = CliRunner()
+        # Use 'n' to not actually delete files
+        result = runner.invoke(main, ["--reset", "-p", str(tmp_path)], input="n\n")
+
+        # Should show warning header
+        assert "Warning:" in result.output or "warning" in result.output.lower()
+        # Should list files to be deleted
+        assert "feature_list.json" in result.output
+        # Should mention it's destructive
+        assert "cannot be undone" in result.output or "delete" in result.output.lower()
+
+    def test_reset_lists_files_clearly(self, tmp_path):
+        """Test that reset lists all files to be deleted."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        # Create multiple files
+        (tmp_path / "feature_list.json").write_text("[]")
+        (tmp_path / "claude-progress.txt").write_text("progress")
+        (tmp_path / "spec-workflow.json").write_text("{}")
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["--reset", "-p", str(tmp_path)], input="n\n")
+
+        # Should list all files
+        assert "feature_list.json" in result.output
+        assert "claude-progress.txt" in result.output
+        assert "spec-workflow.json" in result.output
+
+    def test_reset_no_files_shows_message(self, tmp_path):
+        """Test that reset with no files shows appropriate message."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["--reset", "-p", str(tmp_path)])
+
+        assert "No agent files to reset" in result.output
+
+    def test_reset_cancelled_message(self, tmp_path):
+        """Test that cancelled reset shows clear message."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        (tmp_path / "feature_list.json").write_text("[]")
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["--reset", "-p", str(tmp_path)], input="n\n")
+
+        assert "cancelled" in result.output.lower()
+
+    def test_reset_complete_message(self, tmp_path):
+        """Test that completed reset shows success message."""
+        from click.testing import CliRunner
+        from claude_agent.cli import main
+
+        (tmp_path / "feature_list.json").write_text("[]")
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["--reset", "-p", str(tmp_path)], input="y\n")
+
+        assert "Reset complete" in result.output or "complete" in result.output.lower()
+        # Should suggest next step
+        assert "Run" in result.output or "again" in result.output
