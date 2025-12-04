@@ -89,7 +89,7 @@ class ConfigParseError(Exception):
 
     def get_actionable_error(self) -> "ActionableError":
         """Get an ActionableError for display."""
-        from claude_agent.errors import config_parse_error
+        # Call config_parse_error directly - it's in this same module
         return config_parse_error(
             self.config_path,
             self.original_error,
@@ -188,6 +188,40 @@ def print_error(error: ActionableError, err: bool = True) -> None:
             # Last resort: raw print to stderr
             import sys
             print(f"Error: {error.message}", file=sys.stderr if err else sys.stdout)
+
+
+def fatal_error(
+    message: str,
+    context: Optional[str] = None,
+    example: Optional[str] = None,
+    help_command: Optional[str] = None,
+    exit_code: int = 1,
+) -> None:
+    """Print an actionable error and exit the program.
+
+    Convenience function for fatal CLI errors that should terminate execution.
+    Combines creating an ActionableError, printing it, and calling sys.exit().
+
+    Args:
+        message: What went wrong (required)
+        context: Why it matters or additional context (optional)
+        example: Correct usage example (optional)
+        help_command: Help command to run for more info (optional)
+        exit_code: Exit code to use (default: 1)
+
+    Note:
+        This function never returns - it always calls sys.exit().
+    """
+    import sys
+
+    error = ActionableError(
+        message=message,
+        context=context,
+        example=example,
+        help_command=help_command,
+    )
+    print_error(error)
+    sys.exit(exit_code)
 
 
 def format_error(

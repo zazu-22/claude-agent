@@ -1108,6 +1108,44 @@ class TestNetworkError:
         assert "Check database server" in output
 
 
+class TestFatalError:
+    """Tests for fatal_error convenience function."""
+
+    def test_fatal_error_prints_and_exits(self):
+        """Test that fatal_error prints error and calls sys.exit."""
+        from claude_agent.errors import fatal_error
+
+        with pytest.raises(SystemExit) as exc_info:
+            fatal_error(message="Test fatal error")
+
+        assert exc_info.value.code == 1
+
+    def test_fatal_error_custom_exit_code(self):
+        """Test fatal_error with custom exit code."""
+        from claude_agent.errors import fatal_error
+
+        with pytest.raises(SystemExit) as exc_info:
+            fatal_error(message="Test error", exit_code=2)
+
+        assert exc_info.value.code == 2
+
+    def test_fatal_error_output_format(self, capsys):
+        """Test that fatal_error outputs actionable format."""
+        from claude_agent.errors import fatal_error
+
+        with pytest.raises(SystemExit):
+            fatal_error(
+                message="Test message",
+                context="Test context",
+                example="test-command",
+            )
+
+        captured = capsys.readouterr()
+        assert "Error:" in captured.err
+        assert "Test message" in captured.err
+        assert "Test context" in captured.err
+
+
 class TestResetConfirmation:
     """Tests for reset confirmation message format."""
 
