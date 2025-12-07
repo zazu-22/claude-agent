@@ -23,7 +23,7 @@ import json
 import os
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +46,18 @@ class Config:
     repo: str
     dry_run: bool = False
     verbose: bool = False
+
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        self._validate_repo_format()
+
+    def _validate_repo_format(self) -> None:
+        """Validate repo format is 'owner/repo'."""
+        parts = self.repo.split("/")
+        if len(parts) != 2 or not all(parts):
+            raise ValueError(
+                f"Invalid repo format: '{self.repo}'. Expected 'owner/repo'"
+            )
 
     @property
     def owner(self) -> str:
@@ -356,10 +368,11 @@ class TaskRunner:
             return issue["body"]
         elif "body_file" in issue:
             body_path = Path(issue["body_file"])
-            if body_path.exists():
-                return body_path.read_text()
-            else:
-                return f"(Body file not found: {issue['body_file']})"
+            if not body_path.exists():
+                raise FileNotFoundError(
+                    f"Issue body file not found: {issue['body_file']}"
+                )
+            return body_path.read_text()
         return ""
 
     def _parse_relative_date(self, relative: str) -> str:
@@ -380,7 +393,7 @@ class TaskRunner:
         else:
             return relative
 
-        due_date = datetime.utcnow() + delta
+        due_date = datetime.now(timezone.utc) + delta
         return due_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def _print_summary(self) -> None:
