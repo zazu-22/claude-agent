@@ -382,51 +382,14 @@ When working on this codebase with Claude Code, consider using specialized agent
 
 ## GitHub Automation
 
-### GitHub Setup Tasks Workflow
+This repository includes a reusable GitHub API automation system for bulk operations (labels, milestones, issues) without MCP context overhead. Uses a "code-first" pattern with YAML task definitions.
 
-This repository includes a reusable GitHub Actions workflow for automating repository setup tasks without requiring MCP tools. This follows the "code-first" pattern - generating targeted API calls on demand rather than loading heavy tool schemas into context.
+**Key files:**
+- `scripts/github_api.py` - API wrapper script
+- `scripts/github_tasks/*.yaml` - Task definitions
+- `.github/workflows/github-setup.yml` - GitHub Actions workflow
 
-**Location:** `.github/workflows/github-setup.yml`
-
-**Components:**
-- `scripts/github_api.py` - Reusable GitHub API wrapper
-- `scripts/github_tasks/*.yaml` - Task definition files
-- `.github/workflows/CLAUDE.md` - Detailed workflow documentation
-
-**Use cases:**
-- Setting up feature sprints (labels, milestones, issues)
-- Bulk creating repository labels
-- Automating repetitive GitHub operations
-
-**Creating a new setup task:**
-
-1. Create a task file in `scripts/github_tasks/`:
-```yaml
-name: "My Sprint Setup"
-repo: "owner/repo"
-
-labels:
-  - name: "priority:high"
-    color: "D93F0B"
-    description: "High priority"
-
-milestones:
-  - title: "Sprint 1"
-    due_on: "+2 weeks"
-
-issues:
-  - title: "Implement feature"
-    labels: ["priority:high"]
-    milestone: "Sprint 1"
-    body: |
-      Issue description here...
-```
-
-2. Add `GITHUB_SETUP_TOKEN` to repository secrets (one-time setup)
-3. Trigger via GitHub Actions UI: Actions > "GitHub Setup Tasks" > Run workflow
-4. Always test with `dry_run: true` first
-
-**See:** `.github/workflows/CLAUDE.md` for detailed documentation.
+**See:** `.github/workflows/CLAUDE.md` for detailed usage instructions.
 
 ## Debugging Tips
 
