@@ -200,6 +200,9 @@ class TaskRunner:
         if "repo" in task_data:
             self.config.repo = task_data["repo"]
 
+        # Pre-fetch existing milestones so issues can reference any milestone
+        self._load_existing_milestones()
+
         # Run each section in order
         if "labels" in task_data:
             self._create_labels(task_data["labels"])
@@ -212,6 +215,17 @@ class TaskRunner:
 
         self._print_summary()
         return self.results
+
+    def _load_existing_milestones(self) -> None:
+        """Pre-fetch all existing milestones to support issue milestone references."""
+        if self.config.dry_run:
+            return
+        endpoint = f"/repos/{self.config.repo}/milestones"
+        existing = self.api.get(endpoint, params={"state": "all", "per_page": 100}) or []
+        for m in existing:
+            self.created_milestones[m["title"]] = m["number"]
+        if self.config.verbose and self.created_milestones:
+            print(f"  [INFO] Loaded {len(self.created_milestones)} existing milestones")
 
     def _create_labels(self, labels: list[dict]) -> None:
         """Create repository labels."""
@@ -229,54 +243,40 @@ class TaskRunner:
                     "description": label.get("description", ""),
                 })
 
+                skipped = result.get("skipped", False) if result else False
                 self.results.append(TaskResult(
                     operation="create_label",
                     success=True,
                     item=name,
-                    details={"skipped": result.get("skipped", False)} if result else {},
+                    details={"skipped": skipped},
                 ))
 
             except GitHubAPIError as e:
-                if "already_exists" in str(e):
-                    print(f"  [SKIP] Label '{name}' already exists")
-                    self.results.append(TaskResult(
-                        operation="create_label",
-                        success=True,
-                        item=name,
-                        details={"skipped": True},
-                    ))
-                else:
-                    print(f"  [ERROR] {e}")
-                    self.results.append(TaskResult(
-                        operation="create_label",
-                        success=False,
-                        item=name,
-                        error=str(e),
-                    ))
+                print(f"  [ERROR] {e}")
+                self.results.append(TaskResult(
+                    operation="create_label",
+                    success=False,
+                    item=name,
+                    error=str(e),
+                ))
 
     def _create_milestones(self, milestones: list[dict]) -> None:
         """Create repository milestones."""
         print(f"\n--- Creating Milestones ({len(milestones)}) ---\n")
         endpoint = f"/repos/{self.config.repo}/milestones"
 
-        # First, get existing milestones to avoid duplicates and capture IDs
-        existing = self.api.get(endpoint, params={"state": "all"}) or []
-        existing_titles = {}
-        for m in existing:
-            existing_titles[m["title"]] = m["number"]
-
         for milestone in milestones:
             title = milestone["title"]
             print(f"Creating milestone: {title}")
 
-            if title in existing_titles:
+            # Check if already loaded from pre-fetch
+            if title in self.created_milestones:
                 print(f"  [SKIP] Milestone '{title}' already exists")
-                self.created_milestones[title] = existing_titles[title]
                 self.results.append(TaskResult(
                     operation="create_milestone",
                     success=True,
                     item=title,
-                    details={"skipped": True, "number": existing_titles[title]},
+                    details={"skipped": True, "number": self.created_milestones[title]},
                 ))
                 continue
 
@@ -381,7 +381,11 @@ class TaskRunner:
         if len(parts) != 2:
             return relative
 
-        amount = int(parts[0])
+        try:
+            amount = int(parts[0])
+        except ValueError:
+            return relative
+
         unit = parts[1].rstrip("s")  # "weeks" -> "week"
 
         if unit == "day":

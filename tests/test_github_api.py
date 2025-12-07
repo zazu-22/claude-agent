@@ -113,6 +113,11 @@ class TestTaskRunnerParseRelativeDate:
         result = runner._parse_relative_date("+5 years")
         assert result == "+5 years"
 
+    def test_invalid_integer_returns_original(self, runner):
+        """Invalid integer amount should return original string."""
+        result = runner._parse_relative_date("+abc days")
+        assert result == "+abc days"
+
 
 class TestTaskRunnerResolveBody:
     """Tests for TaskRunner._resolve_body method."""
