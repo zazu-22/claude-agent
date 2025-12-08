@@ -1,0 +1,60 @@
+# Drift Mitigation - Additional Epics (3 & 4)
+# ============================================
+#
+# Creates the two additional epic issues that were not included in the
+# original task file. These epics cover the remaining implementation
+# issues from Phase 1, 2, and 4.
+#
+# WARNING: Issues are NOT idempotent - only run this file ONCE.
+#
+# Reference: reports/drift-mitigation-github-issues-plan.md
+
+name: "Drift Mitigation - Epics 3 & 4"
+repo: "zazu-22/claude-agent"
+
+issues:
+  - title: "Epic: Handoff Enrichment & Metrics"
+    labels:
+      - "epic"
+      - "type:feature"
+      - "priority:high"
+    body: |
+      ## Overview
+      Enhance handoff artifacts and implement drift detection metrics to address lossy handoff divergence.
+
+      ## Related Issues
+      - [ ] #12 - [Phase 1] Implement enhanced progress notes structure in progress.py
+      - [ ] #13 - [Phase 1] Implement basic drift detection metrics tracking
+      - [ ] #14 - [Phase 1] Integrate metrics tracking into agent session flow
+      - [ ] #24 - [Phase 4] Implement drift detection dashboard in CLI
+
+      ## Success Criteria
+      - Progress notes capture evaluation artifacts from forced evaluation
+      - Metrics track regression rate, session velocity, and assumption mismatches
+      - CLI dashboard displays drift indicators and trends
+      - Handoff data persists across sessions
+
+      ## Reference
+      See `reports/drift-mitigation-design.md` Sections 5-6
+
+  - title: "Epic: Best-of-N Sampling"
+    labels:
+      - "epic"
+      - "type:feature"
+      - "priority:medium"
+    body: |
+      ## Overview
+      Implement multi-sample generation with evaluation criteria for feature list generation to improve initialization quality.
+
+      ## Related Issues
+      - [ ] #16 - [Phase 2] Implement feature list evaluation scoring functions
+      - [ ] #17 - [Phase 2] Implement Best-of-N sampling for feature list generation
+
+      ## Success Criteria
+      - Evaluation functions score feature lists on coverage, testability, granularity, independence
+      - Multiple candidates generated and best selected automatically
+      - Score threshold prevents low-quality feature lists from proceeding
+      - Sampling can be disabled for cost-sensitive projects
+
+      ## Reference
+      See `reports/drift-mitigation-design.md` Section 4
