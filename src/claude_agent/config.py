@@ -53,6 +53,57 @@ class WorkflowConfig:
 
 
 @dataclass
+class EvaluationConfig:
+    """Feature list evaluation configuration."""
+
+    coverage_weight: float = 0.4
+    testability_weight: float = 0.3
+    granularity_weight: float = 0.2
+    independence_weight: float = 0.1
+    # Threshold for acceptable feature lists (future use with Best-of-N)
+    min_acceptable_score: float = 0.6
+
+    def __post_init__(self) -> None:
+        """Validate configuration at creation time."""
+        self.validate()
+
+    def validate(self) -> None:
+        """Validate all configuration fields.
+
+        Raises:
+            ValueError: If any field has an invalid value
+        """
+        self.validate_weights()
+        self.validate_score_threshold()
+
+    def validate_weights(self) -> None:
+        """Validate that weights sum to 1.0 within tolerance.
+
+        Raises:
+            ValueError: If weights do not sum to 1.0 (within 0.01 tolerance)
+        """
+        total = (
+            self.coverage_weight
+            + self.testability_weight
+            + self.granularity_weight
+            + self.independence_weight
+        )
+        if not (0.99 <= total <= 1.01):
+            raise ValueError(f"Weights must sum to 1.0, got {total}")
+
+    def validate_score_threshold(self) -> None:
+        """Validate that min_acceptable_score is in valid range.
+
+        Raises:
+            ValueError: If min_acceptable_score is not between 0.0 and 1.0
+        """
+        if not (0.0 <= self.min_acceptable_score <= 1.0):
+            raise ValueError(
+                f"min_acceptable_score must be between 0.0 and 1.0, got {self.min_acceptable_score}"
+            )
+
+
+@dataclass
 class LoggingConfig:
     """Logging and observability configuration."""
 
@@ -93,6 +144,9 @@ class Config:
 
     # Logging settings
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+
+    # Evaluation settings
+    evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
 
     # Metrics settings
     metrics_file: str = "drift-metrics.json"
@@ -256,6 +310,37 @@ def merge_config(
                         "skip_if_feature_list_exists"
                     ]
 
+        # Evaluation settings
+        # Note: EvaluationConfig validates on creation via __post_init__, but we must
+        # re-validate here because we mutate individual fields after creation. This
+        # dual validation is intentional:
+        # 1. __post_init__ catches invalid defaults during development
+        # 2. This explicit call catches invalid combinations from YAML config
+        if "evaluation" in file_config:
+            eval_config = file_config["evaluation"]
+            if "coverage_weight" in eval_config:
+                config.evaluation.coverage_weight = eval_config["coverage_weight"]
+            if "testability_weight" in eval_config:
+                config.evaluation.testability_weight = eval_config["testability_weight"]
+            if "granularity_weight" in eval_config:
+                config.evaluation.granularity_weight = eval_config["granularity_weight"]
+            if "independence_weight" in eval_config:
+                config.evaluation.independence_weight = eval_config["independence_weight"]
+            if "min_acceptable_score" in eval_config:
+                config.evaluation.min_acceptable_score = eval_config["min_acceptable_score"]
+
+            # Re-validate after field mutations (see note above)
+            try:
+                config.evaluation.validate_weights()
+            except ValueError as e:
+                from claude_agent.errors import ConfigValidationError
+
+                raise ConfigValidationError(
+                    config_path=str(config_path),
+                    field="evaluation weights",
+                    message=str(e),
+                ) from e
+
         # Logging settings
         if "logging" in file_config:
             logging_config = file_config["logging"]
@@ -359,6 +444,14 @@ workflow:
   auto_spec:
     enabled: false
     skip_if_feature_list_exists: true
+
+# Feature list evaluation settings (for Best-of-N sampling)
+evaluation:
+  coverage_weight: 0.4      # How well features cover spec requirements
+  testability_weight: 0.3   # Whether features have concrete test steps
+  granularity_weight: 0.2   # Whether features are right-sized
+  independence_weight: 0.1  # Whether features can be implemented independently
+  min_acceptable_score: 0.6 # Threshold for acceptable feature lists
 
 # Logging settings
 logging:

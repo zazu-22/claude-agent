@@ -97,6 +97,49 @@ class ConfigParseError(Exception):
         )
 
 
+class ConfigValidationError(Exception):
+    """Exception raised when config values fail validation.
+
+    Attributes:
+        config_path: Path to the config file with invalid values
+        field: The field that failed validation
+        message: Description of the validation failure
+    """
+
+    # Field-specific examples for actionable error messages
+    FIELD_EXAMPLES = {
+        "evaluation weights": "Ensure evaluation weights sum to 1.0 (coverage + testability + granularity + independence = 1.0)",
+        "model": "Use a valid model name like 'claude-opus-4-5-20251101' or 'claude-sonnet-4-5-20250929'",
+        "features": "Specify a positive integer for feature count (e.g., features: 50)",
+        "stack": "Use a valid stack name: 'python' or 'node'",
+    }
+
+    DEFAULT_EXAMPLE = "Check the field value in your .claude-agent.yaml configuration file"
+
+    def __init__(
+        self,
+        config_path: str,
+        field: str,
+        message: str,
+    ):
+        self.config_path = config_path
+        self.field = field
+        self.message = message
+        super().__init__(f"Invalid {field} in {config_path}: {message}")
+
+    def get_actionable_error(self) -> "ActionableError":
+        """Get an ActionableError for display."""
+        # Look up field-specific example, fall back to default
+        example = self.FIELD_EXAMPLES.get(self.field, self.DEFAULT_EXAMPLE)
+
+        return ActionableError(
+            message=f"Invalid {self.field} in {self.config_path}",
+            context=self.message,
+            example=example,
+            help_command="claude-agent init",
+        )
+
+
 @dataclass
 class ActionableError:
     """Structured error with actionable guidance.
