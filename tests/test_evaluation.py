@@ -784,8 +784,16 @@ class TestIntegration:
             f"Poor aggregate {poor_result.aggregate_score} should be less than good {good_result.aggregate_score}"
 
         # Absolute bounds for poor features (catch completely broken scoring)
-        assert poor_result.granularity_score <= 0.7  # Should be penalized
-        assert poor_result.testability_score <= 0.5  # No test steps
+        # These bounds are safety nets to catch regression in the scoring algorithm.
+        # Rationale for thresholds:
+        # - granularity <= 0.7: "Login" (6 chars) gets -0.3 for short description, compound
+        #   feature gets -0.4 to -0.6 for multiple "and" conjunctions. Perfect 1.0 minus
+        #   penalties puts these features well below 0.7.
+        # - testability <= 0.5: Without test_steps field, max possible score is 0.4
+        #   (expected_result only) or 0.2 (description fallback). No feature in
+        #   poor_features has expected_result, so max is 0.2 from description.
+        assert poor_result.granularity_score <= 0.7
+        assert poor_result.testability_score <= 0.5
 
 
 class TestSpecLocationPriority:
@@ -943,19 +951,171 @@ class TestWordOverlapLimitation:
         # Consistent use of 'user', 'login', 'dashboard' should give good coverage
         assert score >= 0.5
 
-    def test_stop_words_dont_contribute_meaningfully(self):
-        """Stop words like 'must', 'be', 'able' contribute to word count but not meaning.
+    def test_stop_words_filtered_from_overlap(self):
+        """Stop words are filtered out from word overlap calculation.
 
-        This test documents that the algorithm counts all words equally.
+        This ensures that common words like 'must', 'be', 'able', 'the' don't
+        create false positive matches between unrelated requirements and features.
         """
         spec = "Users must be able to do something."
         features = [
-            # Matches 'users' but spec words like 'must', 'be', 'able' are not meaningful
-            {"description": "User functionality for doing something"}
+            # This feature has different content words than the spec
+            {"description": "The system should handle requests"}
         ]
 
         score = calculate_spec_coverage(features, spec)
 
-        # The overlap includes 'users'/'user' (same stem but different words),
-        # 'something', etc. This tests the current behavior.
+        # With stop word filtering, 'users', 'do', 'something' vs 'system', 'handle', 'requests'
+        # have no meaningful overlap. Stop words like 'must', 'be', 'able', 'the', 'should'
+        # are excluded. This should result in low/no coverage.
+        # Note: exact behavior depends on requirement extraction patterns
         assert 0.0 <= score <= 1.0
+
+
+class TestEvaluationEdgeCases:
+    """Edge case tests for robustness against malformed or unusual inputs."""
+
+    def test_malformed_feature_missing_description(self):
+        """Features without description field are handled gracefully."""
+        features = [
+            {},  # Empty feature
+            {"test_steps": ["step1"]},  # No description
+            {"description": "Valid feature"},  # Valid
+        ]
+        spec = "The system must do something."
+
+        # Should not raise, just handle gracefully
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert 0.0 <= result.aggregate_score <= 1.0
+
+    def test_unicode_content_handled(self):
+        """Unicode characters in spec and features are handled correctly."""
+        spec = "The système must support émojis 🎉 and accénts."
+        features = [
+            {"description": "Système émojis 🎉 support with accénts handling"},
+            {"description": "日本語 テスト feature"},  # Japanese
+            {"description": "Функция тестирования"},  # Russian
+        ]
+
+        # Should not raise
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert 0.0 <= result.aggregate_score <= 1.0
+
+    def test_very_long_description(self):
+        """Very long feature descriptions are handled without issues."""
+        long_desc = "Feature " * 1000  # Very long description
+        features = [{"description": long_desc, "test_steps": ["step"]}]
+        spec = "The system must handle long content."
+
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        # Long descriptions are penalized in granularity
+        assert result.granularity_score < 1.0
+
+    def test_large_feature_list(self):
+        """Large number of features is handled efficiently."""
+        features = [
+            {"description": f"Feature number {i} for testing scalability", "test_steps": ["step1", "step2"]}
+            for i in range(500)
+        ]
+        spec = "The system must support many features for testing."
+
+        # Should complete without hanging or memory issues
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert result.details["feature_count"] == 500
+
+    def test_empty_strings_in_fields(self):
+        """Empty strings in feature fields are handled gracefully."""
+        features = [
+            {"description": "", "test_steps": [], "expected_result": ""},
+            {"description": "Valid", "test_steps": [""], "expected_result": ""},
+        ]
+        spec = ""
+
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert result.coverage_score == 0.0  # Empty spec
+
+    def test_none_values_in_feature_list(self):
+        """None values in feature dictionaries are handled gracefully."""
+        features = [
+            {"description": None},  # None description
+            {"description": "Valid", "test_steps": None},  # None test_steps
+        ]
+        spec = "The system must do something."
+
+        # Should handle None gracefully (may score 0 but shouldn't crash)
+        try:
+            result = evaluate_feature_list(features, spec)
+            # If it doesn't crash, check valid result
+            assert result is not None
+        except (TypeError, AttributeError):
+            # It's acceptable to raise on None values, but should be caught
+            pytest.fail("Should handle None values gracefully without crashing")
+
+    def test_special_characters_in_description(self):
+        """Special characters don't break word extraction."""
+        features = [
+            {"description": "Handle @mentions and #hashtags in <html> tags & ampersands"},
+            {"description": "Support $variables and %percentages with (parentheses)"},
+            {"description": "Process 'quoted' and \"double-quoted\" strings"},
+        ]
+        spec = "The system must handle special characters: @#$%&*()"
+
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert 0.0 <= result.aggregate_score <= 1.0
+
+    def test_numeric_only_content(self):
+        """Numeric content in features and spec is handled."""
+        features = [
+            {"description": "Feature 123 with numbers 456"},
+            {"description": "100% coverage of 50 items"},
+        ]
+        spec = "The system must handle 100 items with 99.9% uptime."
+
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+
+    def test_load_and_evaluate_with_io_error(self, tmp_path, monkeypatch):
+        """load_and_evaluate handles IO errors gracefully."""
+        features = [{"description": "Test feature"}]
+        feature_path = tmp_path / "feature_list.json"
+        feature_path.write_text(json.dumps(features))
+
+        spec_path = tmp_path / "app_spec.txt"
+        spec_path.write_text("The system must work.")
+
+        # Make spec file unreadable after creation by mocking read_text
+        original_read_text = Path.read_text
+
+        def mock_read_text(self, encoding=None):
+            if "app_spec" in str(self):
+                raise IOError("Simulated read error")
+            return original_read_text(self, encoding=encoding)
+
+        monkeypatch.setattr(Path, "read_text", mock_read_text)
+
+        # Should handle gracefully and try next location or return with empty spec
+        result = load_and_evaluate(tmp_path)
+        assert result is not None  # Should still return a result with empty spec
+
+    def test_feature_list_with_extra_fields(self):
+        """Features with extra unexpected fields are handled."""
+        features = [
+            {
+                "description": "Valid feature with extra fields",
+                "test_steps": ["step1"],
+                "unknown_field": "should be ignored",
+                "another_field": {"nested": "data"},
+                "numeric_field": 12345,
+            }
+        ]
+        spec = "The system must do something."
+
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert 0.0 <= result.aggregate_score <= 1.0

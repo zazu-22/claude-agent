@@ -160,6 +160,18 @@ TESTABILITY_SCORE_CONCRETE_STEPS = 0.3  # Score for having concrete action verbs
 TESTABILITY_SCORE_EXPECTED_RESULT = 0.4  # Score for verifiable expected_result
 TESTABILITY_SCORE_DESCRIPTION_FALLBACK = 0.2  # Reduced score when using description fallback
 
+# Stop words to exclude from word overlap matching in coverage calculation
+# These common words add noise and can cause false positive matches between
+# unrelated requirements and features (e.g., "must be able to" matches anything)
+STOP_WORDS = frozenset({
+    "must", "should", "shall", "will", "can", "may",  # Modal verbs
+    "be", "is", "are", "was", "were", "been",  # Be verbs
+    "the", "a", "an",  # Articles
+    "to", "of", "and", "or", "in", "on", "for", "with", "by",  # Prepositions/conjunctions
+    "that", "this", "it", "they", "them", "their",  # Pronouns
+    "able", "not",  # Common requirement words
+})
+
 
 @dataclass(frozen=True)
 class EvaluationWeights:
@@ -248,8 +260,9 @@ def calculate_spec_coverage(
     uncovered_requirements: list[str] = []
 
     for req in requirements:
-        req_words = set(re.findall(r"\w+", req))
-        # Calculate dynamic threshold based on requirement length
+        # Extract words and filter out stop words to focus on meaningful content
+        req_words = set(re.findall(r"\w+", req)) - STOP_WORDS
+        # Calculate dynamic threshold based on requirement length (after stop word removal)
         # Formula: min(max_overlap, max(min_overlap, word_count * factor))
         # This caps threshold for long requirements while having a minimum for short ones
         threshold = min(
@@ -262,8 +275,9 @@ def calculate_spec_coverage(
         is_covered = False
 
         for feature in features:
-            description = feature.get("description", "").lower()
-            feature_words = set(re.findall(r"\w+", description))
+            description = feature.get("description") or ""  # Handle None values
+            # Filter stop words from feature description as well
+            feature_words = set(re.findall(r"\w+", description.lower())) - STOP_WORDS
             # Coverage if significant word overlap
             overlap = len(req_words & feature_words)
             if overlap >= threshold:
@@ -315,8 +329,8 @@ def calculate_testability_score(
     for feature in features:
         score = 0.0
 
-        # Check for test steps
-        test_steps = feature.get("test_steps", [])
+        # Check for test steps (handle explicit None)
+        test_steps = feature.get("test_steps") or []
         if test_steps:
             score += TESTABILITY_SCORE_HAS_STEPS
 
@@ -343,8 +357,8 @@ def calculate_testability_score(
 
         # Check for expected outcome
         # Prefer explicit expected_result field; fall back to description with penalty
-        expected_result = feature.get("expected_result", "")
-        description = feature.get("description", "")
+        expected_result = feature.get("expected_result") or ""
+        description = feature.get("description") or ""
 
         if expected_result and any(
             word in expected_result.lower() for word in patterns.verifiable_words
@@ -383,8 +397,8 @@ def calculate_granularity_score(features: list[dict]) -> float:
 
     scores = []
     for feature in features:
-        description = feature.get("description", "")
-        test_steps = feature.get("test_steps", [])
+        description = feature.get("description") or ""
+        test_steps = feature.get("test_steps") or []
 
         desc_len = len(description)
         step_count = len(test_steps)
@@ -440,14 +454,14 @@ def calculate_independence_score(features: list[dict]) -> float:
         score = 1.0
 
         # Check for explicit dependencies
-        dependencies = feature.get("dependencies", [])
+        dependencies = feature.get("dependencies") or []
         if dependencies:
             # Penalize based on number of dependencies
             score -= 0.1 * min(len(dependencies), 5)
 
         # Check for references to other features
-        description = feature.get("description", "")
-        test_steps_text = " ".join(feature.get("test_steps", []))
+        description = feature.get("description") or ""
+        test_steps_text = " ".join(feature.get("test_steps") or [])
         full_text = f"{description} {test_steps_text}".lower()
 
         # Sequential language

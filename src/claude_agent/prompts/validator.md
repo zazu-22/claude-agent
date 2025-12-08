@@ -37,6 +37,10 @@ If you find issues:
 }
 ```
 
+**NOTE:** Before outputting your verdict, you MUST complete the Mandatory Validation Sequence
+(Steps A-C below). Quick verdict output does NOT mean skipping evidence collection. The JSON
+verdict should come AFTER documenting your test evidence per Step B and summary per Step C.
+
 ---
 
 ### STEP 1: GET YOUR BEARINGS (MANDATORY)
