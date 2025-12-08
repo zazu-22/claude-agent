@@ -53,6 +53,18 @@ class WorkflowConfig:
 
 
 @dataclass
+class EvaluationConfig:
+    """Feature list evaluation configuration."""
+
+    coverage_weight: float = 0.4
+    testability_weight: float = 0.3
+    granularity_weight: float = 0.2
+    independence_weight: float = 0.1
+    # Threshold for acceptable feature lists (future use with Best-of-N)
+    min_acceptable_score: float = 0.6
+
+
+@dataclass
 class LoggingConfig:
     """Logging and observability configuration."""
 
@@ -93,6 +105,9 @@ class Config:
 
     # Logging settings
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+
+    # Evaluation settings
+    evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
 
     # Metrics settings
     metrics_file: str = "drift-metrics.json"
@@ -256,6 +271,20 @@ def merge_config(
                         "skip_if_feature_list_exists"
                     ]
 
+        # Evaluation settings
+        if "evaluation" in file_config:
+            eval_config = file_config["evaluation"]
+            if "coverage_weight" in eval_config:
+                config.evaluation.coverage_weight = eval_config["coverage_weight"]
+            if "testability_weight" in eval_config:
+                config.evaluation.testability_weight = eval_config["testability_weight"]
+            if "granularity_weight" in eval_config:
+                config.evaluation.granularity_weight = eval_config["granularity_weight"]
+            if "independence_weight" in eval_config:
+                config.evaluation.independence_weight = eval_config["independence_weight"]
+            if "min_acceptable_score" in eval_config:
+                config.evaluation.min_acceptable_score = eval_config["min_acceptable_score"]
+
         # Logging settings
         if "logging" in file_config:
             logging_config = file_config["logging"]
@@ -359,6 +388,14 @@ workflow:
   auto_spec:
     enabled: false
     skip_if_feature_list_exists: true
+
+# Feature list evaluation settings (for Best-of-N sampling)
+evaluation:
+  coverage_weight: 0.4      # How well features cover spec requirements
+  testability_weight: 0.3   # Whether features have concrete test steps
+  granularity_weight: 0.2   # Whether features are right-sized
+  independence_weight: 0.1  # Whether features can be implemented independently
+  min_acceptable_score: 0.6 # Threshold for acceptable feature lists
 
 # Logging settings
 logging:

@@ -173,6 +173,21 @@ security:
     - make
 ```
 
+### Feature List Evaluation
+
+The agent can evaluate feature list quality for Best-of-N sampling:
+
+```yaml
+evaluation:
+  coverage_weight: 0.4      # How well features cover spec requirements
+  testability_weight: 0.3   # Whether features have concrete test steps
+  granularity_weight: 0.2   # Whether features are right-sized
+  independence_weight: 0.1  # Whether features can be implemented independently
+  min_acceptable_score: 0.6 # Threshold for acceptable feature lists
+```
+
+Weights must sum to 1.0. The evaluation scores each feature list on four criteria and produces a weighted aggregate score from 0.0 to 1.0.
+
 ## Tech Stack Support
 
 Auto-detected from project files:

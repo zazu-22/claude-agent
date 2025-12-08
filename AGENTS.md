@@ -359,6 +359,15 @@ Before generating feature_list.json, the initializer agent MUST complete:
 2. **Feature Mapping**: Map each feature to specific spec text with traceability quotes
 3. **Coverage Check**: Verify all requirements are covered by features
 
+### Validator Agent Evaluation Sequence
+Before issuing any verdict, the validator agent MUST complete:
+
+1. **Step A - Spec Alignment Check**: Quote spec requirement for each feature tested
+2. **Step B - Test Execution with Evidence**: Document steps, expected/actual results, PASS/FAIL
+3. **Step C - Aggregate Verdict**: Summarize results with reasoning before JSON verdict
+
+Verdicts without Step B evidence are not trustworthy and indicate evaluation was skipped.
+
 ### Metrics Tracking
 Drift metrics are automatically tracked in `drift-metrics.json`:
 

@@ -124,7 +124,117 @@ of the application that need testing.
 
 ---
 
+### MANDATORY VALIDATION SEQUENCE
+
+**CRITICAL: You MUST complete Steps A-C below with explicit output before issuing ANY verdict.**
+**Skipping to verdict without evidence is a FAILURE MODE that produces unreliable results.**
+
+#### Step A - SPEC ALIGNMENT CHECK (explicit output required)
+
+Before testing each feature, state your understanding:
+
+For each feature I will test:
+- [ ] Feature #[index]: "[description from feature_list.json]"
+- [ ] Spec requirement: "[quote the specific spec text this feature implements]"
+- [ ] What "working" means: "[describe the specific observable behavior that indicates success]"
+- [ ] How I will verify: "[list the UI interactions I will perform]"
+
+**Example:**
+```
+Feature #5: "User login form submission"
+Spec requirement: "Users must be able to log in with email and password" (SPEC.md line 23)
+What "working" means: After entering valid credentials and clicking submit, user sees dashboard
+How I will verify: Enter test credentials, click login button, verify redirect to /dashboard
+```
+
+**CRITICAL: If you cannot quote a spec requirement for a feature, flag it for review.**
+**Features without spec traceability may indicate drift from requirements.**
+
+#### Step B - TEST EXECUTION WITH EVIDENCE (explicit output required)
+
+For EACH feature you test, document:
+
+- [ ] Feature #[index]: "[description]"
+- [ ] Steps performed:
+  1. [Actual step you took]
+  2. [Actual step you took]
+  3. ...
+- [ ] Expected result: "[from Step A - what 'working' means]"
+- [ ] Actual result: "[exactly what you observed]"
+- [ ] Screenshot: [filename or "taken"]
+- [ ] Verdict: PASS / FAIL
+- [ ] If FAIL, reason: "[specific issue found]"
+
+**Example PASS:**
+```
+Feature #5: "User login form submission"
+Steps performed:
+  1. Navigated to http://localhost:3000/login
+  2. Entered test@example.com in email field
+  3. Entered testpass123 in password field
+  4. Clicked "Sign In" button
+Expected result: User redirected to dashboard
+Actual result: Page redirected to /dashboard, user name displayed in header
+Screenshot: login_test_5.png
+Verdict: PASS
+```
+
+**Example FAIL:**
+```
+Feature #7: "Password reset email"
+Steps performed:
+  1. Navigated to /forgot-password
+  2. Entered test@example.com
+  3. Clicked "Send Reset Link"
+Expected result: Success message displayed, email sent
+Actual result: Button click does nothing, no network request visible
+Screenshot: reset_fail_7.png
+Verdict: FAIL
+Reason: Submit handler not connected - button click has no effect
+```
+
+**CRITICAL: Each tested feature MUST have a documented verdict with evidence.**
+**"Assumed working" or "looked fine" is NOT acceptable evidence.**
+
+#### Step C - AGGREGATE VERDICT WITH REASONING (explicit output required)
+
+After testing, summarize before issuing final verdict:
+
+```
+## Validation Summary
+
+Features tested: [X] of [Y] total
+Features passed: [P]
+Features failed: [F]
+
+Failed features:
+- Feature #[index]: [brief reason]
+- Feature #[index]: [brief reason]
+
+Manual verification needed:
+- Feature #[index]: [reason cannot be auto-tested]
+
+## Overall Verdict Reasoning
+
+Based on the evidence collected:
+- Coverage: [X]% of features tested
+- Pass rate: [P/X]% of tested features pass
+- Blocking issues: [describe any critical failures]
+
+Therefore, the verdict is: [APPROVED/REJECTED/CONTINUE/NEEDS_VERIFICATION]
+
+Rationale: [1-2 sentences explaining why this verdict is appropriate given the evidence]
+```
+
+**CRITICAL: The JSON verdict block MUST come AFTER this summary.**
+**A verdict without the summary above is NOT TRUSTWORTHY and indicates evaluation was skipped.**
+
+---
+
 ### STEP 4: TEST FEATURES (USE SAMPLING FOR LARGE LISTS)
+
+**NOTE: When testing features, follow the evidence format from Step B above.**
+**Each feature test MUST produce documented evidence.**
 
 **For projects with many features (50+), use sampling:**
 1. Count total features
@@ -162,6 +272,9 @@ If you've tested 10+ features and found no issues, that's enough to approve.
 ---
 
 ### STEP 5: OUTPUT YOUR VERDICT
+
+**IMPORTANT: Before outputting the JSON verdict, complete Step C (Aggregate Verdict Summary).**
+**The summary must appear BEFORE the JSON block.**
 
 **CRITICAL: You MUST output a structured JSON verdict before your session ends.**
 
