@@ -264,12 +264,26 @@ Files Modified:
 
 ### STEP 10: END SESSION CLEANLY
 
-Before context fills up:
-1. Commit all working code
-2. Update claude-progress.txt
-3. Update feature_list.json if tests verified
-4. Ensure no uncommitted changes
-5. Leave app in working state (no broken features)
+#### WHEN TO END YOUR SESSION
+
+End your session and commit when ANY of these are true:
+
+1. **Feature completion** - You've completed 2-3 features (ideal cadence for clean handoffs)
+2. **Turn limit** - You've used approximately 50+ turns (context window filling)
+3. **Time-based** - You've been working for 30+ minutes (long sessions risk context exhaustion)
+4. **Blocking issue** - You hit a problem requiring significant investigation or external input
+5. **Natural checkpoint** - Tests passing, code committed, clean state achieved
+
+#### SESSION END CHECKLIST
+
+Before ending, verify:
+[ ] All code changes committed with descriptive messages
+[ ] feature_list.json updated for verified features only
+[ ] claude-progress.txt updated with session summary
+[ ] No uncommitted changes (git status clean)
+[ ] App left in working state
+
+**ALWAYS end cleanly rather than risk losing work to context limits.**
 
 ---
 

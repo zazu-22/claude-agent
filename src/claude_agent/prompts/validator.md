@@ -297,6 +297,29 @@ Tests Verified: 15/50
 
 ---
 
+### WHEN TO END YOUR SESSION
+
+End your validation session when ANY of these are true:
+
+1. **Sufficient coverage** - You've tested 10-25 features with no critical issues found
+2. **Turn limit** - You've used approximately 50+ turns (output verdict immediately)
+3. **Time-based** - You've been validating for 30+ minutes
+4. **Critical issue found** - You've identified failing tests that need fixing (output REJECTED)
+5. **Access blocked** - Cannot log in or server won't start (output NEEDS_VERIFICATION)
+
+#### VALIDATOR SESSION END CHECKLIST
+
+Before ending, verify:
+[ ] JSON verdict output (APPROVED, REJECTED, CONTINUE, or NEEDS_VERIFICATION)
+[ ] rejected_tests array populated if any failures found
+[ ] tests_verified count is accurate
+[ ] claude-progress.txt updated if rejecting
+[ ] validation-progress.txt updated if using CONTINUE verdict
+
+**Output your verdict EARLY. A verdict with 10 features tested is infinitely better than no verdict at all.**
+
+---
+
 ## VALIDATION STANDARDS
 
 ### What Counts as "Verified"
