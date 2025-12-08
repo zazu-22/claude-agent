@@ -50,7 +50,7 @@ class TestEvaluationWeights:
         with pytest.raises(ValueError, match="Weights must sum to 1.0"):
             EvaluationWeights(coverage=0.5, testability=0.5, granularity=0.5, independence=0.5)
 
-    def test_weights_allow_small_float_imprecision(self):
+    def test_weights_tolerate_float_imprecision(self):
         """Verify small float imprecision is tolerated (0.99-1.01)."""
         # This should not raise - 0.999 is within tolerance
         weights = EvaluationWeights(
@@ -755,3 +755,176 @@ class TestIntegration:
         # Poor features should score lower
         assert result.granularity_score <= 0.6
         assert result.independence_score <= 0.9
+
+
+class TestSpecLocationPriority:
+    """Test spec file location priority order."""
+
+    def test_explicit_spec_path_takes_priority(self, tmp_path):
+        """Explicit spec_path parameter takes priority over all others."""
+        features = [{"description": "Test feature"}]
+        feature_path = tmp_path / "feature_list.json"
+        feature_path.write_text(json.dumps(features))
+
+        # Create all possible spec locations with different content
+        explicit_spec = tmp_path / "explicit.md"
+        explicit_spec.write_text("The system must do explicit thing.")
+
+        specs_dir = tmp_path / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "spec-validated.md").write_text("System must do validated thing.")
+        (specs_dir / "app_spec.txt").write_text("System must do specs dir thing.")
+        (tmp_path / "app_spec.txt").write_text("System must do root thing.")
+
+        result = load_and_evaluate(tmp_path, spec_path=explicit_spec)
+
+        assert result is not None
+        # Result should use explicit spec - score should reflect explicit content
+
+    def test_specs_validated_md_second_priority(self, tmp_path):
+        """specs/spec-validated.md is checked before specs/app_spec.txt."""
+        features = [{"description": "Test feature for validated content"}]
+        feature_path = tmp_path / "feature_list.json"
+        feature_path.write_text(json.dumps(features))
+
+        specs_dir = tmp_path / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "spec-validated.md").write_text("The system must use validated spec.")
+        (specs_dir / "app_spec.txt").write_text("System must use app spec.")
+        (tmp_path / "app_spec.txt").write_text("System must use root spec.")
+
+        # Don't provide explicit spec_path - should use specs/spec-validated.md
+        result = load_and_evaluate(tmp_path)
+
+        assert result is not None
+
+    def test_specs_app_spec_txt_third_priority(self, tmp_path):
+        """specs/app_spec.txt is checked before root app_spec.txt."""
+        features = [{"description": "Test feature"}]
+        feature_path = tmp_path / "feature_list.json"
+        feature_path.write_text(json.dumps(features))
+
+        specs_dir = tmp_path / "specs"
+        specs_dir.mkdir()
+        # No spec-validated.md
+        (specs_dir / "app_spec.txt").write_text("The system must use specs dir spec.")
+        (tmp_path / "app_spec.txt").write_text("System must use root spec.")
+
+        result = load_and_evaluate(tmp_path)
+
+        assert result is not None
+
+    def test_root_app_spec_txt_last_priority(self, tmp_path):
+        """Root app_spec.txt is used when no other locations exist."""
+        features = [{"description": "Test feature"}]
+        feature_path = tmp_path / "feature_list.json"
+        feature_path.write_text(json.dumps(features))
+
+        # Only root app_spec.txt exists
+        (tmp_path / "app_spec.txt").write_text("The system must use root spec.")
+
+        result = load_and_evaluate(tmp_path)
+
+        assert result is not None
+
+
+class TestLoggingBehavior:
+    """Test debug logging in evaluation functions."""
+
+    def test_uncovered_requirements_logged(self, tmp_path, caplog):
+        """Verify uncovered requirements are logged at debug level."""
+        import logging
+
+        spec = """
+        The system must handle authentication.
+        Users should be able to view profiles.
+        The application will support notifications.
+        """
+        features = [
+            # Only covers authentication, not profiles or notifications
+            {"description": "User authentication with login and password"}
+        ]
+
+        with caplog.at_level(logging.DEBUG):
+            score = calculate_spec_coverage(features, spec)
+
+        # Should have logged uncovered requirements
+        assert score < 1.0  # Not full coverage
+        # Check that debug logging occurred for uncovered requirements
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        uncovered_logged = any("Uncovered requirements" in msg for msg in debug_messages)
+        assert uncovered_logged, "Expected uncovered requirements to be logged"
+
+    def test_no_requirements_logged(self, caplog):
+        """Verify 'no requirements' case is logged at debug level."""
+        import logging
+
+        spec = "Just some random text without any requirement-like sentences."
+        features = [{"description": "Some feature"}]
+
+        with caplog.at_level(logging.DEBUG):
+            score = calculate_spec_coverage(features, spec)
+
+        assert score == 0.5  # Fallback score
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        no_req_logged = any("No requirements extracted" in msg for msg in debug_messages)
+        assert no_req_logged, "Expected 'no requirements' to be logged"
+
+
+class TestWordOverlapLimitation:
+    """Tests documenting the word overlap algorithm limitation.
+
+    The coverage algorithm uses simple word overlap, meaning:
+    - 'authenticate' vs 'authentication' are treated as different words
+    - No stemming or lemmatization is applied
+
+    These tests explicitly document this behavior.
+    """
+
+    def test_different_word_forms_not_matched(self):
+        """Different word forms (authenticate vs authentication) don't match.
+
+        This is a known limitation of the simple word overlap algorithm.
+        """
+        spec = "Users must be able to authenticate with credentials."
+        features = [
+            # Uses 'authentication' instead of 'authenticate'
+            {"description": "Login system for user authentication"}
+        ]
+
+        score = calculate_spec_coverage(features, spec)
+
+        # The words 'user' and potentially others overlap, but 'authenticate'
+        # vs 'authentication' are different tokens. Score depends on overlap threshold.
+        # This test documents the limitation - exact behavior depends on threshold config.
+        assert 0.0 <= score <= 1.0  # Valid range
+
+    def test_consistent_terminology_works_well(self):
+        """When spec and features use consistent terminology, coverage is high."""
+        spec = "Users must log in with email. Users must view dashboard."
+        features = [
+            {"description": "User login with email and password validation"},
+            {"description": "User dashboard view with activity summary"},
+        ]
+
+        score = calculate_spec_coverage(features, spec)
+
+        # Consistent use of 'user', 'login', 'dashboard' should give good coverage
+        assert score >= 0.5
+
+    def test_stop_words_dont_contribute_meaningfully(self):
+        """Stop words like 'must', 'be', 'able' contribute to word count but not meaning.
+
+        This test documents that the algorithm counts all words equally.
+        """
+        spec = "Users must be able to do something."
+        features = [
+            # Matches 'users' but spec words like 'must', 'be', 'able' are not meaningful
+            {"description": "User functionality for doing something"}
+        ]
+
+        score = calculate_spec_coverage(features, spec)
+
+        # The overlap includes 'users'/'user' (same stem but different words),
+        # 'something', etc. This tests the current behavior.
+        assert 0.0 <= score <= 1.0

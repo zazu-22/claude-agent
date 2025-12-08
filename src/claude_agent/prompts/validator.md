@@ -2,6 +2,8 @@
 
 You validate completed projects by testing features through the UI.
 
+**TL;DR: Quote spec → Test with evidence → Summarize → JSON verdict**
+
 ### YOUR WORKFLOW (FOLLOW THIS EXACTLY)
 
 1. **Quick setup** (2-3 min): Read files, start server, log in
@@ -125,6 +127,14 @@ of the application that need testing.
 ---
 
 ### MANDATORY VALIDATION SEQUENCE
+
+**Why This Sequence Prevents Drift:**
+Without structured evidence, validators tend to "rubber-stamp" implementations based on superficial
+checks. This sequence forces explicit spec traceability (Step A), documented test execution (Step B),
+and reasoned verdict justification (Step C). Each step creates an audit trail that catches:
+- Features that don't match spec requirements (drift from spec)
+- Tests that pass visually but fail functionally (false positives)
+- Verdicts issued without sufficient coverage (premature approval)
 
 **CRITICAL: You MUST complete Steps A-C below with explicit output before issuing ANY verdict.**
 **Skipping to verdict without evidence is a FAILURE MODE that produces unreliable results.**

@@ -63,6 +63,21 @@ class EvaluationConfig:
     # Threshold for acceptable feature lists (future use with Best-of-N)
     min_acceptable_score: float = 0.6
 
+    def validate_weights(self) -> None:
+        """Validate that weights sum to 1.0 within tolerance.
+
+        Raises:
+            ValueError: If weights do not sum to 1.0 (within 0.01 tolerance)
+        """
+        total = (
+            self.coverage_weight
+            + self.testability_weight
+            + self.granularity_weight
+            + self.independence_weight
+        )
+        if not (0.99 <= total <= 1.01):
+            raise ValueError(f"Weights must sum to 1.0, got {total}")
+
 
 @dataclass
 class LoggingConfig:
@@ -286,15 +301,8 @@ def merge_config(
                 config.evaluation.min_acceptable_score = eval_config["min_acceptable_score"]
 
             # Validate weights sum to 1.0
-            from claude_agent.evaluation import EvaluationWeights
-
             try:
-                EvaluationWeights(
-                    coverage=config.evaluation.coverage_weight,
-                    testability=config.evaluation.testability_weight,
-                    granularity=config.evaluation.granularity_weight,
-                    independence=config.evaluation.independence_weight,
-                )
+                config.evaluation.validate_weights()
             except ValueError as e:
                 from claude_agent.errors import ConfigValidationError
 

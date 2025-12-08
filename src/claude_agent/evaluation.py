@@ -29,7 +29,7 @@ Usage Example
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -43,6 +43,16 @@ class RequirementPatterns:
     Patterns are regular expressions used to identify requirement sentences.
     Default patterns cover common requirement phrasings including modal verbs,
     subject patterns, action verbs, and negations.
+
+    Word Overlap Algorithm Limitation
+    ---------------------------------
+    The coverage algorithm uses simple word overlap matching. This means:
+    - "authenticate" vs "authentication" are treated as different words
+    - Stemming/lemmatization is NOT applied
+
+    For more robust text matching, consider using a library like nltk with
+    stemming, though this adds a dependency. The current algorithm works well
+    for specs and features that use consistent terminology.
     """
 
     # Modal verb patterns (must, should, shall, will)
@@ -77,6 +87,24 @@ class RequirementPatterns:
     # Maximum overlap words required (caps the threshold for long requirements)
     max_overlap_words: int = 3
 
+    # Threshold ratio for concrete test steps (steps with action verbs / total steps)
+    # Used in testability scoring - features with this ratio or higher score better
+    concrete_steps_threshold: float = 0.5
+
+    # Verifiable words used to detect testable outcomes in expected_result/description
+    verifiable_words: tuple[str, ...] = (
+        "should",
+        "displays",
+        "shows",
+        "appears",
+        "returns",
+        "contains",
+        "equals",
+        "matches",
+        "visible",
+        "enabled",
+    )
+
     def get_all_patterns(self) -> list[str]:
         """Return all patterns as a combined list."""
         return list(self.modal_patterns) + list(self.subject_patterns) + list(self.action_patterns)
@@ -84,6 +112,21 @@ class RequirementPatterns:
 
 # Default patterns instance for convenience
 DEFAULT_REQUIREMENT_PATTERNS = RequirementPatterns()
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+# Truncation length for requirement normalization during coverage calculation
+REQUIREMENT_TRUNCATION_LENGTH = 100
+
+# Granularity scoring constants
+# Penalty factor applied per "and" conjunction in feature descriptions
+# Rationale: Multiple "and" conjunctions indicate compound features that
+# should be split. The penalty increases with count but caps at 3 to avoid
+# over-penalizing (e.g., 2 ands = -0.4, 3+ ands = -0.6 max)
+COMPOUND_FEATURE_PENALTY_FACTOR = 0.2
+COMPOUND_FEATURE_MAX_PENALTY_COUNT = 3
 
 
 @dataclass(frozen=True)
@@ -150,7 +193,7 @@ def calculate_spec_coverage(
         for pattern in requirement_patterns:
             if re.search(pattern, sentence, re.IGNORECASE):
                 # Normalize and add
-                normalized = sentence.strip().lower()[:100]  # Truncate for comparison
+                normalized = sentence.strip().lower()[:REQUIREMENT_TRUNCATION_LENGTH]
                 if len(normalized) > 10:  # Skip very short matches
                     requirements.add(normalized)
                 break
@@ -162,7 +205,7 @@ def calculate_spec_coverage(
 
     if not requirements:
         logger.debug("No requirements extracted from spec, returning 0.5")
-        return 0.5  # Can't extract requirements, assume partial coverage
+        return 0.5  # Can't extract requirements, assume unknown coverage
 
     # Check feature coverage
     covered = 0
@@ -207,7 +250,10 @@ def calculate_spec_coverage(
     return covered / len(requirements)
 
 
-def calculate_testability_score(features: list[dict]) -> float:
+def calculate_testability_score(
+    features: list[dict],
+    patterns: Optional[RequirementPatterns] = None,
+) -> float:
     """
     Score features on testability (concrete steps, verifiable outcomes).
 
@@ -218,12 +264,16 @@ def calculate_testability_score(features: list[dict]) -> float:
 
     Args:
         features: List of feature dictionaries
+        patterns: Optional custom patterns (uses DEFAULT_REQUIREMENT_PATTERNS if None)
 
     Returns:
         Float 0.0-1.0 representing average testability
     """
     if not features:
         return 0.0
+
+    if patterns is None:
+        patterns = DEFAULT_REQUIREMENT_PATTERNS
 
     scores = []
     for feature in features:
@@ -252,33 +302,21 @@ def calculate_testability_score(features: list[dict]) -> float:
                 for step in test_steps
                 if any(verb in step.lower() for verb in action_verbs)
             )
-            if test_steps and concrete_steps / len(test_steps) >= 0.5:
+            if test_steps and concrete_steps / len(test_steps) >= patterns.concrete_steps_threshold:
                 score += 0.3
 
         # Check for expected outcome
         # Prefer explicit expected_result field; fall back to description with penalty
         expected_result = feature.get("expected_result", "")
         description = feature.get("description", "")
-        verifiable_words = [
-            "should",
-            "displays",
-            "shows",
-            "appears",
-            "returns",
-            "contains",
-            "equals",
-            "matches",
-            "visible",
-            "enabled",
-        ]
 
         if expected_result and any(
-            word in expected_result.lower() for word in verifiable_words
+            word in expected_result.lower() for word in patterns.verifiable_words
         ):
             # Full score for explicit expected_result with verifiable language
             score += 0.4
         elif description and any(
-            word in description.lower() for word in verifiable_words
+            word in description.lower() for word in patterns.verifiable_words
         ):
             # Reduced score when falling back to description (penalty factor of 0.5)
             # Description may be verbose without concrete expected outcomes
@@ -332,7 +370,7 @@ def calculate_granularity_score(features: list[dict]) -> float:
         # Penalize compound features (multiple "and")
         and_count = description.lower().count(" and ")
         if and_count >= 2:
-            score -= 0.2 * min(and_count, 3)
+            score -= COMPOUND_FEATURE_PENALTY_FACTOR * min(and_count, COMPOUND_FEATURE_MAX_PENALTY_COUNT)
 
         # Bonus for ideal range
         if 100 <= desc_len <= 300 and 3 <= step_count <= 7:
