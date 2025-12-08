@@ -97,6 +97,36 @@ class ConfigParseError(Exception):
         )
 
 
+class ConfigValidationError(Exception):
+    """Exception raised when config values fail validation.
+
+    Attributes:
+        config_path: Path to the config file with invalid values
+        field: The field that failed validation
+        message: Description of the validation failure
+    """
+
+    def __init__(
+        self,
+        config_path: str,
+        field: str,
+        message: str,
+    ):
+        self.config_path = config_path
+        self.field = field
+        self.message = message
+        super().__init__(f"Invalid {field} in {config_path}: {message}")
+
+    def get_actionable_error(self) -> "ActionableError":
+        """Get an ActionableError for display."""
+        return ActionableError(
+            message=f"Invalid {self.field} in {self.config_path}",
+            context=self.message,
+            example="Ensure evaluation weights sum to 1.0 (coverage + testability + granularity + independence = 1.0)",
+            help_command="claude-agent init",
+        )
+
+
 @dataclass
 class ActionableError:
     """Structured error with actionable guidance.

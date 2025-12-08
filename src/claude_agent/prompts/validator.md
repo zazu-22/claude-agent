@@ -129,6 +129,12 @@ of the application that need testing.
 **CRITICAL: You MUST complete Steps A-C below with explicit output before issuing ANY verdict.**
 **Skipping to verdict without evidence is a FAILURE MODE that produces unreliable results.**
 
+| Step | Purpose | Required Output |
+|------|---------|-----------------|
+| **A** | Spec Alignment | Quote spec requirement for each feature; define "working" criteria |
+| **B** | Test Execution | Document steps, expected/actual results, PASS/FAIL with evidence |
+| **C** | Aggregate Verdict | Summarize pass/fail counts, reasoning, then JSON verdict |
+
 #### Step A - SPEC ALIGNMENT CHECK (explicit output required)
 
 Before testing each feature, state your understanding:

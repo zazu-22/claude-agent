@@ -3,6 +3,27 @@ Feature List Evaluation
 =======================
 
 Score feature lists against quality criteria to support Best-of-N sampling.
+
+Usage Example
+-------------
+    from pathlib import Path
+    from claude_agent.evaluation import load_and_evaluate, EvaluationWeights
+
+    # Evaluate with default weights
+    result = load_and_evaluate(Path("./my-project"))
+    if result:
+        print(f"Aggregate score: {result.aggregate_score:.2f}")
+        print(f"Coverage: {result.coverage_score:.2f}")
+        print(f"Testability: {result.testability_score:.2f}")
+
+    # Evaluate with custom weights
+    weights = EvaluationWeights(
+        coverage=0.5,
+        testability=0.2,
+        granularity=0.2,
+        independence=0.1,
+    )
+    result = load_and_evaluate(Path("./my-project"), weights=weights)
 """
 
 import json
@@ -151,6 +172,9 @@ def calculate_testability_score(features: list[dict]) -> float:
                 score += 0.3
 
         # Check for expected outcome
+        # Fallback to description when expected_result is missing or empty,
+        # since feature descriptions often contain verifiable outcome language
+        # (e.g., "User should see...", "Form displays...")
         expected = feature.get("expected_result", "") or feature.get("description", "")
         verifiable_words = [
             "should",
@@ -369,7 +393,7 @@ def load_and_evaluate(
 
     for loc in spec_locations:
         if loc and loc.exists():
-            spec = loc.read_text()
+            spec = loc.read_text(encoding="utf-8")
             break
 
     return evaluate_feature_list(features, spec, weights)

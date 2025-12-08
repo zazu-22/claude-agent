@@ -285,6 +285,25 @@ def merge_config(
             if "min_acceptable_score" in eval_config:
                 config.evaluation.min_acceptable_score = eval_config["min_acceptable_score"]
 
+            # Validate weights sum to 1.0
+            from claude_agent.evaluation import EvaluationWeights
+
+            try:
+                EvaluationWeights(
+                    coverage=config.evaluation.coverage_weight,
+                    testability=config.evaluation.testability_weight,
+                    granularity=config.evaluation.granularity_weight,
+                    independence=config.evaluation.independence_weight,
+                )
+            except ValueError as e:
+                from claude_agent.errors import ConfigValidationError
+
+                raise ConfigValidationError(
+                    config_path=str(config_path),
+                    field="evaluation weights",
+                    message=str(e),
+                ) from e
+
         # Logging settings
         if "logging" in file_config:
             logging_config = file_config["logging"]
