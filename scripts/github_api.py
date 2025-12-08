@@ -201,8 +201,14 @@ class TaskRunner:
 
     def run_task(self, task_file: Path) -> list[TaskResult]:
         """Run all operations defined in a task file."""
-        with open(task_file) as f:
-            task_data = yaml.safe_load(f)
+        try:
+            with open(task_file) as f:
+                task_data = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML in task file {task_file}: {e}") from e
+
+        if not isinstance(task_data, dict):
+            raise ValueError(f"Task file must contain a YAML mapping, got {type(task_data).__name__}")
 
         # Override repo if specified in task file (create new instances to avoid mutation)
         if "repo" in task_data:
@@ -251,7 +257,8 @@ class TaskRunner:
             if not result:
                 break
             for m in result:
-                self.created_milestones[m["title"]] = m["number"]
+                if isinstance(m, dict) and "title" in m and "number" in m:
+                    self.created_milestones[m["title"]] = m["number"]
             if len(result) < 100:
                 break  # Last page
         if self.config.verbose and self.created_milestones:
