@@ -106,6 +106,16 @@ class ConfigValidationError(Exception):
         message: Description of the validation failure
     """
 
+    # Field-specific examples for actionable error messages
+    FIELD_EXAMPLES = {
+        "evaluation weights": "Ensure evaluation weights sum to 1.0 (coverage + testability + granularity + independence = 1.0)",
+        "model": "Use a valid model name like 'claude-opus-4-5-20251101' or 'claude-sonnet-4-5-20250929'",
+        "features": "Specify a positive integer for feature count (e.g., features: 50)",
+        "stack": "Use a valid stack name: 'python' or 'node'",
+    }
+
+    DEFAULT_EXAMPLE = "Check the field value in your .claude-agent.yaml configuration file"
+
     def __init__(
         self,
         config_path: str,
@@ -119,10 +129,13 @@ class ConfigValidationError(Exception):
 
     def get_actionable_error(self) -> "ActionableError":
         """Get an ActionableError for display."""
+        # Look up field-specific example, fall back to default
+        example = self.FIELD_EXAMPLES.get(self.field, self.DEFAULT_EXAMPLE)
+
         return ActionableError(
             message=f"Invalid {self.field} in {self.config_path}",
             context=self.message,
-            example="Ensure evaluation weights sum to 1.0 (coverage + testability + granularity + independence = 1.0)",
+            example=example,
             help_command="claude-agent init",
         )
 

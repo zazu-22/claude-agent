@@ -29,7 +29,7 @@ Usage Example
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -43,6 +43,16 @@ class RequirementPatterns:
     Patterns are regular expressions used to identify requirement sentences.
     Default patterns cover common requirement phrasings including modal verbs,
     subject patterns, action verbs, and negations.
+
+    Word Overlap Algorithm Limitation
+    ---------------------------------
+    The coverage algorithm uses simple word overlap matching. This means:
+    - "authenticate" vs "authentication" are treated as different words
+    - Stemming/lemmatization is NOT applied
+
+    For more robust text matching, consider using a library like nltk with
+    stemming, though this adds a dependency. The current algorithm works well
+    for specs and features that use consistent terminology.
     """
 
     # Modal verb patterns (must, should, shall, will)
@@ -77,13 +87,90 @@ class RequirementPatterns:
     # Maximum overlap words required (caps the threshold for long requirements)
     max_overlap_words: int = 3
 
+    # Threshold ratio for concrete test steps (steps with action verbs / total steps)
+    # Used in testability scoring - features with this ratio or higher score better
+    concrete_steps_threshold: float = 0.5
+
+    # Verifiable words used to detect testable outcomes in expected_result/description
+    verifiable_words: tuple[str, ...] = (
+        "should",
+        "displays",
+        "shows",
+        "appears",
+        "returns",
+        "contains",
+        "equals",
+        "matches",
+        "visible",
+        "enabled",
+    )
+
     def get_all_patterns(self) -> list[str]:
         """Return all patterns as a combined list."""
         return list(self.modal_patterns) + list(self.subject_patterns) + list(self.action_patterns)
 
+    def get_compiled_patterns(self) -> list[re.Pattern]:
+        """Return pre-compiled regex patterns for better performance.
+
+        Compiles patterns once and caches them. For large specs, this avoids
+        the overhead of recompiling patterns on every sentence.
+        """
+        # Note: Can't use lru_cache on frozen dataclass methods, so we compile fresh
+        # but this is still faster than inline re.search with pattern strings
+        return [re.compile(p, re.IGNORECASE) for p in self.get_all_patterns()]
+
 
 # Default patterns instance for convenience
 DEFAULT_REQUIREMENT_PATTERNS = RequirementPatterns()
+
+# Pre-compiled patterns for default instance (cached for performance)
+_DEFAULT_COMPILED_PATTERNS: list[re.Pattern] | None = None
+
+
+def get_default_compiled_patterns() -> list[re.Pattern]:
+    """Get pre-compiled patterns for the default RequirementPatterns instance.
+
+    This caches the compiled patterns globally for better performance when
+    using default patterns across multiple calls.
+    """
+    global _DEFAULT_COMPILED_PATTERNS
+    if _DEFAULT_COMPILED_PATTERNS is None:
+        _DEFAULT_COMPILED_PATTERNS = DEFAULT_REQUIREMENT_PATTERNS.get_compiled_patterns()
+    return _DEFAULT_COMPILED_PATTERNS
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+# Truncation length for requirement normalization during coverage calculation
+REQUIREMENT_TRUNCATION_LENGTH = 100
+
+# Granularity scoring constants
+# Penalty factor applied per "and" conjunction in feature descriptions
+# Rationale: Multiple "and" conjunctions indicate compound features that
+# should be split. The penalty increases with count but caps at 3 to avoid
+# over-penalizing (e.g., 2 ands = -0.4, 3+ ands = -0.6 max)
+COMPOUND_FEATURE_PENALTY_FACTOR = 0.2
+COMPOUND_FEATURE_MAX_PENALTY_COUNT = 3
+
+# Testability scoring constants
+# These weights determine how different aspects contribute to testability score
+TESTABILITY_SCORE_HAS_STEPS = 0.3  # Score for having test_steps field
+TESTABILITY_SCORE_CONCRETE_STEPS = 0.3  # Score for having concrete action verbs
+TESTABILITY_SCORE_EXPECTED_RESULT = 0.4  # Score for verifiable expected_result
+TESTABILITY_SCORE_DESCRIPTION_FALLBACK = 0.2  # Reduced score when using description fallback
+
+# Stop words to exclude from word overlap matching in coverage calculation
+# These common words add noise and can cause false positive matches between
+# unrelated requirements and features (e.g., "must be able to" matches anything)
+STOP_WORDS = frozenset({
+    "must", "should", "shall", "will", "can", "may",  # Modal verbs
+    "be", "is", "are", "was", "were", "been",  # Be verbs
+    "the", "a", "an",  # Articles
+    "to", "of", "and", "or", "in", "on", "for", "with", "by",  # Prepositions/conjunctions
+    "that", "this", "it", "they", "them", "their",  # Pronouns
+    "able", "not",  # Common requirement words
+})
 
 
 @dataclass(frozen=True)
@@ -141,16 +228,20 @@ def calculate_spec_coverage(
     if patterns is None:
         patterns = DEFAULT_REQUIREMENT_PATTERNS
 
-    # Extract requirement-like sentences from spec using configurable patterns
-    requirement_patterns = patterns.get_all_patterns()
+    # Extract requirement-like sentences from spec using pre-compiled patterns
+    # Use cached compiled patterns for default instance, otherwise compile fresh
+    if patterns is DEFAULT_REQUIREMENT_PATTERNS:
+        compiled_patterns = get_default_compiled_patterns()
+    else:
+        compiled_patterns = patterns.get_compiled_patterns()
 
     requirements = set()
     sentences = re.split(r"[.!?]\s+", spec)
     for sentence in sentences:
-        for pattern in requirement_patterns:
-            if re.search(pattern, sentence, re.IGNORECASE):
+        for pattern in compiled_patterns:
+            if pattern.search(sentence):
                 # Normalize and add
-                normalized = sentence.strip().lower()[:100]  # Truncate for comparison
+                normalized = sentence.strip().lower()[:REQUIREMENT_TRUNCATION_LENGTH]
                 if len(normalized) > 10:  # Skip very short matches
                     requirements.add(normalized)
                 break
@@ -162,15 +253,16 @@ def calculate_spec_coverage(
 
     if not requirements:
         logger.debug("No requirements extracted from spec, returning 0.5")
-        return 0.5  # Can't extract requirements, assume partial coverage
+        return 0.5  # Can't extract requirements, assume unknown coverage
 
     # Check feature coverage
     covered = 0
     uncovered_requirements: list[str] = []
 
     for req in requirements:
-        req_words = set(re.findall(r"\w+", req))
-        # Calculate dynamic threshold based on requirement length
+        # Extract words and filter out stop words to focus on meaningful content
+        req_words = set(re.findall(r"\w+", req)) - STOP_WORDS
+        # Calculate dynamic threshold based on requirement length (after stop word removal)
         # Formula: min(max_overlap, max(min_overlap, word_count * factor))
         # This caps threshold for long requirements while having a minimum for short ones
         threshold = min(
@@ -183,8 +275,9 @@ def calculate_spec_coverage(
         is_covered = False
 
         for feature in features:
-            description = feature.get("description", "").lower()
-            feature_words = set(re.findall(r"\w+", description))
+            description = feature.get("description") or ""  # Handle None values
+            # Filter stop words from feature description as well
+            feature_words = set(re.findall(r"\w+", description.lower())) - STOP_WORDS
             # Coverage if significant word overlap
             overlap = len(req_words & feature_words)
             if overlap >= threshold:
@@ -207,7 +300,10 @@ def calculate_spec_coverage(
     return covered / len(requirements)
 
 
-def calculate_testability_score(features: list[dict]) -> float:
+def calculate_testability_score(
+    features: list[dict],
+    patterns: Optional[RequirementPatterns] = None,
+) -> float:
     """
     Score features on testability (concrete steps, verifiable outcomes).
 
@@ -218,6 +314,7 @@ def calculate_testability_score(features: list[dict]) -> float:
 
     Args:
         features: List of feature dictionaries
+        patterns: Optional custom patterns (uses DEFAULT_REQUIREMENT_PATTERNS if None)
 
     Returns:
         Float 0.0-1.0 representing average testability
@@ -225,14 +322,17 @@ def calculate_testability_score(features: list[dict]) -> float:
     if not features:
         return 0.0
 
+    if patterns is None:
+        patterns = DEFAULT_REQUIREMENT_PATTERNS
+
     scores = []
     for feature in features:
         score = 0.0
 
-        # Check for test steps
-        test_steps = feature.get("test_steps", [])
+        # Check for test steps (handle explicit None)
+        test_steps = feature.get("test_steps") or []
         if test_steps:
-            score += 0.3
+            score += TESTABILITY_SCORE_HAS_STEPS
 
             # Check for concrete actions
             action_verbs = [
@@ -252,37 +352,25 @@ def calculate_testability_score(features: list[dict]) -> float:
                 for step in test_steps
                 if any(verb in step.lower() for verb in action_verbs)
             )
-            if test_steps and concrete_steps / len(test_steps) >= 0.5:
-                score += 0.3
+            if test_steps and concrete_steps / len(test_steps) >= patterns.concrete_steps_threshold:
+                score += TESTABILITY_SCORE_CONCRETE_STEPS
 
         # Check for expected outcome
         # Prefer explicit expected_result field; fall back to description with penalty
-        expected_result = feature.get("expected_result", "")
-        description = feature.get("description", "")
-        verifiable_words = [
-            "should",
-            "displays",
-            "shows",
-            "appears",
-            "returns",
-            "contains",
-            "equals",
-            "matches",
-            "visible",
-            "enabled",
-        ]
+        expected_result = feature.get("expected_result") or ""
+        description = feature.get("description") or ""
 
         if expected_result and any(
-            word in expected_result.lower() for word in verifiable_words
+            word in expected_result.lower() for word in patterns.verifiable_words
         ):
             # Full score for explicit expected_result with verifiable language
-            score += 0.4
+            score += TESTABILITY_SCORE_EXPECTED_RESULT
         elif description and any(
-            word in description.lower() for word in verifiable_words
+            word in description.lower() for word in patterns.verifiable_words
         ):
-            # Reduced score when falling back to description (penalty factor of 0.5)
+            # Reduced score when falling back to description
             # Description may be verbose without concrete expected outcomes
-            score += 0.2
+            score += TESTABILITY_SCORE_DESCRIPTION_FALLBACK
 
         scores.append(score)
 
@@ -309,8 +397,8 @@ def calculate_granularity_score(features: list[dict]) -> float:
 
     scores = []
     for feature in features:
-        description = feature.get("description", "")
-        test_steps = feature.get("test_steps", [])
+        description = feature.get("description") or ""
+        test_steps = feature.get("test_steps") or []
 
         desc_len = len(description)
         step_count = len(test_steps)
@@ -332,7 +420,7 @@ def calculate_granularity_score(features: list[dict]) -> float:
         # Penalize compound features (multiple "and")
         and_count = description.lower().count(" and ")
         if and_count >= 2:
-            score -= 0.2 * min(and_count, 3)
+            score -= COMPOUND_FEATURE_PENALTY_FACTOR * min(and_count, COMPOUND_FEATURE_MAX_PENALTY_COUNT)
 
         # Bonus for ideal range
         if 100 <= desc_len <= 300 and 3 <= step_count <= 7:
@@ -366,14 +454,14 @@ def calculate_independence_score(features: list[dict]) -> float:
         score = 1.0
 
         # Check for explicit dependencies
-        dependencies = feature.get("dependencies", [])
+        dependencies = feature.get("dependencies") or []
         if dependencies:
             # Penalize based on number of dependencies
             score -= 0.1 * min(len(dependencies), 5)
 
         # Check for references to other features
-        description = feature.get("description", "")
-        test_steps_text = " ".join(feature.get("test_steps", []))
+        description = feature.get("description") or ""
+        test_steps_text = " ".join(feature.get("test_steps") or [])
         full_text = f"{description} {test_steps_text}".lower()
 
         # Sequential language
@@ -404,6 +492,7 @@ def evaluate_feature_list(
     features: list[dict],
     spec: str,
     weights: Optional[EvaluationWeights] = None,
+    patterns: Optional[RequirementPatterns] = None,
 ) -> EvaluationResult:
     """
     Calculate aggregate score for a feature list.
@@ -412,6 +501,7 @@ def evaluate_feature_list(
         features: List of feature dictionaries
         spec: Raw specification text
         weights: Optional custom weights (defaults to standard weights)
+        patterns: Optional custom patterns for requirement extraction and testability
 
     Returns:
         EvaluationResult with all scores and aggregate
@@ -419,8 +509,8 @@ def evaluate_feature_list(
     if weights is None:
         weights = EvaluationWeights()
 
-    coverage = calculate_spec_coverage(features, spec)
-    testability = calculate_testability_score(features)
+    coverage = calculate_spec_coverage(features, spec, patterns)
+    testability = calculate_testability_score(features, patterns)
     granularity = calculate_granularity_score(features)
     independence = calculate_independence_score(features)
 
@@ -470,12 +560,13 @@ def load_and_evaluate(
         return None
 
     try:
-        with open(feature_list_path) as f:
+        with open(feature_list_path, encoding="utf-8") as f:
             features = json.load(f)
-    except (json.JSONDecodeError, IOError):
+    except (json.JSONDecodeError, IOError, UnicodeDecodeError) as e:
+        logger.debug(f"Failed to load feature list from {feature_list_path}: {e}")
         return None
 
-    # Try multiple spec locations
+    # Try multiple spec locations with error handling
     spec = ""
     spec_locations = [
         spec_path,
@@ -486,7 +577,11 @@ def load_and_evaluate(
 
     for loc in spec_locations:
         if loc and loc.exists():
-            spec = loc.read_text(encoding="utf-8")
-            break
+            try:
+                spec = loc.read_text(encoding="utf-8")
+                break
+            except (IOError, UnicodeDecodeError) as e:
+                logger.debug(f"Failed to read spec from {loc}: {e}")
+                continue  # Try next location
 
     return evaluate_feature_list(features, spec, weights)

@@ -63,6 +63,45 @@ class EvaluationConfig:
     # Threshold for acceptable feature lists (future use with Best-of-N)
     min_acceptable_score: float = 0.6
 
+    def __post_init__(self) -> None:
+        """Validate configuration at creation time."""
+        self.validate()
+
+    def validate(self) -> None:
+        """Validate all configuration fields.
+
+        Raises:
+            ValueError: If any field has an invalid value
+        """
+        self.validate_weights()
+        self.validate_score_threshold()
+
+    def validate_weights(self) -> None:
+        """Validate that weights sum to 1.0 within tolerance.
+
+        Raises:
+            ValueError: If weights do not sum to 1.0 (within 0.01 tolerance)
+        """
+        total = (
+            self.coverage_weight
+            + self.testability_weight
+            + self.granularity_weight
+            + self.independence_weight
+        )
+        if not (0.99 <= total <= 1.01):
+            raise ValueError(f"Weights must sum to 1.0, got {total}")
+
+    def validate_score_threshold(self) -> None:
+        """Validate that min_acceptable_score is in valid range.
+
+        Raises:
+            ValueError: If min_acceptable_score is not between 0.0 and 1.0
+        """
+        if not (0.0 <= self.min_acceptable_score <= 1.0):
+            raise ValueError(
+                f"min_acceptable_score must be between 0.0 and 1.0, got {self.min_acceptable_score}"
+            )
+
 
 @dataclass
 class LoggingConfig:
@@ -272,6 +311,11 @@ def merge_config(
                     ]
 
         # Evaluation settings
+        # Note: EvaluationConfig validates on creation via __post_init__, but we must
+        # re-validate here because we mutate individual fields after creation. This
+        # dual validation is intentional:
+        # 1. __post_init__ catches invalid defaults during development
+        # 2. This explicit call catches invalid combinations from YAML config
         if "evaluation" in file_config:
             eval_config = file_config["evaluation"]
             if "coverage_weight" in eval_config:
@@ -285,16 +329,9 @@ def merge_config(
             if "min_acceptable_score" in eval_config:
                 config.evaluation.min_acceptable_score = eval_config["min_acceptable_score"]
 
-            # Validate weights sum to 1.0
-            from claude_agent.evaluation import EvaluationWeights
-
+            # Re-validate after field mutations (see note above)
             try:
-                EvaluationWeights(
-                    coverage=config.evaluation.coverage_weight,
-                    testability=config.evaluation.testability_weight,
-                    granularity=config.evaluation.granularity_weight,
-                    independence=config.evaluation.independence_weight,
-                )
+                config.evaluation.validate_weights()
             except ValueError as e:
                 from claude_agent.errors import ConfigValidationError
 

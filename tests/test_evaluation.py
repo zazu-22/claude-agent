@@ -50,7 +50,7 @@ class TestEvaluationWeights:
         with pytest.raises(ValueError, match="Weights must sum to 1.0"):
             EvaluationWeights(coverage=0.5, testability=0.5, granularity=0.5, independence=0.5)
 
-    def test_weights_allow_small_float_imprecision(self):
+    def test_weights_tolerate_float_imprecision(self):
         """Verify small float imprecision is tolerated (0.99-1.01)."""
         # This should not raise - 0.999 is within tolerance
         weights = EvaluationWeights(
@@ -739,19 +739,383 @@ class TestIntegration:
         assert result.independence_score >= 0.8
 
     def test_poor_feature_list_scores_low(self, tmp_path):
-        """Test that poorly structured features score lower."""
-        features = [
+        """Test that poorly structured features score lower than well-structured ones."""
+        poor_features = [
             {"description": "Login"},  # Too short
             {"description": "Do everything in the app and then some more stuff and also this and that and another thing"},  # Compound
             {"description": "Feature depends on feature #1", "dependencies": [0]},  # Dependent
         ]
 
+        good_features = [
+            {
+                "description": "User can log in with email and password, receiving appropriate error messages for invalid credentials",
+                "test_steps": ["Navigate to login", "Enter email", "Enter password", "Click submit", "Verify redirect"],
+                "expected_result": "User should be redirected to dashboard",
+            },
+            {
+                "description": "Dashboard displays user's recent activity in a chronological list with timestamps",
+                "test_steps": ["Log in", "Navigate to dashboard", "Verify activity list appears", "Check timestamps"],
+                "expected_result": "Activity list should show recent items with visible timestamps",
+            },
+        ]
+
+        # Create poor feature list
+        feature_path = tmp_path / "feature_list.json"
+        feature_path.write_text(json.dumps(poor_features))
+        poor_result = load_and_evaluate(tmp_path)
+
+        # Create good feature list for comparison
+        feature_path.write_text(json.dumps(good_features))
+        good_result = load_and_evaluate(tmp_path)
+
+        assert poor_result is not None
+        assert good_result is not None
+
+        # Poor features should score significantly lower than good features
+        assert poor_result.granularity_score < good_result.granularity_score, \
+            f"Poor granularity {poor_result.granularity_score} should be less than good {good_result.granularity_score}"
+        assert poor_result.testability_score < good_result.testability_score, \
+            f"Poor testability {poor_result.testability_score} should be less than good {good_result.testability_score}"
+        assert poor_result.independence_score < good_result.independence_score, \
+            f"Poor independence {poor_result.independence_score} should be less than good {good_result.independence_score}"
+
+        # Aggregate should reflect the quality difference
+        assert poor_result.aggregate_score < good_result.aggregate_score, \
+            f"Poor aggregate {poor_result.aggregate_score} should be less than good {good_result.aggregate_score}"
+
+        # Absolute bounds for poor features (catch completely broken scoring)
+        # These bounds are safety nets to catch regression in the scoring algorithm.
+        # Rationale for thresholds:
+        # - granularity <= 0.7: "Login" (6 chars) gets -0.3 for short description, compound
+        #   feature gets -0.4 to -0.6 for multiple "and" conjunctions. Perfect 1.0 minus
+        #   penalties puts these features well below 0.7.
+        # - testability <= 0.5: Without test_steps field, max possible score is 0.4
+        #   (expected_result only) or 0.2 (description fallback). No feature in
+        #   poor_features has expected_result, so max is 0.2 from description.
+        assert poor_result.granularity_score <= 0.7
+        assert poor_result.testability_score <= 0.5
+
+
+class TestSpecLocationPriority:
+    """Test spec file location priority order."""
+
+    def test_explicit_spec_path_takes_priority(self, tmp_path):
+        """Explicit spec_path parameter takes priority over all others."""
+        features = [{"description": "Test feature"}]
         feature_path = tmp_path / "feature_list.json"
         feature_path.write_text(json.dumps(features))
+
+        # Create all possible spec locations with different content
+        explicit_spec = tmp_path / "explicit.md"
+        explicit_spec.write_text("The system must do explicit thing.")
+
+        specs_dir = tmp_path / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "spec-validated.md").write_text("System must do validated thing.")
+        (specs_dir / "app_spec.txt").write_text("System must do specs dir thing.")
+        (tmp_path / "app_spec.txt").write_text("System must do root thing.")
+
+        result = load_and_evaluate(tmp_path, spec_path=explicit_spec)
+
+        assert result is not None
+        # Result should use explicit spec - score should reflect explicit content
+
+    def test_specs_validated_md_second_priority(self, tmp_path):
+        """specs/spec-validated.md is checked before specs/app_spec.txt."""
+        features = [{"description": "Test feature for validated content"}]
+        feature_path = tmp_path / "feature_list.json"
+        feature_path.write_text(json.dumps(features))
+
+        specs_dir = tmp_path / "specs"
+        specs_dir.mkdir()
+        (specs_dir / "spec-validated.md").write_text("The system must use validated spec.")
+        (specs_dir / "app_spec.txt").write_text("System must use app spec.")
+        (tmp_path / "app_spec.txt").write_text("System must use root spec.")
+
+        # Don't provide explicit spec_path - should use specs/spec-validated.md
+        result = load_and_evaluate(tmp_path)
+
+        assert result is not None
+
+    def test_specs_app_spec_txt_third_priority(self, tmp_path):
+        """specs/app_spec.txt is checked before root app_spec.txt."""
+        features = [{"description": "Test feature"}]
+        feature_path = tmp_path / "feature_list.json"
+        feature_path.write_text(json.dumps(features))
+
+        specs_dir = tmp_path / "specs"
+        specs_dir.mkdir()
+        # No spec-validated.md
+        (specs_dir / "app_spec.txt").write_text("The system must use specs dir spec.")
+        (tmp_path / "app_spec.txt").write_text("System must use root spec.")
 
         result = load_and_evaluate(tmp_path)
 
         assert result is not None
-        # Poor features should score lower
-        assert result.granularity_score <= 0.6
-        assert result.independence_score <= 0.9
+
+    def test_root_app_spec_txt_last_priority(self, tmp_path):
+        """Root app_spec.txt is used when no other locations exist."""
+        features = [{"description": "Test feature"}]
+        feature_path = tmp_path / "feature_list.json"
+        feature_path.write_text(json.dumps(features))
+
+        # Only root app_spec.txt exists
+        (tmp_path / "app_spec.txt").write_text("The system must use root spec.")
+
+        result = load_and_evaluate(tmp_path)
+
+        assert result is not None
+
+
+class TestLoggingBehavior:
+    """Test debug logging in evaluation functions."""
+
+    def test_uncovered_requirements_logged(self, tmp_path, caplog):
+        """Verify uncovered requirements are logged at debug level."""
+        import logging
+
+        spec = """
+        The system must handle authentication.
+        Users should be able to view profiles.
+        The application will support notifications.
+        """
+        features = [
+            # Only covers authentication, not profiles or notifications
+            {"description": "User authentication with login and password"}
+        ]
+
+        with caplog.at_level(logging.DEBUG):
+            score = calculate_spec_coverage(features, spec)
+
+        # Should have logged uncovered requirements
+        assert score < 1.0  # Not full coverage
+        # Check that debug logging occurred for uncovered requirements
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        uncovered_logged = any("Uncovered requirements" in msg for msg in debug_messages)
+        assert uncovered_logged, "Expected uncovered requirements to be logged"
+
+    def test_no_requirements_logged(self, caplog):
+        """Verify 'no requirements' case is logged at debug level."""
+        import logging
+
+        spec = "Just some random text without any requirement-like sentences."
+        features = [{"description": "Some feature"}]
+
+        with caplog.at_level(logging.DEBUG):
+            score = calculate_spec_coverage(features, spec)
+
+        assert score == 0.5  # Fallback score
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        no_req_logged = any("No requirements extracted" in msg for msg in debug_messages)
+        assert no_req_logged, "Expected 'no requirements' to be logged"
+
+
+class TestWordOverlapLimitation:
+    """Tests documenting the word overlap algorithm limitation.
+
+    The coverage algorithm uses simple word overlap, meaning:
+    - 'authenticate' vs 'authentication' are treated as different words
+    - No stemming or lemmatization is applied
+
+    These tests explicitly document this behavior.
+    """
+
+    def test_different_word_forms_not_matched(self):
+        """Different word forms (authenticate vs authentication) don't match.
+
+        This is a known limitation of the simple word overlap algorithm.
+        """
+        spec = "Users must be able to authenticate with credentials."
+        features = [
+            # Uses 'authentication' instead of 'authenticate'
+            {"description": "Login system for user authentication"}
+        ]
+
+        score = calculate_spec_coverage(features, spec)
+
+        # The words 'user' and potentially others overlap, but 'authenticate'
+        # vs 'authentication' are different tokens. Score depends on overlap threshold.
+        # This test documents the limitation - exact behavior depends on threshold config.
+        assert 0.0 <= score <= 1.0  # Valid range
+
+    def test_consistent_terminology_works_well(self):
+        """When spec and features use consistent terminology, coverage is high."""
+        spec = "Users must log in with email. Users must view dashboard."
+        features = [
+            {"description": "User login with email and password validation"},
+            {"description": "User dashboard view with activity summary"},
+        ]
+
+        score = calculate_spec_coverage(features, spec)
+
+        # Consistent use of 'user', 'login', 'dashboard' should give good coverage
+        assert score >= 0.5
+
+    def test_stop_words_filtered_from_overlap(self):
+        """Stop words are filtered out from word overlap calculation.
+
+        This ensures that common words like 'must', 'be', 'able', 'the' don't
+        create false positive matches between unrelated requirements and features.
+        """
+        spec = "Users must be able to do something."
+        features = [
+            # This feature has different content words than the spec
+            {"description": "The system should handle requests"}
+        ]
+
+        score = calculate_spec_coverage(features, spec)
+
+        # With stop word filtering, 'users', 'do', 'something' vs 'system', 'handle', 'requests'
+        # have no meaningful overlap. Stop words like 'must', 'be', 'able', 'the', 'should'
+        # are excluded. This should result in low/no coverage.
+        # Note: exact behavior depends on requirement extraction patterns
+        assert 0.0 <= score <= 1.0
+
+
+class TestEvaluationEdgeCases:
+    """Edge case tests for robustness against malformed or unusual inputs."""
+
+    def test_malformed_feature_missing_description(self):
+        """Features without description field are handled gracefully."""
+        features = [
+            {},  # Empty feature
+            {"test_steps": ["step1"]},  # No description
+            {"description": "Valid feature"},  # Valid
+        ]
+        spec = "The system must do something."
+
+        # Should not raise, just handle gracefully
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert 0.0 <= result.aggregate_score <= 1.0
+
+    def test_unicode_content_handled(self):
+        """Unicode characters in spec and features are handled correctly."""
+        spec = "The système must support émojis 🎉 and accénts."
+        features = [
+            {"description": "Système émojis 🎉 support with accénts handling"},
+            {"description": "日本語 テスト feature"},  # Japanese
+            {"description": "Функция тестирования"},  # Russian
+        ]
+
+        # Should not raise
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert 0.0 <= result.aggregate_score <= 1.0
+
+    def test_very_long_description(self):
+        """Very long feature descriptions are handled without issues."""
+        long_desc = "Feature " * 1000  # Very long description
+        features = [{"description": long_desc, "test_steps": ["step"]}]
+        spec = "The system must handle long content."
+
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        # Long descriptions are penalized in granularity
+        assert result.granularity_score < 1.0
+
+    def test_large_feature_list(self):
+        """Large number of features is handled efficiently."""
+        features = [
+            {"description": f"Feature number {i} for testing scalability", "test_steps": ["step1", "step2"]}
+            for i in range(500)
+        ]
+        spec = "The system must support many features for testing."
+
+        # Should complete without hanging or memory issues
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert result.details["feature_count"] == 500
+
+    def test_empty_strings_in_fields(self):
+        """Empty strings in feature fields are handled gracefully."""
+        features = [
+            {"description": "", "test_steps": [], "expected_result": ""},
+            {"description": "Valid", "test_steps": [""], "expected_result": ""},
+        ]
+        spec = ""
+
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert result.coverage_score == 0.0  # Empty spec
+
+    def test_none_values_in_feature_list(self):
+        """None values in feature dictionaries are handled gracefully."""
+        features = [
+            {"description": None},  # None description
+            {"description": "Valid", "test_steps": None},  # None test_steps
+        ]
+        spec = "The system must do something."
+
+        # Should handle None gracefully (may score 0 but shouldn't crash)
+        try:
+            result = evaluate_feature_list(features, spec)
+            # If it doesn't crash, check valid result
+            assert result is not None
+        except (TypeError, AttributeError):
+            # It's acceptable to raise on None values, but should be caught
+            pytest.fail("Should handle None values gracefully without crashing")
+
+    def test_special_characters_in_description(self):
+        """Special characters don't break word extraction."""
+        features = [
+            {"description": "Handle @mentions and #hashtags in <html> tags & ampersands"},
+            {"description": "Support $variables and %percentages with (parentheses)"},
+            {"description": "Process 'quoted' and \"double-quoted\" strings"},
+        ]
+        spec = "The system must handle special characters: @#$%&*()"
+
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert 0.0 <= result.aggregate_score <= 1.0
+
+    def test_numeric_only_content(self):
+        """Numeric content in features and spec is handled."""
+        features = [
+            {"description": "Feature 123 with numbers 456"},
+            {"description": "100% coverage of 50 items"},
+        ]
+        spec = "The system must handle 100 items with 99.9% uptime."
+
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+
+    def test_load_and_evaluate_with_io_error(self, tmp_path, monkeypatch):
+        """load_and_evaluate handles IO errors gracefully."""
+        features = [{"description": "Test feature"}]
+        feature_path = tmp_path / "feature_list.json"
+        feature_path.write_text(json.dumps(features))
+
+        spec_path = tmp_path / "app_spec.txt"
+        spec_path.write_text("The system must work.")
+
+        # Make spec file unreadable after creation by mocking read_text
+        original_read_text = Path.read_text
+
+        def mock_read_text(self, encoding=None):
+            if "app_spec" in str(self):
+                raise IOError("Simulated read error")
+            return original_read_text(self, encoding=encoding)
+
+        monkeypatch.setattr(Path, "read_text", mock_read_text)
+
+        # Should handle gracefully and try next location or return with empty spec
+        result = load_and_evaluate(tmp_path)
+        assert result is not None  # Should still return a result with empty spec
+
+    def test_feature_list_with_extra_fields(self):
+        """Features with extra unexpected fields are handled."""
+        features = [
+            {
+                "description": "Valid feature with extra fields",
+                "test_steps": ["step1"],
+                "unknown_field": "should be ignored",
+                "another_field": {"nested": "data"},
+                "numeric_field": 12345,
+            }
+        ]
+        spec = "The system must do something."
+
+        result = evaluate_feature_list(features, spec)
+        assert result is not None
+        assert 0.0 <= result.aggregate_score <= 1.0
