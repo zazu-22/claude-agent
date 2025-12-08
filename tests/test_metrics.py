@@ -964,3 +964,23 @@ class TestNewMetricsFields:
         # Check defaults applied to aggregates
         assert metrics.multi_feature_session_count == 0
         assert metrics.incomplete_evaluation_count == 0
+
+    def test_record_session_metrics_validates_completeness_score(self, tmp_path):
+        """record_session_metrics raises ValueError for invalid completeness score."""
+        with pytest.raises(ValueError, match="evaluation_completeness_score must be 0.0-1.0"):
+            record_session_metrics(
+                project_dir=tmp_path,
+                session_id=1,
+                features_attempted=1,
+                features_completed=1,
+                evaluation_completeness_score=1.5,  # Invalid: > 1.0
+            )
+
+        with pytest.raises(ValueError, match="evaluation_completeness_score must be 0.0-1.0"):
+            record_session_metrics(
+                project_dir=tmp_path,
+                session_id=1,
+                features_attempted=1,
+                features_completed=1,
+                evaluation_completeness_score=-0.1,  # Invalid: < 0.0
+            )

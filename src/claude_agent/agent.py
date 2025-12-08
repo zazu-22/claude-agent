@@ -74,6 +74,10 @@ def get_next_session_id(project_dir: Path) -> int:
     Uses drift-metrics.json as the source of truth for session IDs to avoid
     race conditions when reading progress notes (which are written by the
     agent during sessions).
+
+    Note: This function assumes single-agent execution. If concurrent agents
+    are supported in the future, a lock file or atomic ID allocation mechanism
+    would be needed to prevent duplicate session IDs.
     """
     from claude_agent.metrics import load_metrics
 

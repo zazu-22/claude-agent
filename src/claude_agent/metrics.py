@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -29,20 +29,34 @@ VELOCITY_TREND_THRESHOLD_PERCENT = 0.10
 # features/session. TODO: Validate this threshold with real session data.
 VELOCITY_MIN_ABSOLUTE_THRESHOLD = 0.5
 
-# Tolerance for floating point comparisons in integrity validation
+# Tolerance for floating point comparisons in integrity validation.
+# Value of 0.01 chosen to accommodate rounding errors from division operations
+# (e.g., average_features_per_session = sum/count) while being strict enough to
+# catch meaningful discrepancies. Typical floating point errors are ~1e-15,
+# so 0.01 provides a wide margin for accumulated errors.
 FLOAT_COMPARISON_EPSILON = 0.01
 
 
 @dataclass
 class SessionMetrics:
-    """Metrics for a single coding session."""
+    """
+    Metrics for a single coding session.
+
+    Note on regression-related fields:
+    - features_regressed: Count of features that went from passing to failing
+      during this session. Calculated as abs(features_completed) when negative.
+      This measures actual test status changes in feature_list.json.
+    - regressions_caught: Count of regressions detected by the agent's
+      REGRESSION VERIFICATION step. This measures the agent's ability to
+      catch regressions before they propagate.
+    """
 
     session_id: int
     timestamp: str
     features_attempted: int
     features_completed: int  # Net change (can be negative for regressions)
-    features_regressed: int = 0  # Count of features that regressed (>= 0)
-    regressions_caught: int = 0
+    features_regressed: int = 0  # Count of features that went from passing to failing
+    regressions_caught: int = 0  # Count detected in REGRESSION VERIFICATION step
     assumptions_stated: int = 0
     assumptions_violated: int = 0
     architecture_deviations: int = 0
@@ -75,6 +89,14 @@ class DriftMetrics:
     rejection_count: int = 0
     multi_feature_session_count: int = 0  # Sessions with is_multi_feature=True
     incomplete_evaluation_count: int = 0  # Sessions with completeness_score < 1.0
+
+
+class DriftIndicators(TypedDict):
+    """Type definition for drift indicators returned by calculate_drift_indicators."""
+
+    regression_rate: float  # Percentage of sessions with regressions (0-100)
+    velocity_trend: str  # "increasing" | "stable" | "decreasing" | "insufficient_data"
+    rejection_rate: float  # Percentage of validations rejected (0-100)
 
 
 def load_metrics(project_dir: Path) -> DriftMetrics:
@@ -276,9 +298,18 @@ def record_session_metrics(
         evaluation_sections_present: List of evaluation section names present
         evaluation_completeness_score: Score from 0.0-1.0 (default: 1.0)
         is_multi_feature: True if session worked on multiple features
+
+    Raises:
+        ValueError: If evaluation_completeness_score is outside 0.0-1.0 range
     """
     if evaluation_sections_present is None:
         evaluation_sections_present = []
+
+    # Validate evaluation_completeness_score range
+    if not (0.0 <= evaluation_completeness_score <= 1.0):
+        raise ValueError(
+            f"evaluation_completeness_score must be 0.0-1.0, got {evaluation_completeness_score}"
+        )
 
     # Load existing metrics
     metrics = load_metrics(project_dir)
@@ -375,7 +406,7 @@ def record_validation_metrics(
     save_metrics(project_dir, metrics)
 
 
-def calculate_drift_indicators(metrics: DriftMetrics) -> dict:
+def calculate_drift_indicators(metrics: DriftMetrics) -> DriftIndicators:
     """
     Calculate drift indicators from metrics.
 
@@ -383,12 +414,12 @@ def calculate_drift_indicators(metrics: DriftMetrics) -> dict:
         metrics: DriftMetrics object
 
     Returns:
-        Dict with keys:
+        DriftIndicators with keys:
         - regression_rate: Percentage of sessions with regressions (0-100)
         - velocity_trend: "increasing" | "stable" | "decreasing" | "insufficient_data"
         - rejection_rate: Percentage of validations rejected (0-100)
     """
-    result = {
+    result: DriftIndicators = {
         "regression_rate": 0.0,
         "velocity_trend": "insufficient_data",
         "rejection_rate": 0.0,
@@ -538,6 +569,7 @@ def count_regressions(output: str) -> int:
     section_match = section_pattern.search(output)
 
     if not section_match:
+        logger.debug("REGRESSION VERIFICATION section not found in agent output")
         return 0
 
     section_content = section_match.group(1)
