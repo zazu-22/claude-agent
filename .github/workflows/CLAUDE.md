@@ -24,7 +24,7 @@ A reusable workflow for automating GitHub repository setup tasks (labels, milest
 - Navigate to Actions > "GitHub Setup Tasks" in the GitHub UI
 - Click "Run workflow"
 - Select the task file and options
-- The workflow requires the `GITHUB_SETUP_TOKEN` secret to be configured
+- The workflow requires the `GH_SETUP_TOKEN` secret to be configured
 
 **Creating new task files:**
 1. Create a YAML file in `scripts/github_tasks/`
@@ -57,7 +57,7 @@ issues:
 
 ## Security Notes
 
-- **GITHUB_SETUP_TOKEN**: Store as a repository secret with `repo` scope
+- **GH_SETUP_TOKEN**: Store as a repository secret with `repo` scope
 - Never commit tokens to the repository
 - Use `dry_run: true` to preview changes before executing
 - The token is only accessible within GitHub Actions, not in code
@@ -76,7 +76,7 @@ To add new GitHub operations:
 | Issue | Solution |
 |-------|----------|
 | "Task file not found" | Check the filename matches exactly (case-sensitive) |
-| "GITHUB_TOKEN not set" | Add `GITHUB_SETUP_TOKEN` to repository secrets |
+| "GITHUB_TOKEN not set" | Add `GH_SETUP_TOKEN` to repository secrets |
 | "401 Unauthorized" | Token expired or lacks required scopes |
 | "422 Validation Failed" | Resource may already exist (check logs) |
 | Labels created but issues fail | Ensure milestone titles match exactly |
