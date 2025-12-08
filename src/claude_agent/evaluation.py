@@ -27,10 +27,63 @@ Usage Example
 """
 
 import json
+import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class RequirementPatterns:
+    """Configurable patterns for requirement extraction from specs.
+
+    Patterns are regular expressions used to identify requirement sentences.
+    Default patterns cover common requirement phrasings including modal verbs,
+    subject patterns, action verbs, and negations.
+    """
+
+    # Modal verb patterns (must, should, shall, will)
+    modal_patterns: tuple[str, ...] = (
+        r"(?:must|should|shall|will)\s+\w+",
+        r"(?:must|should|shall|will)\s+not\s+\w+",  # Negated requirements
+    )
+
+    # Subject patterns (user/system can/should/must/will)
+    subject_patterns: tuple[str, ...] = (
+        r"(?:user|system|app|application)\s+(?:can|should|must|will)",
+        r"(?:user|system|app|application)\s+(?:cannot|can't|should\s+not|must\s+not)",
+    )
+
+    # Action verb patterns (various phrasings)
+    action_patterns: tuple[str, ...] = (
+        r"(?:allow|enable|support|provide|display|show|create|update|delete)",
+        r"(?:allows|enables|supports|provides|displays|shows|creates|updates|deletes)",
+        r"(?:allowing|enabling|supporting|providing|displaying|showing|creating|updating|deleting)",
+        r"(?:prevent|prohibit|restrict|block|disable|hide|remove)",
+        r"(?:prevents|prohibits|restricts|blocks|disables|hides|removes)",
+    )
+
+    # Word overlap threshold factor (multiplied by requirement word count)
+    # The threshold is: min(max_overlap_words, max(min_overlap_words, word_count * factor))
+    # This ensures small requirements need fewer matching words while capping large ones
+    overlap_threshold_factor: float = 0.5
+
+    # Minimum overlap words required
+    min_overlap_words: int = 2
+
+    # Maximum overlap words required (caps the threshold for long requirements)
+    max_overlap_words: int = 3
+
+    def get_all_patterns(self) -> list[str]:
+        """Return all patterns as a combined list."""
+        return list(self.modal_patterns) + list(self.subject_patterns) + list(self.action_patterns)
+
+
+# Default patterns instance for convenience
+DEFAULT_REQUIREMENT_PATTERNS = RequirementPatterns()
 
 
 @dataclass(frozen=True)
@@ -61,7 +114,11 @@ class EvaluationResult:
     details: dict  # Per-criterion details for debugging
 
 
-def calculate_spec_coverage(features: list[dict], spec: str) -> float:
+def calculate_spec_coverage(
+    features: list[dict],
+    spec: str,
+    patterns: Optional[RequirementPatterns] = None,
+) -> float:
     """
     Calculate how well features cover spec requirements.
 
@@ -73,6 +130,7 @@ def calculate_spec_coverage(features: list[dict], spec: str) -> float:
     Args:
         features: List of feature dictionaries from feature_list.json
         spec: Raw specification text
+        patterns: Optional custom patterns for requirement extraction
 
     Returns:
         Float 0.0-1.0 representing coverage percentage
@@ -80,13 +138,11 @@ def calculate_spec_coverage(features: list[dict], spec: str) -> float:
     if not features or not spec:
         return 0.0
 
-    # Extract requirement-like sentences from spec
-    # Heuristic: Look for sentences with action verbs, "must", "should", "will"
-    requirement_patterns = [
-        r"(?:must|should|shall|will)\s+\w+",  # Modal verb patterns
-        r"(?:user|system|app|application)\s+(?:can|should|must|will)",  # Subject patterns
-        r"(?:allow|enable|support|provide|display|show|create|update|delete)",  # Action verbs
-    ]
+    if patterns is None:
+        patterns = DEFAULT_REQUIREMENT_PATTERNS
+
+    # Extract requirement-like sentences from spec using configurable patterns
+    requirement_patterns = patterns.get_all_patterns()
 
     requirements = set()
     sentences = re.split(r"[.!?]\s+", spec)
@@ -105,20 +161,48 @@ def calculate_spec_coverage(features: list[dict], spec: str) -> float:
         requirements = set(h.lower() for h in headers if len(h) > 5)
 
     if not requirements:
+        logger.debug("No requirements extracted from spec, returning 0.5")
         return 0.5  # Can't extract requirements, assume partial coverage
 
     # Check feature coverage
     covered = 0
+    uncovered_requirements: list[str] = []
+
     for req in requirements:
         req_words = set(re.findall(r"\w+", req))
+        # Calculate dynamic threshold based on requirement length
+        # Formula: min(max_overlap, max(min_overlap, word_count * factor))
+        # This caps threshold for long requirements while having a minimum for short ones
+        threshold = min(
+            patterns.max_overlap_words,
+            max(
+                patterns.min_overlap_words,
+                int(len(req_words) * patterns.overlap_threshold_factor),
+            ),
+        )
+        is_covered = False
+
         for feature in features:
             description = feature.get("description", "").lower()
             feature_words = set(re.findall(r"\w+", description))
             # Coverage if significant word overlap
             overlap = len(req_words & feature_words)
-            if overlap >= min(3, len(req_words) // 2):
+            if overlap >= threshold:
                 covered += 1
+                is_covered = True
                 break
+
+        if not is_covered:
+            uncovered_requirements.append(req[:80])  # Truncate for logging
+
+    # Log coverage misses for debugging
+    if uncovered_requirements:
+        logger.debug(
+            "Uncovered requirements (%d of %d):\n  - %s",
+            len(uncovered_requirements),
+            len(requirements),
+            "\n  - ".join(uncovered_requirements[:10]),  # Limit log output
+        )
 
     return covered / len(requirements)
 
@@ -172,10 +256,9 @@ def calculate_testability_score(features: list[dict]) -> float:
                 score += 0.3
 
         # Check for expected outcome
-        # Fallback to description when expected_result is missing or empty,
-        # since feature descriptions often contain verifiable outcome language
-        # (e.g., "User should see...", "Form displays...")
-        expected = feature.get("expected_result", "") or feature.get("description", "")
+        # Prefer explicit expected_result field; fall back to description with penalty
+        expected_result = feature.get("expected_result", "")
+        description = feature.get("description", "")
         verifiable_words = [
             "should",
             "displays",
@@ -188,8 +271,18 @@ def calculate_testability_score(features: list[dict]) -> float:
             "visible",
             "enabled",
         ]
-        if any(word in expected.lower() for word in verifiable_words):
+
+        if expected_result and any(
+            word in expected_result.lower() for word in verifiable_words
+        ):
+            # Full score for explicit expected_result with verifiable language
             score += 0.4
+        elif description and any(
+            word in description.lower() for word in verifiable_words
+        ):
+            # Reduced score when falling back to description (penalty factor of 0.5)
+            # Description may be verbose without concrete expected outcomes
+            score += 0.2
 
         scores.append(score)
 

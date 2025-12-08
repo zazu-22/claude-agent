@@ -15,6 +15,8 @@ from claude_agent.evaluation import (
     load_and_evaluate,
     EvaluationWeights,
     EvaluationResult,
+    RequirementPatterns,
+    DEFAULT_REQUIREMENT_PATTERNS,
 )
 
 
@@ -76,6 +78,44 @@ class TestEvaluationResult:
         assert result.independence_score == 0.9
         assert result.aggregate_score == 0.75
         assert result.details["feature_count"] == 10
+
+
+class TestRequirementPatterns:
+    """Test RequirementPatterns dataclass and pattern extraction."""
+
+    def test_default_patterns_exist(self):
+        """Verify default patterns are populated."""
+        patterns = RequirementPatterns()
+        all_patterns = patterns.get_all_patterns()
+        assert len(all_patterns) > 5  # Should have multiple patterns
+
+    def test_custom_patterns_accepted(self):
+        """Verify custom patterns can be provided."""
+        patterns = RequirementPatterns(
+            modal_patterns=(r"(?:shall)\s+\w+",),
+            subject_patterns=(),
+            action_patterns=(),
+        )
+        all_patterns = patterns.get_all_patterns()
+        assert len(all_patterns) == 1
+        assert r"(?:shall)\s+\w+" in all_patterns
+
+    def test_overlap_threshold_configurable(self):
+        """Verify overlap threshold is configurable."""
+        patterns = RequirementPatterns(
+            overlap_threshold_factor=0.3,
+            min_overlap_words=2,
+        )
+        assert patterns.overlap_threshold_factor == 0.3
+        assert patterns.min_overlap_words == 2
+
+    def test_default_patterns_contains_negations(self):
+        """Verify default patterns handle negated requirements."""
+        patterns = DEFAULT_REQUIREMENT_PATTERNS
+        all_patterns = patterns.get_all_patterns()
+        # Check that negation patterns are included
+        has_negation = any("not" in p for p in all_patterns)
+        assert has_negation, "Should include negation patterns"
 
 
 class TestSpecCoverage:
@@ -150,6 +190,93 @@ class TestSpecCoverage:
         score = calculate_spec_coverage(features, spec)
         assert score == 0.5
 
+    def test_negated_requirements_extracted(self):
+        """Spec with negated requirements ('must not', 'should not') are captured."""
+        spec = """
+        The system must not allow unauthorized access.
+        Users should not be able to view other users' data.
+        The application will not store passwords in plaintext.
+        """
+        features = [
+            {"description": "Authorization system prevents unauthorized access"},
+            {"description": "Data privacy ensures users cannot view others data"},
+            {"description": "Password hashing ensures plaintext is not stored"},
+        ]
+
+        score = calculate_spec_coverage(features, spec)
+        # Should capture negated requirements
+        assert score >= 0.3
+
+    def test_alternative_verb_phrasings(self):
+        """Spec with alternative phrasings ('enables', 'supports') are captured."""
+        spec = """
+        The system enables users to export reports.
+        The application supports multiple file formats.
+        This feature provides real-time notifications.
+        """
+        # Use feature descriptions with more word overlap with requirements
+        features = [
+            {"description": "System enables users to export their reports"},
+            {"description": "Application supports multiple file formats for import and export"},
+            {"description": "Feature provides real-time notifications to users"},
+        ]
+
+        score = calculate_spec_coverage(features, spec)
+        assert score >= 0.3
+
+    def test_custom_patterns_used(self):
+        """Custom RequirementPatterns are used for extraction."""
+        spec = "The system handles user data securely."
+        features = [{"description": "System handles user data with encryption"}]
+
+        # Default patterns won't match this spec (no action verbs, modals)
+        default_score = calculate_spec_coverage(features, spec)
+        # Returns 0.5 (fallback for no extractable requirements)
+        assert default_score == 0.5
+
+        # Custom patterns can match "handles"
+        custom_patterns = RequirementPatterns(
+            modal_patterns=(),
+            subject_patterns=(),
+            action_patterns=(r"handles",),
+        )
+        custom_score = calculate_spec_coverage(features, spec, patterns=custom_patterns)
+
+        # Custom patterns should find and cover the requirement
+        # Feature has good word overlap: system, handles, user, data
+        assert custom_score == 1.0  # 1 requirement, 1 covered
+
+
+class TestSpecCoverageEdgeCases:
+    """Parametrized edge case tests for spec coverage."""
+
+    @pytest.mark.parametrize(
+        "features,spec,expected",
+        [
+            ([], "Some spec text", 0.0),  # Empty features
+            ([{"description": "Test"}], "", 0.0),  # Empty spec
+            ([], "", 0.0),  # Both empty
+        ],
+        ids=["empty_features", "empty_spec", "both_empty"],
+    )
+    def test_empty_inputs(self, features, spec, expected):
+        """Test that empty inputs return expected scores."""
+        assert calculate_spec_coverage(features, spec) == expected
+
+    @pytest.mark.parametrize(
+        "spec,expected_min",
+        [
+            ("# Header Only\n# Another Header", 0.0),  # Headers only, uses fallback
+            ("No requirements here at all", 0.5),  # No extractable requirements
+        ],
+        ids=["headers_fallback", "no_requirements_fallback"],
+    )
+    def test_fallback_behavior(self, spec, expected_min):
+        """Test fallback behavior for different spec formats."""
+        features = [{"description": "Generic feature description"}]
+        score = calculate_spec_coverage(features, spec)
+        assert score >= expected_min
+
 
 class TestTestabilityScore:
     """Test testability scoring."""
@@ -208,7 +335,19 @@ class TestTestabilityScore:
         ]
 
         score = calculate_testability_score(features)
-        assert score == 0.4  # Only expected_result contributes
+        assert score == 0.4  # Full score for explicit expected_result
+
+    def test_description_fallback_has_penalty(self):
+        """Features using description fallback for verifiability get reduced score."""
+        features = [
+            {
+                "description": "User should see dashboard after login",
+                # No expected_result field - falls back to description
+            }
+        ]
+
+        score = calculate_testability_score(features)
+        assert score == 0.2  # Penalty: 50% of full score (0.4 * 0.5 = 0.2)
 
     def test_average_across_features(self):
         """Score is averaged across all features."""
