@@ -20,6 +20,23 @@ This document provides step-by-step instructions for the DevOps team to set up G
 2. GitHub CLI (`gh`) installed and authenticated
 3. Access to create labels, milestones, and projects
 
+### Verify Prerequisites
+
+```bash
+# Verify GitHub CLI authentication
+gh auth status
+
+# Verify repository access
+gh repo view --json name,owner
+```
+
+### Important: Placeholder Resolution
+
+> **Note:** This guide contains `#XX` placeholders for issue numbers in epic issue bodies.
+> After creating issues in Step 4, you must update the epic issues (created in Step 3)
+> with the actual issue numbers. Run `gh issue list` to get the created issue numbers,
+> then edit the epics with `gh issue edit <epic-number> --body "..."` or via the GitHub web interface.
+
 ---
 
 ## Step 1: Create Labels
@@ -82,10 +99,15 @@ Expected output: 21 labels created
 Create milestones for each sprint.
 
 ```bash
+# Note: The date command syntax differs between Linux (GNU) and macOS (BSD)
+# Linux:  date -d '+2 weeks' -Iseconds
+# macOS:  date -v +2w +%Y-%m-%dT%H:%M:%S%z
+# Alternatively, calculate the date manually or omit due_on for undated milestones
+
 # Sprint 1: Foundation
 gh api repos/{owner}/{repo}/milestones -f title="Sprint 1: Foundation" \
   -f description="Forced evaluation in Coding Agent, Enhanced Progress Notes, Basic Metrics, Initializer Forced Eval" \
-  -f due_on="$(date -d '+2 weeks' -Iseconds)"
+  -f due_on="$(date -v +2w +%Y-%m-%dT%H:%M:%S%z 2>/dev/null || date -d '+2 weeks' -Iseconds)"
 
 # Sprint 2: Integration & Init Quality
 gh api repos/{owner}/{repo}/milestones -f title="Sprint 2: Integration & Init Quality" \
@@ -1063,6 +1085,76 @@ After setup, verify:
 | Sprint 2 | 2.2, 4.1 |
 | Sprint 3 | 2.3, 3.1, 3.2, 3.3 |
 | Sprint 4 | 3.4, 4.2, 4.3, D.1, D.2 |
+
+---
+
+## Rollback & Cleanup
+
+If you need to remove the drift mitigation setup (e.g., project cancelled, starting fresh):
+
+### Remove Labels
+
+```bash
+# List all drift mitigation labels
+gh label list | grep -E "(priority:|type:|component:|phase:|status:|epic)"
+
+# Delete labels (one at a time or use a loop)
+gh label delete "priority:critical" --yes
+gh label delete "priority:high" --yes
+gh label delete "priority:medium" --yes
+gh label delete "priority:low" --yes
+gh label delete "type:feature" --yes
+gh label delete "type:enhancement" --yes
+gh label delete "type:documentation" --yes
+gh label delete "type:refactor" --yes
+gh label delete "type:testing" --yes
+gh label delete "component:prompts" --yes
+gh label delete "component:agent" --yes
+gh label delete "component:security" --yes
+gh label delete "component:progress" --yes
+gh label delete "component:config" --yes
+gh label delete "phase:1-foundation" --yes
+gh label delete "phase:2-init-quality" --yes
+gh label delete "phase:3-architecture" --yes
+gh label delete "phase:4-validation" --yes
+gh label delete "status:blocked" --yes
+gh label delete "status:ready" --yes
+gh label delete "status:in-review" --yes
+gh label delete "epic" --yes
+```
+
+### Close/Delete Issues
+
+```bash
+# Close all drift mitigation issues
+gh issue list --label "phase:1-foundation" --json number -q '.[].number' | xargs -I{} gh issue close {}
+gh issue list --label "phase:2-init-quality" --json number -q '.[].number' | xargs -I{} gh issue close {}
+gh issue list --label "phase:3-architecture" --json number -q '.[].number' | xargs -I{} gh issue close {}
+gh issue list --label "phase:4-validation" --json number -q '.[].number' | xargs -I{} gh issue close {}
+gh issue list --label "epic" --json number -q '.[].number' | xargs -I{} gh issue close {}
+gh issue list --label "type:documentation" --json number -q '.[].number' | xargs -I{} gh issue close {}
+```
+
+### Delete Milestones
+
+```bash
+# List milestone numbers
+gh api repos/{owner}/{repo}/milestones --jq '.[] | "\(.number) \(.title)"'
+
+# Delete milestones by number
+gh api repos/{owner}/{repo}/milestones/1 -X DELETE
+gh api repos/{owner}/{repo}/milestones/2 -X DELETE
+gh api repos/{owner}/{repo}/milestones/3 -X DELETE
+gh api repos/{owner}/{repo}/milestones/4 -X DELETE
+```
+
+### Delete Project Board
+
+Delete the project board via the GitHub web interface:
+1. Navigate to **Projects** tab
+2. Open "Drift Mitigation Sprint" project
+3. Click **⋯** menu → **Settings**
+4. Scroll to bottom → **Delete project**
 
 ---
 

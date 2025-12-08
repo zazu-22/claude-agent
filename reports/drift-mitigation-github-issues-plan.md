@@ -49,6 +49,21 @@ This document outlines the GitHub issues required to implement the drift mitigat
 
 ---
 
+## Quality Standards
+
+### Test Coverage Requirements
+All new modules must achieve **≥80% test coverage**. This applies to:
+- New Python modules (metrics.py, evaluation.py, decisions.py)
+- Modified core modules (progress.py, security.py, agent.py)
+- Integration tests for new agent phases
+
+### Definition of Done
+- Unit tests pass locally and in CI
+- Test coverage meets ≥80% threshold
+- Code follows project style guidelines (see AGENTS.md)
+
+---
+
 ## Epic Issues
 
 ### Epic 1: Forced Evaluation Checkpoints
@@ -387,6 +402,22 @@ Implement evaluation criteria functions to score generated feature lists.
 - References: drift-mitigation-design.md Section 4.1
 - Requires evaluation module (Issue 2.2)
 - Increases API calls (cost consideration)
+
+**Cost Analysis:**
+| Samples (N) | API Cost Multiplier | Estimated Cost Increase |
+|-------------|---------------------|-------------------------|
+| 1 (baseline) | 1x | $0 (current behavior) |
+| 3 (default) | ~3x | +$0.15-0.45 per init* |
+| 5 (high quality) | ~5x | +$0.30-0.75 per init* |
+
+*Estimated based on Claude Sonnet pricing (~$3/1M input, $15/1M output) with typical spec size of 2-5K tokens.
+Actual costs vary based on spec complexity and feature count.
+
+**Recommendations:**
+- Default to N=3 as balance between quality and cost
+- Add `--no-sampling` flag for cost-sensitive projects
+- Log candidate scores to help users tune N value
+- Consider caching spec parsing to reduce redundant token usage
 
 **Description:**
 Implement multi-sample generation for feature lists with automatic selection of best candidate.
