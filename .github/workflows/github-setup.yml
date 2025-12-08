@@ -52,7 +52,7 @@ jobs:
 
       - name: Run setup task
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_SETUP_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_SETUP_TOKEN }}
         run: |
           ARGS="--task scripts/github_tasks/${{ inputs.task_file }}"
 
