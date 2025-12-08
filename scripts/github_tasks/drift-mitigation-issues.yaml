@@ -4,7 +4,10 @@
 # Creates all issues for the drift mitigation feature sprint.
 # WARNING: Issues are NOT idempotent - only run this file ONCE to avoid duplicates.
 #
-# Total issues: 17 (2 epics, 13 implementation, 2 documentation)
+# Total issues: 18 (2 epics, 14 implementation, 2 documentation)
+#
+# Note: After issues are created, update epic bodies with actual issue
+# numbers since GitHub doesn't auto-link issue titles as checkboxes.
 #
 # Prerequisites:
 #   1. Run drift-mitigation-labels.yaml first
