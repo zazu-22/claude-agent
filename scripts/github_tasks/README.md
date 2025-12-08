@@ -47,7 +47,7 @@ For milestone due dates, you can use relative formats:
 
 ### Via GitHub Actions (Recommended)
 
-1. Add `GITHUB_SETUP_TOKEN` to repository secrets
+1. Add `GH_SETUP_TOKEN` to repository secrets
 2. Navigate to Actions > "GitHub Setup Tasks"
 3. Click "Run workflow"
 4. Select your task file
