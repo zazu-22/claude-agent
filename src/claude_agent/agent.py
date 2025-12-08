@@ -49,6 +49,7 @@ from claude_agent.prompts.loader import (
     get_spec_validate_prompt,
     get_spec_decompose_prompt,
     write_spec_to_project,
+    render_coding_prompt,
 )
 from claude_agent.security import configure_security, set_security_logger
 from claude_agent.logging import (
@@ -57,6 +58,73 @@ from claude_agent.logging import (
     LogLevel,
     SessionStatsTracker,
 )
+from claude_agent.metrics import record_session_metrics, record_validation_metrics
+
+
+# =============================================================================
+# Metrics Helper Functions
+# =============================================================================
+
+
+def parse_evaluation_sections(output: str) -> list[str]:
+    """
+    Parse agent output to identify which evaluation sections were present.
+
+    Returns list of section identifiers: "context", "regression", "plan"
+    """
+    sections = []
+    if "CONTEXT VERIFICATION" in output:
+        sections.append("context")
+    if "REGRESSION VERIFICATION" in output:
+        sections.append("regression")
+    if "IMPLEMENTATION PLAN" in output:
+        sections.append("plan")
+    return sections
+
+
+def count_regressions(output: str) -> int:
+    """
+    Count regressions detected in agent output from REGRESSION VERIFICATION section.
+
+    Parses output like:
+        ### Step B - REGRESSION VERIFICATION
+        - Feature [12]: PASS
+          Evidence: "Login form renders correctly"
+        - Feature [5]: FAIL
+          Evidence: "Button click no longer triggers submit"
+    """
+    section_pattern = re.compile(
+        r"REGRESSION VERIFICATION.*?(?=###|IMPLEMENTATION PLAN|$)",
+        re.DOTALL | re.IGNORECASE,
+    )
+    section_match = section_pattern.search(output)
+
+    if not section_match:
+        return 0
+
+    section_content = section_match.group(0)
+    fail_pattern = re.compile(r":\s*FAIL\b", re.IGNORECASE)
+    fail_matches = fail_pattern.findall(section_content)
+
+    return len(fail_matches)
+
+
+def get_next_session_id(project_dir: Path) -> int:
+    """Determine the next session ID by reading existing progress notes."""
+    from claude_agent.progress import parse_progress_notes
+
+    progress_path = project_dir / "claude-progress.txt"
+    if not progress_path.exists():
+        return 1
+
+    try:
+        entries = parse_progress_notes(progress_path)
+        if not entries:
+            return 1
+        max_session = max(e.session_number for e in entries)
+        return max_session + 1
+    except Exception:
+        return 1
 
 
 @dataclass
@@ -623,6 +691,10 @@ async def run_autonomous_agent(config: Config) -> None:
             # Run coding session
             print_session_header(iteration, is_first_run)
 
+            # Track features at session start for metrics
+            features_at_start, _ = count_passing_tests(project_dir)
+            metrics_session_id = get_next_session_id(project_dir)
+
             # Determine agent type for logging
             agent_type = "initializer" if is_first_run else "coding"
 
@@ -659,10 +731,13 @@ async def run_autonomous_agent(config: Config) -> None:
                 )
                 is_first_run = False  # Only use initializer once
             else:
-                prompt = get_coding_prompt(
+                # Get base coding prompt and render with template variables
+                raw_prompt = get_coding_prompt(
                     init_command=init_command,
                     dev_command=dev_command,
                 )
+                # Render {{last_passed_feature}} variable for regression testing
+                prompt = render_coding_prompt(raw_prompt, project_dir)
 
             # Run session with logging
             async with client:
@@ -676,6 +751,21 @@ async def run_autonomous_agent(config: Config) -> None:
                 status=status,
             )
             stats_tracker.save()
+
+            # Record session metrics for drift detection
+            features_at_end, _ = count_passing_tests(project_dir)
+            features_completed = max(0, features_at_end - features_at_start)
+            evaluation_sections = parse_evaluation_sections(response)
+            regressions = count_regressions(response)
+
+            record_session_metrics(
+                project_dir=project_dir,
+                session_id=metrics_session_id,
+                features_attempted=1,  # Currently one feature per session target
+                features_completed=features_completed,
+                regressions_caught=regressions,
+                evaluation_sections_present=evaluation_sections,
+            )
 
             # Re-check after coding session
             passing, total = count_passing_tests(project_dir)
@@ -762,6 +852,19 @@ async def run_autonomous_agent(config: Config) -> None:
                         t.get("test_index", -1) for t in result.rejected_tests
                     ],
                     summary=result.summary,
+                )
+
+                # Record validation metrics for drift detection
+                record_validation_metrics(
+                    project_dir=project_dir,
+                    verdict=result.verdict.lower(),
+                    features_tested=result.tests_verified or total,
+                    features_failed=len(result.rejected_tests),
+                    failure_reasons=[
+                        t.get("reason", "Unknown")
+                        for t in result.rejected_tests
+                        if t.get("reason")
+                    ],
                 )
 
                 if result.verdict == "APPROVED":

@@ -86,6 +86,45 @@ For example, if this were a chat app, you should perform a test that logs into t
   * Missing hover states
   * Console errors
 
+## MANDATORY SEQUENCE BEFORE IMPLEMENTATION
+
+**CRITICAL: You MUST complete Steps A-C below with explicit output before ANY implementation.**
+**Skipping to implementation without this evidence is a FAILURE MODE that causes drift.**
+
+### Step A - CONTEXT VERIFICATION (explicit output required)
+For each item, state the evidence you found:
+
+- [ ] feature_list.json read:
+  Quote: "[the specific feature I'm implementing, index and full text]"
+
+- [ ] claude-progress.txt read:
+  Quote: "[last session's status line and next steps]"
+
+- [ ] Architectural constraints identified:
+  Quote: "[key decisions from previous sessions that constrain this work]"
+
+### Step B - REGRESSION VERIFICATION (explicit output required)
+Run these verifications and state results:
+
+- Feature {{last_passed_feature}}: PASS/FAIL
+  Evidence: "[what you tested and saw]"
+
+- Feature [index of critical-path feature]: PASS/FAIL
+  Evidence: "[what you tested and saw]"
+
+### Step C - IMPLEMENTATION PLAN (explicit output required)
+Before writing code, state:
+- What I will build: [specific description]
+- Files I will modify: [list]
+- How this connects to existing code: [description]
+- Constraints I must honor: [list from Step A]
+
+### Step D - EXECUTE
+ONLY NOW proceed to implementation (Step 4 below).
+
+**CRITICAL: Steps A-C are WORTHLESS unless you actually performed them.**
+**Evidence quotes above MUST be actual content from files, not placeholders.**
+
 ### STEP 4: CHOOSE ONE FEATURE TO IMPLEMENT
 
 Look at feature_list.json and find the highest-priority feature with "passes": false.

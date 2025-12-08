@@ -308,7 +308,8 @@ def init(project_dir: Path):
 @click.argument(
     "project_dir", type=click.Path(exists=True, path_type=Path), default="."
 )
-def status(project_dir: Path):
+@click.option("--metrics", is_flag=True, help="Show drift metrics summary")
+def status(project_dir: Path, metrics: bool):
     """Show project status and progress.
 
     PROJECT_DIR is the project to check (default: current directory).
@@ -370,6 +371,33 @@ def status(project_dir: Path):
         lines = content.strip().split("\n")
         for line in lines[-20:]:
             click.echo(f"  {line}")
+
+    # Show drift metrics if requested
+    if metrics:
+        from claude_agent.metrics import load_metrics, calculate_drift_indicators
+
+        drift_metrics = load_metrics(project_dir)
+        indicators = calculate_drift_indicators(drift_metrics)
+
+        click.echo("\n--- Drift Metrics ---")
+        click.echo(f"Total Sessions: {drift_metrics.total_sessions}")
+        click.echo(f"Regression Rate: {indicators['regression_rate']:.1f}%")
+        click.echo(f"Velocity Trend: {indicators['velocity_trend']}")
+        click.echo(f"Rejection Rate: {indicators['rejection_rate']:.1f}%")
+
+        if drift_metrics.total_regressions_caught > 0:
+            click.echo(
+                f"Total Regressions Caught: {drift_metrics.total_regressions_caught}"
+            )
+
+        if drift_metrics.sessions:
+            click.echo("\nRecent Sessions:")
+            for session in drift_metrics.sessions[-3:]:
+                click.echo(
+                    f"  Session {session.session_id}: "
+                    f"{session.features_completed} completed, "
+                    f"{session.regressions_caught} regressions"
+                )
 
 
 # =============================================================================
