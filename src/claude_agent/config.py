@@ -311,6 +311,11 @@ def merge_config(
                     ]
 
         # Evaluation settings
+        # Note: EvaluationConfig validates on creation via __post_init__, but we must
+        # re-validate here because we mutate individual fields after creation. This
+        # dual validation is intentional:
+        # 1. __post_init__ catches invalid defaults during development
+        # 2. This explicit call catches invalid combinations from YAML config
         if "evaluation" in file_config:
             eval_config = file_config["evaluation"]
             if "coverage_weight" in eval_config:
@@ -324,7 +329,7 @@ def merge_config(
             if "min_acceptable_score" in eval_config:
                 config.evaluation.min_acceptable_score = eval_config["min_acceptable_score"]
 
-            # Validate weights sum to 1.0
+            # Re-validate after field mutations (see note above)
             try:
                 config.evaluation.validate_weights()
             except ValueError as e:

@@ -492,6 +492,7 @@ def evaluate_feature_list(
     features: list[dict],
     spec: str,
     weights: Optional[EvaluationWeights] = None,
+    patterns: Optional[RequirementPatterns] = None,
 ) -> EvaluationResult:
     """
     Calculate aggregate score for a feature list.
@@ -500,6 +501,7 @@ def evaluate_feature_list(
         features: List of feature dictionaries
         spec: Raw specification text
         weights: Optional custom weights (defaults to standard weights)
+        patterns: Optional custom patterns for requirement extraction and testability
 
     Returns:
         EvaluationResult with all scores and aggregate
@@ -507,8 +509,8 @@ def evaluate_feature_list(
     if weights is None:
         weights = EvaluationWeights()
 
-    coverage = calculate_spec_coverage(features, spec)
-    testability = calculate_testability_score(features)
+    coverage = calculate_spec_coverage(features, spec, patterns)
+    testability = calculate_testability_score(features, patterns)
     granularity = calculate_granularity_score(features)
     independence = calculate_independence_score(features)
 
