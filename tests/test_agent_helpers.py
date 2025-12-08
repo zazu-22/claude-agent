@@ -68,14 +68,18 @@ class TestParseEvaluationSections:
         assert result == []
 
     def test_case_sensitivity(self):
-        """Current implementation is case-sensitive."""
-        # All uppercase - should match
-        output = "CONTEXT VERIFICATION done"
+        """Matching is case-insensitive but requires markdown header format."""
+        # All uppercase with header - should match
+        output = "### CONTEXT VERIFICATION done"
         assert "context" in parse_evaluation_sections(output)
 
-        # Mixed case - won't match (current behavior)
-        output_lower = "Context Verification done"
-        assert "context" not in parse_evaluation_sections(output_lower)
+        # Mixed case with header - should also match (case-insensitive)
+        output_mixed = "### Context Verification done"
+        assert "context" in parse_evaluation_sections(output_mixed)
+
+        # Without markdown header prefix - should NOT match (prevents false positives)
+        output_no_header = "CONTEXT VERIFICATION done"
+        assert "context" not in parse_evaluation_sections(output_no_header)
 
 
 class TestCountRegressions:

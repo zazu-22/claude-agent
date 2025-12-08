@@ -58,6 +58,15 @@ class ProgressEntry:
 # =============================================================================
 # Enhanced Progress Notes Data Classes (for drift mitigation)
 # =============================================================================
+#
+# These dataclasses define the structured format for enhanced session progress
+# tracking with drift mitigation artifacts. They are designed for Sprint 2+
+# when the agent output will be parsed to extract structured evaluation data.
+#
+# Current status: Defined but not yet used. The parsing functions that will
+# populate these dataclasses will be implemented in the enhanced progress
+# parsing phase. See the drift mitigation documentation for planned usage.
+# =============================================================================
 
 
 @dataclass(frozen=True)

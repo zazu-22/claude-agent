@@ -67,7 +67,23 @@ from claude_agent.metrics import (
 
 
 def get_next_session_id(project_dir: Path) -> int:
-    """Determine the next session ID by reading existing progress notes."""
+    """
+    Determine the next session ID by reading metrics file.
+
+    Uses drift-metrics.json as the source of truth for session IDs to avoid
+    race conditions when reading progress notes (which are written by the
+    agent during sessions).
+    """
+    from claude_agent.metrics import load_metrics
+
+    # Use metrics file as source of truth for session IDs
+    # This avoids race conditions with progress notes parsing
+    metrics = load_metrics(project_dir)
+    if metrics.sessions:
+        max_session = max(s.session_id for s in metrics.sessions)
+        return max_session + 1
+
+    # Fall back to progress notes for backwards compatibility
     from claude_agent.progress import parse_progress_notes
 
     progress_path = project_dir / "claude-progress.txt"
@@ -711,20 +727,26 @@ async def run_autonomous_agent(config: Config) -> None:
 
             # Record session metrics for drift detection
             features_at_end, _ = count_passing_tests(project_dir)
-            features_completed = max(0, features_at_end - features_at_start)
+            # Allow negative values: if regression verification marks features as failing,
+            # we want to capture that delta rather than reporting 0
+            features_completed = features_at_end - features_at_start
             evaluation_sections = parse_evaluation_sections(response)
             regressions = count_regressions(response)
 
             # The coding agent is designed to target exactly one feature per session.
-            # This is a core constraint of the drift mitigation architecture:
+            # This is a core architectural constraint for drift mitigation:
             # - Small, focused sessions reduce stochastic cascade drift
             # - Single-feature scope makes regression verification tractable
-            # TODO: If multi-feature sessions are implemented in Sprint 2+,
-            #       calculate features_attempted dynamically from session output.
+            # - Predictable session duration enables better progress tracking
+            #
+            # If multi-feature sessions are needed in the future, calculate
+            # features_attempted dynamically by parsing the session output for
+            # "implementing Feature #N" patterns or similar markers.
+            features_attempted = 1
             record_session_metrics(
                 project_dir=project_dir,
                 session_id=metrics_session_id,
-                features_attempted=1,
+                features_attempted=features_attempted,
                 features_completed=features_completed,
                 regressions_caught=regressions,
                 evaluation_sections_present=evaluation_sections,

@@ -73,7 +73,15 @@ def render_coding_prompt(template: str, project_dir: Path) -> str:
 
 
 def load_prompt(name: str) -> str:
-    """Load a prompt template from the prompts directory."""
+    """
+    Load a prompt template from the prompts directory.
+
+    Args:
+        name: Name of the prompt file (without .md extension)
+
+    Returns:
+        Contents of the prompt template file
+    """
     prompt_path = PROMPTS_DIR / f"{name}.md"
     return prompt_path.read_text()
 
@@ -83,6 +91,13 @@ def render_template(template: str, variables: dict[str, str]) -> str:
     Render a template with variable substitution.
 
     Uses {{variable_name}} syntax for placeholders.
+
+    Args:
+        template: Template string with {{variable}} placeholders
+        variables: Dictionary mapping variable names to values
+
+    Returns:
+        Rendered template with all placeholders replaced
     """
     result = template
     for key, value in variables.items():

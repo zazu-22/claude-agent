@@ -19,13 +19,14 @@ logger = logging.getLogger(__name__)
 METRICS_FILENAME = "drift-metrics.json"
 
 # Velocity trend detection thresholds
-# 10% chosen to filter session-to-session noise while detecting meaningful changes.
-# Empirical observation suggests normal variance is ~5-8% between sessions.
+# Initial estimate: 10% chosen to filter session-to-session noise while detecting
+# meaningful changes. TODO: Tune these thresholds after collecting production data
+# from multiple projects to establish actual variance baselines.
 VELOCITY_TREND_THRESHOLD_PERCENT = 0.10
 
 # Minimum absolute difference required to trigger trend detection.
-# Prevents false "decreasing" trend when going from 1.5 to 1.4 features/session.
-# Only trigger trend detection if the absolute difference is at least 0.5 features.
+# Initial estimate: Prevents false "decreasing" trend when going from 1.5 to 1.4
+# features/session. TODO: Validate this threshold with real session data.
 VELOCITY_MIN_ABSOLUTE_THRESHOLD = 0.5
 
 
@@ -403,21 +404,43 @@ def calculate_drift_indicators(metrics: DriftMetrics) -> dict:
 # Expected evaluation sections for the coding agent
 EXPECTED_EVAL_SECTIONS = {"context", "regression", "plan"}
 
+# Regex patterns for evaluation section headers
+# These require the header format: "### Step X - SECTION_NAME" or "## SECTION_NAME"
+# to avoid false matches on echoed text or comments about sections
+# Allow optional leading whitespace for indented output
+CONTEXT_SECTION_PATTERN = re.compile(
+    r"^\s*#{2,3}\s*(?:Step\s*[A-Z]?\s*[-–—]?\s*)?CONTEXT\s+VERIFICATION",
+    re.MULTILINE | re.IGNORECASE,
+)
+REGRESSION_SECTION_PATTERN = re.compile(
+    r"^\s*#{2,3}\s*(?:Step\s*[A-Z]?\s*[-–—]?\s*)?REGRESSION\s+VERIFICATION",
+    re.MULTILINE | re.IGNORECASE,
+)
+PLAN_SECTION_PATTERN = re.compile(
+    r"^\s*#{2,3}\s*(?:Step\s*[A-Z]?\s*[-–—]?\s*)?IMPLEMENTATION\s+PLAN",
+    re.MULTILINE | re.IGNORECASE,
+)
+
 
 def parse_evaluation_sections(output: str) -> list[str]:
     """
     Parse agent output to identify which evaluation sections were present.
+
+    Uses regex patterns to match structured headers (e.g., "### Step A - CONTEXT
+    VERIFICATION") rather than simple substring matching. This prevents false
+    positives from echoed headers or comments about sections.
 
     Logs a warning if expected sections are missing from the output.
 
     Returns list of section identifiers: "context", "regression", "plan"
     """
     sections = []
-    if "CONTEXT VERIFICATION" in output:
+
+    if CONTEXT_SECTION_PATTERN.search(output):
         sections.append("context")
-    if "REGRESSION VERIFICATION" in output:
+    if REGRESSION_SECTION_PATTERN.search(output):
         sections.append("regression")
-    if "IMPLEMENTATION PLAN" in output:
+    if PLAN_SECTION_PATTERN.search(output):
         sections.append("plan")
 
     # Warn about missing sections (indicates potential drift/skipped evaluation)
@@ -438,18 +461,35 @@ def count_regressions(output: str) -> int:
           Evidence: "Login form renders correctly"
         - Feature [5]: FAIL
           Evidence: "Button click no longer triggers submit"
+
+    Uses specific patterns to avoid false matches:
+    - Requires the section header to be a markdown heading
+    - Matches "Feature [N]: FAIL" or "Feature #N: FAIL" patterns specifically
+    - Stops at the next section header (###) or IMPLEMENTATION PLAN
     """
+    # Look for the REGRESSION VERIFICATION section starting with a markdown header
+    # Allow optional leading whitespace for indented output
+    # Use \Z for end of string ($ in multiline mode matches end of each line)
     section_pattern = re.compile(
-        r"REGRESSION VERIFICATION.*?(?=###|IMPLEMENTATION PLAN|$)",
-        re.DOTALL | re.IGNORECASE,
+        r"^\s*#{2,3}\s*(?:Step\s*[A-Z]?\s*[-–—]?\s*)?REGRESSION\s+VERIFICATION"
+        r"(.*?)(?=^\s*#{2,3}\s|IMPLEMENTATION\s+PLAN|\Z)",
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
     )
     section_match = section_pattern.search(output)
 
     if not section_match:
         return 0
 
-    section_content = section_match.group(0)
-    fail_pattern = re.compile(r":\s*FAIL\b", re.IGNORECASE)
+    section_content = section_match.group(1)
+
+    # Match specific feature failure patterns:
+    # - "Feature [12]: FAIL" or "Feature #12: FAIL"
+    # - "-" at start of line indicates a list item
+    # This avoids matching unrelated "FAIL" text in evidence or comments
+    fail_pattern = re.compile(
+        r"^\s*[-*]\s*Feature\s*[#\[]?\d+[\]:]?\s*:\s*FAIL\b",
+        re.MULTILINE | re.IGNORECASE,
+    )
     fail_matches = fail_pattern.findall(section_content)
 
     return len(fail_matches)
