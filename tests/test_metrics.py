@@ -16,6 +16,7 @@ from claude_agent.metrics import (
     record_session_metrics,
     record_validation_metrics,
     calculate_drift_indicators,
+    validate_metrics_integrity,
 )
 
 
@@ -664,3 +665,137 @@ class TestIntegration:
 
         assert len(loaded.validation_attempts) == 1
         assert loaded.validation_attempts[0].verdict == "approved"
+
+
+class TestValidateMetricsIntegrity:
+    """Tests for validate_metrics_integrity() function."""
+
+    def test_valid_metrics_returns_empty_list(self):
+        """Valid consistent metrics should return no errors."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="2024-01-15T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=3,
+                    regressions_caught=1,
+                ),
+                SessionMetrics(
+                    session_id=2,
+                    timestamp="2024-01-15T11:00:00Z",
+                    features_attempted=5,
+                    features_completed=5,
+                    regressions_caught=0,
+                ),
+            ],
+            validation_attempts=[
+                ValidationMetrics(
+                    attempt=1,
+                    timestamp="2024-01-15T12:00:00Z",
+                    verdict="rejected",
+                    features_tested=10,
+                    features_failed=2,
+                )
+            ],
+            total_sessions=2,
+            total_regressions_caught=1,
+            average_features_per_session=4.0,  # (3+5)/2
+            rejection_count=1,
+        )
+        errors = validate_metrics_integrity(metrics)
+        assert errors == []
+
+    def test_detects_total_sessions_mismatch(self):
+        """Detects when total_sessions doesn't match session count."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="2024-01-15T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=3,
+                )
+            ],
+            total_sessions=5,  # Wrong - should be 1
+        )
+        errors = validate_metrics_integrity(metrics)
+        assert any("total_sessions mismatch" in e for e in errors)
+
+    def test_detects_regressions_mismatch(self):
+        """Detects when total_regressions_caught doesn't match sum."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="2024-01-15T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=3,
+                    regressions_caught=2,
+                ),
+                SessionMetrics(
+                    session_id=2,
+                    timestamp="2024-01-15T11:00:00Z",
+                    features_attempted=5,
+                    features_completed=5,
+                    regressions_caught=1,
+                ),
+            ],
+            total_sessions=2,
+            total_regressions_caught=10,  # Wrong - should be 3
+        )
+        errors = validate_metrics_integrity(metrics)
+        assert any("total_regressions_caught mismatch" in e for e in errors)
+
+    def test_detects_average_mismatch(self):
+        """Detects when average_features_per_session is wrong."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="2024-01-15T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=4,
+                ),
+                SessionMetrics(
+                    session_id=2,
+                    timestamp="2024-01-15T11:00:00Z",
+                    features_attempted=5,
+                    features_completed=6,
+                ),
+            ],
+            total_sessions=2,
+            average_features_per_session=10.0,  # Wrong - should be 5.0
+        )
+        errors = validate_metrics_integrity(metrics)
+        assert any("average_features_per_session mismatch" in e for e in errors)
+
+    def test_detects_rejection_count_mismatch(self):
+        """Detects when rejection_count doesn't match verdict counts."""
+        metrics = DriftMetrics(
+            validation_attempts=[
+                ValidationMetrics(
+                    attempt=1,
+                    timestamp="2024-01-15T10:00:00Z",
+                    verdict="rejected",
+                    features_tested=10,
+                    features_failed=2,
+                ),
+                ValidationMetrics(
+                    attempt=2,
+                    timestamp="2024-01-15T11:00:00Z",
+                    verdict="approved",
+                    features_tested=10,
+                    features_failed=0,
+                ),
+            ],
+            rejection_count=5,  # Wrong - should be 1
+        )
+        errors = validate_metrics_integrity(metrics)
+        assert any("rejection_count mismatch" in e for e in errors)
+
+    def test_empty_metrics_is_valid(self):
+        """Empty metrics with zeroed aggregates is valid."""
+        metrics = DriftMetrics()
+        errors = validate_metrics_integrity(metrics)
+        assert errors == []

@@ -58,55 +58,12 @@ from claude_agent.logging import (
     LogLevel,
     SessionStatsTracker,
 )
-from claude_agent.metrics import record_session_metrics, record_validation_metrics
-
-
-# =============================================================================
-# Metrics Helper Functions
-# =============================================================================
-
-
-def parse_evaluation_sections(output: str) -> list[str]:
-    """
-    Parse agent output to identify which evaluation sections were present.
-
-    Returns list of section identifiers: "context", "regression", "plan"
-    """
-    sections = []
-    if "CONTEXT VERIFICATION" in output:
-        sections.append("context")
-    if "REGRESSION VERIFICATION" in output:
-        sections.append("regression")
-    if "IMPLEMENTATION PLAN" in output:
-        sections.append("plan")
-    return sections
-
-
-def count_regressions(output: str) -> int:
-    """
-    Count regressions detected in agent output from REGRESSION VERIFICATION section.
-
-    Parses output like:
-        ### Step B - REGRESSION VERIFICATION
-        - Feature [12]: PASS
-          Evidence: "Login form renders correctly"
-        - Feature [5]: FAIL
-          Evidence: "Button click no longer triggers submit"
-    """
-    section_pattern = re.compile(
-        r"REGRESSION VERIFICATION.*?(?=###|IMPLEMENTATION PLAN|$)",
-        re.DOTALL | re.IGNORECASE,
-    )
-    section_match = section_pattern.search(output)
-
-    if not section_match:
-        return 0
-
-    section_content = section_match.group(0)
-    fail_pattern = re.compile(r":\s*FAIL\b", re.IGNORECASE)
-    fail_matches = fail_pattern.findall(section_content)
-
-    return len(fail_matches)
+from claude_agent.metrics import (
+    count_regressions,
+    parse_evaluation_sections,
+    record_session_metrics,
+    record_validation_metrics,
+)
 
 
 def get_next_session_id(project_dir: Path) -> int:
@@ -758,10 +715,16 @@ async def run_autonomous_agent(config: Config) -> None:
             evaluation_sections = parse_evaluation_sections(response)
             regressions = count_regressions(response)
 
+            # The coding agent is designed to target exactly one feature per session.
+            # This is a core constraint of the drift mitigation architecture:
+            # - Small, focused sessions reduce stochastic cascade drift
+            # - Single-feature scope makes regression verification tractable
+            # TODO: If multi-feature sessions are implemented in Sprint 2+,
+            #       calculate features_attempted dynamically from session output.
             record_session_metrics(
                 project_dir=project_dir,
                 session_id=metrics_session_id,
-                features_attempted=1,  # Currently one feature per session target
+                features_attempted=1,
                 features_completed=features_completed,
                 regressions_caught=regressions,
                 evaluation_sections_present=evaluation_sections,

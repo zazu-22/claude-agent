@@ -6,13 +6,27 @@ Track metrics to measure and detect drift in long-running agent sessions.
 """
 
 import json
+import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 
 METRICS_FILENAME = "drift-metrics.json"
+
+# Velocity trend detection thresholds
+# 10% chosen to filter session-to-session noise while detecting meaningful changes.
+# Empirical observation suggests normal variance is ~5-8% between sessions.
+VELOCITY_TREND_THRESHOLD_PERCENT = 0.10
+
+# Minimum absolute difference required to trigger trend detection.
+# Prevents false "decreasing" trend when going from 1.5 to 1.4 features/session.
+# Only trigger trend detection if the absolute difference is at least 0.5 features.
+VELOCITY_MIN_ABSOLUTE_THRESHOLD = 0.5
 
 
 @dataclass
@@ -82,7 +96,7 @@ def load_metrics(project_dir: Path) -> DriftMetrics:
             for val_data in data.get("validation_attempts", [])
         ]
 
-        return DriftMetrics(
+        metrics = DriftMetrics(
             sessions=sessions,
             validation_attempts=validation_attempts,
             total_sessions=data.get("total_sessions", 0),
@@ -90,9 +104,74 @@ def load_metrics(project_dir: Path) -> DriftMetrics:
             average_features_per_session=data.get("average_features_per_session", 0.0),
             rejection_count=data.get("rejection_count", 0),
         )
+
+        # Validate integrity and log warnings for any inconsistencies
+        integrity_errors = validate_metrics_integrity(metrics)
+        if integrity_errors:
+            for error in integrity_errors:
+                logger.warning(f"Metrics integrity issue: {error}")
+
+        return metrics
     except (json.JSONDecodeError, IOError, KeyError, TypeError):
         # Return empty metrics on any error
         return DriftMetrics()
+
+
+def validate_metrics_integrity(metrics: DriftMetrics) -> list[str]:
+    """
+    Verify aggregate metrics match calculated values from sessions.
+
+    Checks for consistency between stored aggregates and the actual
+    session data. Inconsistencies may indicate file corruption or
+    manual edits that introduced errors.
+
+    Args:
+        metrics: DriftMetrics object to validate
+
+    Returns:
+        List of integrity error descriptions (empty if valid)
+    """
+    errors = []
+
+    # Validate total_sessions matches actual session count
+    expected_sessions = len(metrics.sessions)
+    if metrics.total_sessions != expected_sessions:
+        errors.append(
+            f"total_sessions mismatch: stored={metrics.total_sessions}, "
+            f"calculated={expected_sessions}"
+        )
+
+    # Validate total_regressions_caught
+    expected_regressions = sum(s.regressions_caught for s in metrics.sessions)
+    if metrics.total_regressions_caught != expected_regressions:
+        errors.append(
+            f"total_regressions_caught mismatch: stored={metrics.total_regressions_caught}, "
+            f"calculated={expected_regressions}"
+        )
+
+    # Validate average_features_per_session
+    if expected_sessions > 0:
+        expected_avg = (
+            sum(s.features_completed for s in metrics.sessions) / expected_sessions
+        )
+        if abs(metrics.average_features_per_session - expected_avg) > 0.01:
+            errors.append(
+                f"average_features_per_session mismatch: "
+                f"stored={metrics.average_features_per_session:.2f}, "
+                f"calculated={expected_avg:.2f}"
+            )
+
+    # Validate rejection_count
+    expected_rejections = sum(
+        1 for v in metrics.validation_attempts if v.verdict == "rejected"
+    )
+    if metrics.rejection_count != expected_rejections:
+        errors.append(
+            f"rejection_count mismatch: stored={metrics.rejection_count}, "
+            f"calculated={expected_rejections}"
+        )
+
+    return errors
 
 
 def save_metrics(project_dir: Path, metrics: DriftMetrics) -> None:
@@ -294,8 +373,12 @@ def calculate_drift_indicators(metrics: DriftMetrics) -> dict:
         first_avg = sum(s.features_completed for s in first_half) / len(first_half)
         second_avg = sum(s.features_completed for s in second_half) / len(second_half)
 
-        # Determine trend (with 10% threshold to avoid noise)
-        threshold = first_avg * 0.1
+        # Determine trend using configured thresholds
+        # Use max of percentage threshold and absolute minimum to avoid noise
+        threshold = max(
+            first_avg * VELOCITY_TREND_THRESHOLD_PERCENT,
+            VELOCITY_MIN_ABSOLUTE_THRESHOLD,
+        )
         if second_avg > first_avg + threshold:
             result["velocity_trend"] = "increasing"
         elif second_avg < first_avg - threshold:
@@ -310,3 +393,63 @@ def calculate_drift_indicators(metrics: DriftMetrics) -> dict:
         ) * 100
 
     return result
+
+
+# =============================================================================
+# Output Parsing Functions
+# =============================================================================
+
+
+# Expected evaluation sections for the coding agent
+EXPECTED_EVAL_SECTIONS = {"context", "regression", "plan"}
+
+
+def parse_evaluation_sections(output: str) -> list[str]:
+    """
+    Parse agent output to identify which evaluation sections were present.
+
+    Logs a warning if expected sections are missing from the output.
+
+    Returns list of section identifiers: "context", "regression", "plan"
+    """
+    sections = []
+    if "CONTEXT VERIFICATION" in output:
+        sections.append("context")
+    if "REGRESSION VERIFICATION" in output:
+        sections.append("regression")
+    if "IMPLEMENTATION PLAN" in output:
+        sections.append("plan")
+
+    # Warn about missing sections (indicates potential drift/skipped evaluation)
+    missing = EXPECTED_EVAL_SECTIONS - set(sections)
+    if missing:
+        logger.warning(f"Evaluation sections missing from agent output: {sorted(missing)}")
+
+    return sections
+
+
+def count_regressions(output: str) -> int:
+    """
+    Count regressions detected in agent output from REGRESSION VERIFICATION section.
+
+    Parses output like:
+        ### Step B - REGRESSION VERIFICATION
+        - Feature [12]: PASS
+          Evidence: "Login form renders correctly"
+        - Feature [5]: FAIL
+          Evidence: "Button click no longer triggers submit"
+    """
+    section_pattern = re.compile(
+        r"REGRESSION VERIFICATION.*?(?=###|IMPLEMENTATION PLAN|$)",
+        re.DOTALL | re.IGNORECASE,
+    )
+    section_match = section_pattern.search(output)
+
+    if not section_match:
+        return 0
+
+    section_content = section_match.group(0)
+    fail_pattern = re.compile(r":\s*FAIL\b", re.IGNORECASE)
+    fail_matches = fail_pattern.findall(section_content)
+
+    return len(fail_matches)
