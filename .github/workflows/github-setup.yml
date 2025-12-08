@@ -1,0 +1,78 @@
+name: GitHub Setup Tasks
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_file:
+        description: 'Task file to execute (in scripts/github_tasks/)'
+        required: true
+        type: string
+        default: 'example.yaml'
+      dry_run:
+        description: 'Dry run mode (no changes made)'
+        type: boolean
+        default: true
+      verbose:
+        description: 'Verbose output'
+        type: boolean
+        default: false
+
+jobs:
+  setup:
+    name: Run GitHub Setup Task
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests pyyaml
+
+      - name: Validate task file exists
+        run: |
+          TASK_PATH="scripts/github_tasks/${{ inputs.task_file }}"
+          if [ ! -f "$TASK_PATH" ]; then
+            echo "Error: Task file not found: $TASK_PATH"
+            echo ""
+            echo "Available task files:"
+            ls -la scripts/github_tasks/*.yaml 2>/dev/null || echo "  (none found)"
+            exit 1
+          fi
+          echo "Task file found: $TASK_PATH"
+
+      - name: Run setup task
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_SETUP_TOKEN }}
+        run: |
+          ARGS="--task scripts/github_tasks/${{ inputs.task_file }}"
+
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          if [ "${{ inputs.verbose }}" = "true" ]; then
+            ARGS="$ARGS --verbose"
+          fi
+
+          echo "Running: python scripts/github_api.py $ARGS"
+          echo ""
+          python scripts/github_api.py $ARGS
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## GitHub Setup Task Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Task file:** ${{ inputs.task_file }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dry run:** ${{ inputs.dry_run }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
