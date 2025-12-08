@@ -22,7 +22,7 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -111,18 +111,31 @@ class GitHubAPI:
         response = self.session.request(method, url, json=data, params=params)
 
         if response.status_code == 422:
-            # Often means resource already exists
-            error_data = response.json()
-            if "already_exists" in str(error_data):
-                print(f"  [SKIP] Already exists")
-                return {"skipped": True, "reason": "already_exists"}
+            # Often means resource already exists - check error code
+            try:
+                error_data = response.json()
+                errors = error_data.get("errors", [])
+                # Check for specific "already_exists" error code from GitHub API
+                if any(e.get("code") == "already_exists" for e in errors):
+                    print(f"  [SKIP] Already exists")
+                    return {"skipped": True, "reason": "already_exists"}
+                # Fallback: check message text
+                if "already_exists" in str(error_data):
+                    print(f"  [SKIP] Already exists")
+                    return {"skipped": True, "reason": "already_exists"}
+            except (ValueError, KeyError):
+                pass  # JSON parsing failed, raise as error
             raise GitHubAPIError(response)
         elif response.status_code >= 400:
             raise GitHubAPIError(response)
 
         if response.status_code == 204:
             return None
-        return response.json()
+
+        try:
+            return response.json()
+        except ValueError:
+            return None
 
     def get(self, endpoint: str, params: dict | None = None) -> dict | list | None:
         return self._request("GET", endpoint, params=params)
@@ -187,18 +200,20 @@ class TaskRunner:
 
     def run_task(self, task_file: Path) -> list[TaskResult]:
         """Run all operations defined in a task file."""
+        with open(task_file) as f:
+            task_data = yaml.safe_load(f)
+
+        # Override repo if specified in task file (without mutating original config)
+        if "repo" in task_data:
+            self.config = replace(self.config, repo=task_data["repo"])
+            # Update API client headers if repo changed
+            self.api.config = self.config
+
         print(f"\n{'=' * 60}")
         print(f"Running task: {task_file.name}")
         print(f"Repository: {self.config.repo}")
         print(f"Dry run: {self.config.dry_run}")
         print(f"{'=' * 60}\n")
-
-        with open(task_file) as f:
-            task_data = yaml.safe_load(f)
-
-        # Override repo if specified in task file
-        if "repo" in task_data:
-            self.config.repo = task_data["repo"]
 
         # Pre-fetch existing milestones so issues can reference any milestone
         self._load_existing_milestones()
@@ -217,13 +232,28 @@ class TaskRunner:
         return self.results
 
     def _load_existing_milestones(self) -> None:
-        """Pre-fetch all existing milestones to support issue milestone references."""
+        """Pre-fetch all existing milestones to support issue milestone references.
+
+        Note: Fetches up to 300 milestones (3 pages). Repos with more milestones
+        may have incomplete data for older milestones.
+        """
         if self.config.dry_run:
             return
         endpoint = f"/repos/{self.config.repo}/milestones"
-        existing = self.api.get(endpoint, params={"state": "all", "per_page": 100}) or []
-        for m in existing:
-            self.created_milestones[m["title"]] = m["number"]
+
+        # Paginate through milestones (up to 3 pages = 300 milestones)
+        max_pages = 3
+        for page in range(1, max_pages + 1):
+            result = self.api.get(
+                endpoint,
+                params={"state": "all", "per_page": 100, "page": page}
+            ) or []
+            if not result:
+                break
+            for m in result:
+                self.created_milestones[m["title"]] = m["number"]
+            if len(result) < 100:
+                break  # Last page
         if self.config.verbose and self.created_milestones:
             print(f"  [INFO] Loaded {len(self.created_milestones)} existing milestones")
 
@@ -376,7 +406,13 @@ class TaskRunner:
         return ""
 
     def _parse_relative_date(self, relative: str) -> str:
-        """Parse relative date like '+2 weeks' into ISO format."""
+        """Parse relative date like '+2 weeks' into ISO format.
+
+        Supports: +N day(s), +N week(s), +N month(s)
+        Note: Months are approximated as 30 days for simplicity.
+
+        Returns the original string if parsing fails.
+        """
         parts = relative.strip("+").split()
         if len(parts) != 2:
             return relative

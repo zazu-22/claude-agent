@@ -41,7 +41,7 @@ issues:
 For milestone due dates, you can use relative formats:
 - `+1 day` / `+5 days`
 - `+1 week` / `+2 weeks`
-- `+1 month` / `+3 months`
+- `+1 month` / `+3 months` (approximated as 30 days)
 
 ## Usage
 
