@@ -123,8 +123,9 @@ class GitHubAPI:
                 if "already_exists" in str(error_data):
                     print(f"  [SKIP] Already exists")
                     return {"skipped": True, "reason": "already_exists"}
-            except (ValueError, KeyError):
-                pass  # JSON parsing failed, raise as error
+            except (ValueError, KeyError) as e:
+                if self.config.verbose:
+                    print(f"  [WARN] Failed to parse 422 response: {e}")
             raise GitHubAPIError(response)
         elif response.status_code >= 400:
             raise GitHubAPIError(response)
@@ -203,11 +204,10 @@ class TaskRunner:
         with open(task_file) as f:
             task_data = yaml.safe_load(f)
 
-        # Override repo if specified in task file (without mutating original config)
+        # Override repo if specified in task file (create new instances to avoid mutation)
         if "repo" in task_data:
             self.config = replace(self.config, repo=task_data["repo"])
-            # Update API client headers if repo changed
-            self.api.config = self.config
+            self.api = GitHubAPI(self.config)
 
         print(f"\n{'=' * 60}")
         print(f"Running task: {task_file.name}")
