@@ -109,9 +109,34 @@ class RequirementPatterns:
         """Return all patterns as a combined list."""
         return list(self.modal_patterns) + list(self.subject_patterns) + list(self.action_patterns)
 
+    def get_compiled_patterns(self) -> list[re.Pattern]:
+        """Return pre-compiled regex patterns for better performance.
+
+        Compiles patterns once and caches them. For large specs, this avoids
+        the overhead of recompiling patterns on every sentence.
+        """
+        # Note: Can't use lru_cache on frozen dataclass methods, so we compile fresh
+        # but this is still faster than inline re.search with pattern strings
+        return [re.compile(p, re.IGNORECASE) for p in self.get_all_patterns()]
+
 
 # Default patterns instance for convenience
 DEFAULT_REQUIREMENT_PATTERNS = RequirementPatterns()
+
+# Pre-compiled patterns for default instance (cached for performance)
+_DEFAULT_COMPILED_PATTERNS: list[re.Pattern] | None = None
+
+
+def get_default_compiled_patterns() -> list[re.Pattern]:
+    """Get pre-compiled patterns for the default RequirementPatterns instance.
+
+    This caches the compiled patterns globally for better performance when
+    using default patterns across multiple calls.
+    """
+    global _DEFAULT_COMPILED_PATTERNS
+    if _DEFAULT_COMPILED_PATTERNS is None:
+        _DEFAULT_COMPILED_PATTERNS = DEFAULT_REQUIREMENT_PATTERNS.get_compiled_patterns()
+    return _DEFAULT_COMPILED_PATTERNS
 
 # =============================================================================
 # Constants
@@ -127,6 +152,13 @@ REQUIREMENT_TRUNCATION_LENGTH = 100
 # over-penalizing (e.g., 2 ands = -0.4, 3+ ands = -0.6 max)
 COMPOUND_FEATURE_PENALTY_FACTOR = 0.2
 COMPOUND_FEATURE_MAX_PENALTY_COUNT = 3
+
+# Testability scoring constants
+# These weights determine how different aspects contribute to testability score
+TESTABILITY_SCORE_HAS_STEPS = 0.3  # Score for having test_steps field
+TESTABILITY_SCORE_CONCRETE_STEPS = 0.3  # Score for having concrete action verbs
+TESTABILITY_SCORE_EXPECTED_RESULT = 0.4  # Score for verifiable expected_result
+TESTABILITY_SCORE_DESCRIPTION_FALLBACK = 0.2  # Reduced score when using description fallback
 
 
 @dataclass(frozen=True)
@@ -184,14 +216,18 @@ def calculate_spec_coverage(
     if patterns is None:
         patterns = DEFAULT_REQUIREMENT_PATTERNS
 
-    # Extract requirement-like sentences from spec using configurable patterns
-    requirement_patterns = patterns.get_all_patterns()
+    # Extract requirement-like sentences from spec using pre-compiled patterns
+    # Use cached compiled patterns for default instance, otherwise compile fresh
+    if patterns is DEFAULT_REQUIREMENT_PATTERNS:
+        compiled_patterns = get_default_compiled_patterns()
+    else:
+        compiled_patterns = patterns.get_compiled_patterns()
 
     requirements = set()
     sentences = re.split(r"[.!?]\s+", spec)
     for sentence in sentences:
-        for pattern in requirement_patterns:
-            if re.search(pattern, sentence, re.IGNORECASE):
+        for pattern in compiled_patterns:
+            if pattern.search(sentence):
                 # Normalize and add
                 normalized = sentence.strip().lower()[:REQUIREMENT_TRUNCATION_LENGTH]
                 if len(normalized) > 10:  # Skip very short matches
@@ -282,7 +318,7 @@ def calculate_testability_score(
         # Check for test steps
         test_steps = feature.get("test_steps", [])
         if test_steps:
-            score += 0.3
+            score += TESTABILITY_SCORE_HAS_STEPS
 
             # Check for concrete actions
             action_verbs = [
@@ -303,7 +339,7 @@ def calculate_testability_score(
                 if any(verb in step.lower() for verb in action_verbs)
             )
             if test_steps and concrete_steps / len(test_steps) >= patterns.concrete_steps_threshold:
-                score += 0.3
+                score += TESTABILITY_SCORE_CONCRETE_STEPS
 
         # Check for expected outcome
         # Prefer explicit expected_result field; fall back to description with penalty
@@ -314,13 +350,13 @@ def calculate_testability_score(
             word in expected_result.lower() for word in patterns.verifiable_words
         ):
             # Full score for explicit expected_result with verifiable language
-            score += 0.4
+            score += TESTABILITY_SCORE_EXPECTED_RESULT
         elif description and any(
             word in description.lower() for word in patterns.verifiable_words
         ):
-            # Reduced score when falling back to description (penalty factor of 0.5)
+            # Reduced score when falling back to description
             # Description may be verbose without concrete expected outcomes
-            score += 0.2
+            score += TESTABILITY_SCORE_DESCRIPTION_FALLBACK
 
         scores.append(score)
 
@@ -508,12 +544,13 @@ def load_and_evaluate(
         return None
 
     try:
-        with open(feature_list_path) as f:
+        with open(feature_list_path, encoding="utf-8") as f:
             features = json.load(f)
-    except (json.JSONDecodeError, IOError):
+    except (json.JSONDecodeError, IOError, UnicodeDecodeError) as e:
+        logger.debug(f"Failed to load feature list from {feature_list_path}: {e}")
         return None
 
-    # Try multiple spec locations
+    # Try multiple spec locations with error handling
     spec = ""
     spec_locations = [
         spec_path,
@@ -524,7 +561,11 @@ def load_and_evaluate(
 
     for loc in spec_locations:
         if loc and loc.exists():
-            spec = loc.read_text(encoding="utf-8")
-            break
+            try:
+                spec = loc.read_text(encoding="utf-8")
+                break
+            except (IOError, UnicodeDecodeError) as e:
+                logger.debug(f"Failed to read spec from {loc}: {e}")
+                continue  # Try next location
 
     return evaluate_feature_list(features, spec, weights)

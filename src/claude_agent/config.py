@@ -63,6 +63,19 @@ class EvaluationConfig:
     # Threshold for acceptable feature lists (future use with Best-of-N)
     min_acceptable_score: float = 0.6
 
+    def __post_init__(self) -> None:
+        """Validate configuration at creation time."""
+        self.validate()
+
+    def validate(self) -> None:
+        """Validate all configuration fields.
+
+        Raises:
+            ValueError: If any field has an invalid value
+        """
+        self.validate_weights()
+        self.validate_score_threshold()
+
     def validate_weights(self) -> None:
         """Validate that weights sum to 1.0 within tolerance.
 
@@ -77,6 +90,17 @@ class EvaluationConfig:
         )
         if not (0.99 <= total <= 1.01):
             raise ValueError(f"Weights must sum to 1.0, got {total}")
+
+    def validate_score_threshold(self) -> None:
+        """Validate that min_acceptable_score is in valid range.
+
+        Raises:
+            ValueError: If min_acceptable_score is not between 0.0 and 1.0
+        """
+        if not (0.0 <= self.min_acceptable_score <= 1.0):
+            raise ValueError(
+                f"min_acceptable_score must be between 0.0 and 1.0, got {self.min_acceptable_score}"
+            )
 
 
 @dataclass

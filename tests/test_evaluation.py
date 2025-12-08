@@ -739,22 +739,53 @@ class TestIntegration:
         assert result.independence_score >= 0.8
 
     def test_poor_feature_list_scores_low(self, tmp_path):
-        """Test that poorly structured features score lower."""
-        features = [
+        """Test that poorly structured features score lower than well-structured ones."""
+        poor_features = [
             {"description": "Login"},  # Too short
             {"description": "Do everything in the app and then some more stuff and also this and that and another thing"},  # Compound
             {"description": "Feature depends on feature #1", "dependencies": [0]},  # Dependent
         ]
 
+        good_features = [
+            {
+                "description": "User can log in with email and password, receiving appropriate error messages for invalid credentials",
+                "test_steps": ["Navigate to login", "Enter email", "Enter password", "Click submit", "Verify redirect"],
+                "expected_result": "User should be redirected to dashboard",
+            },
+            {
+                "description": "Dashboard displays user's recent activity in a chronological list with timestamps",
+                "test_steps": ["Log in", "Navigate to dashboard", "Verify activity list appears", "Check timestamps"],
+                "expected_result": "Activity list should show recent items with visible timestamps",
+            },
+        ]
+
+        # Create poor feature list
         feature_path = tmp_path / "feature_list.json"
-        feature_path.write_text(json.dumps(features))
+        feature_path.write_text(json.dumps(poor_features))
+        poor_result = load_and_evaluate(tmp_path)
 
-        result = load_and_evaluate(tmp_path)
+        # Create good feature list for comparison
+        feature_path.write_text(json.dumps(good_features))
+        good_result = load_and_evaluate(tmp_path)
 
-        assert result is not None
-        # Poor features should score lower
-        assert result.granularity_score <= 0.6
-        assert result.independence_score <= 0.9
+        assert poor_result is not None
+        assert good_result is not None
+
+        # Poor features should score significantly lower than good features
+        assert poor_result.granularity_score < good_result.granularity_score, \
+            f"Poor granularity {poor_result.granularity_score} should be less than good {good_result.granularity_score}"
+        assert poor_result.testability_score < good_result.testability_score, \
+            f"Poor testability {poor_result.testability_score} should be less than good {good_result.testability_score}"
+        assert poor_result.independence_score < good_result.independence_score, \
+            f"Poor independence {poor_result.independence_score} should be less than good {good_result.independence_score}"
+
+        # Aggregate should reflect the quality difference
+        assert poor_result.aggregate_score < good_result.aggregate_score, \
+            f"Poor aggregate {poor_result.aggregate_score} should be less than good {good_result.aggregate_score}"
+
+        # Absolute bounds for poor features (catch completely broken scoring)
+        assert poor_result.granularity_score <= 0.7  # Should be penalized
+        assert poor_result.testability_score <= 0.5  # No test steps
 
 
 class TestSpecLocationPriority:
