@@ -7,6 +7,7 @@ import pytest
 from pathlib import Path
 
 from claude_agent.metrics import (
+    FLOAT_COMPARISON_EPSILON,
     METRICS_FILENAME,
     SessionMetrics,
     ValidationMetrics,
@@ -16,6 +17,7 @@ from claude_agent.metrics import (
     record_session_metrics,
     record_validation_metrics,
     calculate_drift_indicators,
+    calculate_evaluation_completeness,
     validate_metrics_integrity,
 )
 
@@ -799,3 +801,166 @@ class TestValidateMetricsIntegrity:
         metrics = DriftMetrics()
         errors = validate_metrics_integrity(metrics)
         assert errors == []
+
+
+class TestCalculateEvaluationCompleteness:
+    """Test calculate_evaluation_completeness function."""
+
+    def test_all_sections_returns_1(self):
+        """All expected sections present returns 1.0."""
+        sections = ["context", "regression", "plan"]
+        assert calculate_evaluation_completeness(sections) == 1.0
+
+    def test_two_of_three_returns_two_thirds(self):
+        """Two of three sections returns 2/3."""
+        sections = ["context", "regression"]
+        score = calculate_evaluation_completeness(sections)
+        assert abs(score - 2 / 3) < FLOAT_COMPARISON_EPSILON
+
+    def test_one_of_three_returns_one_third(self):
+        """One of three sections returns 1/3."""
+        sections = ["plan"]
+        score = calculate_evaluation_completeness(sections)
+        assert abs(score - 1 / 3) < FLOAT_COMPARISON_EPSILON
+
+    def test_empty_list_returns_0(self):
+        """Empty list returns 0.0."""
+        sections = []
+        assert calculate_evaluation_completeness(sections) == 0.0
+
+    def test_ignores_unknown_sections(self):
+        """Unknown section names are ignored."""
+        sections = ["context", "unknown", "regression", "extra"]
+        score = calculate_evaluation_completeness(sections)
+        assert abs(score - 2 / 3) < FLOAT_COMPARISON_EPSILON
+
+
+class TestNewMetricsFields:
+    """Test new metrics fields: features_regressed, evaluation_completeness_score, is_multi_feature."""
+
+    def test_session_metrics_includes_new_fields(self):
+        """SessionMetrics includes all new fields with defaults."""
+        metrics = SessionMetrics(
+            session_id=1,
+            timestamp="2024-01-15T10:00:00Z",
+            features_attempted=1,
+            features_completed=1,
+        )
+        assert metrics.features_regressed == 0
+        assert metrics.evaluation_completeness_score == 1.0
+        assert metrics.is_multi_feature is False
+
+    def test_session_metrics_accepts_new_fields(self):
+        """SessionMetrics accepts new field values."""
+        metrics = SessionMetrics(
+            session_id=1,
+            timestamp="2024-01-15T10:00:00Z",
+            features_attempted=1,
+            features_completed=-2,
+            features_regressed=2,
+            evaluation_completeness_score=0.67,
+            is_multi_feature=True,
+        )
+        assert metrics.features_regressed == 2
+        assert metrics.evaluation_completeness_score == 0.67
+        assert metrics.is_multi_feature is True
+
+    def test_drift_metrics_includes_new_aggregates(self):
+        """DriftMetrics includes new aggregate fields."""
+        metrics = DriftMetrics()
+        assert metrics.multi_feature_session_count == 0
+        assert metrics.incomplete_evaluation_count == 0
+
+    def test_record_session_metrics_tracks_new_fields(self, tmp_path):
+        """record_session_metrics accepts and stores new fields."""
+        record_session_metrics(
+            project_dir=tmp_path,
+            session_id=1,
+            features_attempted=1,
+            features_completed=3,
+            features_regressed=0,
+            evaluation_completeness_score=0.67,
+            is_multi_feature=True,
+        )
+
+        metrics = load_metrics(tmp_path)
+        session = metrics.sessions[0]
+        assert session.evaluation_completeness_score == 0.67
+        assert session.is_multi_feature is True
+        assert metrics.multi_feature_session_count == 1
+        assert metrics.incomplete_evaluation_count == 1
+
+    def test_record_session_metrics_aggregates_counts(self, tmp_path):
+        """record_session_metrics correctly aggregates new field counts."""
+        # First session: multi-feature, incomplete evaluation
+        record_session_metrics(
+            project_dir=tmp_path,
+            session_id=1,
+            features_attempted=1,
+            features_completed=2,
+            evaluation_completeness_score=0.5,
+            is_multi_feature=True,
+        )
+        # Second session: single-feature, complete evaluation
+        record_session_metrics(
+            project_dir=tmp_path,
+            session_id=2,
+            features_attempted=1,
+            features_completed=1,
+            evaluation_completeness_score=1.0,
+            is_multi_feature=False,
+        )
+        # Third session: single-feature, incomplete evaluation
+        record_session_metrics(
+            project_dir=tmp_path,
+            session_id=3,
+            features_attempted=1,
+            features_completed=0,
+            evaluation_completeness_score=0.33,
+            is_multi_feature=False,
+        )
+
+        metrics = load_metrics(tmp_path)
+        assert metrics.multi_feature_session_count == 1
+        assert metrics.incomplete_evaluation_count == 2
+
+    def test_load_metrics_backward_compatibility(self, tmp_path):
+        """load_metrics provides defaults for files without new fields."""
+        # Create a metrics file without new fields (simulating old format)
+        old_format = {
+            "sessions": [
+                {
+                    "session_id": 1,
+                    "timestamp": "2024-01-15T10:00:00Z",
+                    "features_attempted": 1,
+                    "features_completed": 1,
+                    "regressions_caught": 0,
+                    "assumptions_stated": 0,
+                    "assumptions_violated": 0,
+                    "architecture_deviations": 0,
+                    "evaluation_sections_present": [],
+                    # Note: no features_regressed, evaluation_completeness_score, is_multi_feature
+                }
+            ],
+            "validation_attempts": [],
+            "total_sessions": 1,
+            "total_regressions_caught": 0,
+            "average_features_per_session": 1.0,
+            "rejection_count": 0,
+            # Note: no multi_feature_session_count, incomplete_evaluation_count
+        }
+        metrics_path = tmp_path / METRICS_FILENAME
+        with open(metrics_path, "w") as f:
+            json.dump(old_format, f)
+
+        metrics = load_metrics(tmp_path)
+        session = metrics.sessions[0]
+
+        # Check defaults applied to session
+        assert session.features_regressed == 0
+        assert session.evaluation_completeness_score == 1.0
+        assert session.is_multi_feature is False
+
+        # Check defaults applied to aggregates
+        assert metrics.multi_feature_session_count == 0
+        assert metrics.incomplete_evaluation_count == 0

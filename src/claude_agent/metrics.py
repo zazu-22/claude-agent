@@ -29,6 +29,9 @@ VELOCITY_TREND_THRESHOLD_PERCENT = 0.10
 # features/session. TODO: Validate this threshold with real session data.
 VELOCITY_MIN_ABSOLUTE_THRESHOLD = 0.5
 
+# Tolerance for floating point comparisons in integrity validation
+FLOAT_COMPARISON_EPSILON = 0.01
+
 
 @dataclass
 class SessionMetrics:
@@ -37,12 +40,15 @@ class SessionMetrics:
     session_id: int
     timestamp: str
     features_attempted: int
-    features_completed: int
+    features_completed: int  # Net change (can be negative for regressions)
+    features_regressed: int = 0  # Count of features that regressed (>= 0)
     regressions_caught: int = 0
     assumptions_stated: int = 0
     assumptions_violated: int = 0
     architecture_deviations: int = 0
     evaluation_sections_present: list[str] = field(default_factory=list)
+    evaluation_completeness_score: float = 1.0  # 0.0-1.0, 1.0 = all sections present
+    is_multi_feature: bool = False  # True if session worked on multiple features
 
 
 @dataclass
@@ -67,6 +73,8 @@ class DriftMetrics:
     total_regressions_caught: int = 0
     average_features_per_session: float = 0.0
     rejection_count: int = 0
+    multi_feature_session_count: int = 0  # Sessions with is_multi_feature=True
+    incomplete_evaluation_count: int = 0  # Sessions with completeness_score < 1.0
 
 
 def load_metrics(project_dir: Path) -> DriftMetrics:
@@ -89,9 +97,17 @@ def load_metrics(project_dir: Path) -> DriftMetrics:
             data = json.load(f)
 
         # Reconstruct dataclasses from dict data
-        sessions = [
-            SessionMetrics(**session_data) for session_data in data.get("sessions", [])
-        ]
+        # Add backwards compatibility for new fields with defaults
+        sessions = []
+        for session_data in data.get("sessions", []):
+            # Defaults for fields added after initial release
+            if "features_regressed" not in session_data:
+                session_data["features_regressed"] = 0
+            if "evaluation_completeness_score" not in session_data:
+                session_data["evaluation_completeness_score"] = 1.0
+            if "is_multi_feature" not in session_data:
+                session_data["is_multi_feature"] = False
+            sessions.append(SessionMetrics(**session_data))
         validation_attempts = [
             ValidationMetrics(**val_data)
             for val_data in data.get("validation_attempts", [])
@@ -104,6 +120,8 @@ def load_metrics(project_dir: Path) -> DriftMetrics:
             total_regressions_caught=data.get("total_regressions_caught", 0),
             average_features_per_session=data.get("average_features_per_session", 0.0),
             rejection_count=data.get("rejection_count", 0),
+            multi_feature_session_count=data.get("multi_feature_session_count", 0),
+            incomplete_evaluation_count=data.get("incomplete_evaluation_count", 0),
         )
 
         # Validate integrity and log warnings for any inconsistencies
@@ -155,7 +173,7 @@ def validate_metrics_integrity(metrics: DriftMetrics) -> list[str]:
         expected_avg = (
             sum(s.features_completed for s in metrics.sessions) / expected_sessions
         )
-        if abs(metrics.average_features_per_session - expected_avg) > 0.01:
+        if abs(metrics.average_features_per_session - expected_avg) > FLOAT_COMPARISON_EPSILON:
             errors.append(
                 f"average_features_per_session mismatch: "
                 f"stored={metrics.average_features_per_session:.2f}, "
@@ -195,11 +213,14 @@ def save_metrics(project_dir: Path, metrics: DriftMetrics) -> None:
                 "timestamp": s.timestamp,
                 "features_attempted": s.features_attempted,
                 "features_completed": s.features_completed,
+                "features_regressed": s.features_regressed,
                 "regressions_caught": s.regressions_caught,
                 "assumptions_stated": s.assumptions_stated,
                 "assumptions_violated": s.assumptions_violated,
                 "architecture_deviations": s.architecture_deviations,
                 "evaluation_sections_present": s.evaluation_sections_present,
+                "evaluation_completeness_score": s.evaluation_completeness_score,
+                "is_multi_feature": s.is_multi_feature,
             }
             for s in metrics.sessions
         ],
@@ -218,6 +239,8 @@ def save_metrics(project_dir: Path, metrics: DriftMetrics) -> None:
         "total_regressions_caught": metrics.total_regressions_caught,
         "average_features_per_session": metrics.average_features_per_session,
         "rejection_count": metrics.rejection_count,
+        "multi_feature_session_count": metrics.multi_feature_session_count,
+        "incomplete_evaluation_count": metrics.incomplete_evaluation_count,
     }
 
     atomic_json_write(metrics_path, data)
@@ -228,11 +251,14 @@ def record_session_metrics(
     session_id: int,
     features_attempted: int,
     features_completed: int,
+    features_regressed: int = 0,
     regressions_caught: int = 0,
     assumptions_stated: int = 0,
     assumptions_violated: int = 0,
     architecture_deviations: int = 0,
     evaluation_sections_present: Optional[list[str]] = None,
+    evaluation_completeness_score: float = 1.0,
+    is_multi_feature: bool = False,
 ) -> None:
     """
     Record metrics for a coding session.
@@ -241,12 +267,15 @@ def record_session_metrics(
         project_dir: Project directory path
         session_id: Session number/ID
         features_attempted: Number of features attempted in this session
-        features_completed: Number of features completed in this session
+        features_completed: Net features completed (can be negative for regressions)
+        features_regressed: Number of features that regressed (>= 0)
         regressions_caught: Number of regressions caught (default: 0)
         assumptions_stated: Number of assumptions stated (default: 0)
         assumptions_violated: Number of assumptions violated (default: 0)
         architecture_deviations: Number of architecture deviations (default: 0)
         evaluation_sections_present: List of evaluation section names present
+        evaluation_completeness_score: Score from 0.0-1.0 (default: 1.0)
+        is_multi_feature: True if session worked on multiple features
     """
     if evaluation_sections_present is None:
         evaluation_sections_present = []
@@ -260,11 +289,14 @@ def record_session_metrics(
         timestamp=datetime.now(timezone.utc).isoformat(),
         features_attempted=features_attempted,
         features_completed=features_completed,
+        features_regressed=features_regressed,
         regressions_caught=regressions_caught,
         assumptions_stated=assumptions_stated,
         assumptions_violated=assumptions_violated,
         architecture_deviations=architecture_deviations,
         evaluation_sections_present=evaluation_sections_present,
+        evaluation_completeness_score=evaluation_completeness_score,
+        is_multi_feature=is_multi_feature,
     )
 
     # Add to sessions list
@@ -282,6 +314,14 @@ def record_session_metrics(
         metrics.average_features_per_session = total_features / metrics.total_sessions
     else:
         metrics.average_features_per_session = 0.0
+
+    # Update drift indicator aggregates
+    metrics.multi_feature_session_count = sum(
+        1 for s in metrics.sessions if s.is_multi_feature
+    )
+    metrics.incomplete_evaluation_count = sum(
+        1 for s in metrics.sessions if s.evaluation_completeness_score < 1.0
+    )
 
     # Save updated metrics
     save_metrics(project_dir, metrics)
@@ -422,7 +462,7 @@ PLAN_SECTION_PATTERN = re.compile(
 )
 
 
-def parse_evaluation_sections(output: str) -> list[str]:
+def parse_evaluation_sections(output: str) -> tuple[list[str], bool]:
     """
     Parse agent output to identify which evaluation sections were present.
 
@@ -432,7 +472,10 @@ def parse_evaluation_sections(output: str) -> list[str]:
 
     Logs a warning if expected sections are missing from the output.
 
-    Returns list of section identifiers: "context", "regression", "plan"
+    Returns:
+        Tuple of (sections, is_complete):
+        - sections: list of section identifiers found ("context", "regression", "plan")
+        - is_complete: True if all expected sections are present
     """
     sections = []
 
@@ -443,12 +486,29 @@ def parse_evaluation_sections(output: str) -> list[str]:
     if PLAN_SECTION_PATTERN.search(output):
         sections.append("plan")
 
-    # Warn about missing sections (indicates potential drift/skipped evaluation)
+    # Check for missing sections (indicates potential drift/skipped evaluation)
     missing = EXPECTED_EVAL_SECTIONS - set(sections)
+    is_complete = len(missing) == 0
+
     if missing:
         logger.warning(f"Evaluation sections missing from agent output: {sorted(missing)}")
 
-    return sections
+    return sections, is_complete
+
+
+def calculate_evaluation_completeness(sections: list[str]) -> float:
+    """
+    Calculate evaluation completeness score based on sections present.
+
+    Args:
+        sections: List of section identifiers found
+
+    Returns:
+        Score from 0.0 to 1.0 (1.0 = all expected sections present)
+    """
+    if not EXPECTED_EVAL_SECTIONS:
+        return 1.0
+    return len(set(sections) & EXPECTED_EVAL_SECTIONS) / len(EXPECTED_EVAL_SECTIONS)
 
 
 def count_regressions(output: str) -> int:

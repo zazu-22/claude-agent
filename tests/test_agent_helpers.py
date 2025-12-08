@@ -16,7 +16,7 @@ class TestParseEvaluationSections:
     """Tests for parse_evaluation_sections() function."""
 
     def test_all_sections_present(self):
-        """Valid output with all 3 sections returns all identifiers."""
+        """Valid output with all 3 sections returns all identifiers and is_complete=True."""
         output = """
         ### Step A - CONTEXT VERIFICATION
         - Feature list read: [Feature 5: Add login form]
@@ -27,59 +27,69 @@ class TestParseEvaluationSections:
         ### Step C - IMPLEMENTATION PLAN
         - Will add login form component
         """
-        result = parse_evaluation_sections(output)
-        assert set(result) == {"context", "regression", "plan"}
+        sections, is_complete = parse_evaluation_sections(output)
+        assert set(sections) == {"context", "regression", "plan"}
+        assert is_complete is True
 
     def test_missing_sections(self):
-        """Output with missing sections returns partial list."""
+        """Output with missing sections returns partial list and is_complete=False."""
         # Only context present
         output = "### Step A - CONTEXT VERIFICATION\nFeature list checked"
-        result = parse_evaluation_sections(output)
-        assert result == ["context"]
+        sections, is_complete = parse_evaluation_sections(output)
+        assert sections == ["context"]
+        assert is_complete is False
 
     def test_only_regression_section(self):
         """Output with only regression section."""
         output = "### REGRESSION VERIFICATION\n- Feature [1]: PASS"
-        result = parse_evaluation_sections(output)
-        assert result == ["regression"]
+        sections, is_complete = parse_evaluation_sections(output)
+        assert sections == ["regression"]
+        assert is_complete is False
 
     def test_only_plan_section(self):
         """Output with only plan section."""
         output = "### IMPLEMENTATION PLAN\nWill build feature X"
-        result = parse_evaluation_sections(output)
-        assert result == ["plan"]
+        sections, is_complete = parse_evaluation_sections(output)
+        assert sections == ["plan"]
+        assert is_complete is False
 
     def test_empty_output(self):
-        """Empty output returns empty list."""
-        result = parse_evaluation_sections("")
-        assert result == []
+        """Empty output returns empty list and is_complete=False."""
+        sections, is_complete = parse_evaluation_sections("")
+        assert sections == []
+        assert is_complete is False
 
     def test_no_matching_sections(self):
         """Output without any matching sections returns empty list."""
         output = "Just some random text\nNo evaluation sections here"
-        result = parse_evaluation_sections(output)
-        assert result == []
+        sections, is_complete = parse_evaluation_sections(output)
+        assert sections == []
+        assert is_complete is False
 
     def test_partial_match_not_counted(self):
         """Partial matches should not be counted."""
         # "CONTEXT" alone should not match
         output = "CONTEXT is important\nVERIFICATION passed"
-        result = parse_evaluation_sections(output)
-        assert result == []
+        sections, is_complete = parse_evaluation_sections(output)
+        assert sections == []
+        assert is_complete is False
 
     def test_case_sensitivity(self):
         """Matching is case-insensitive but requires markdown header format."""
         # All uppercase with header - should match
         output = "### CONTEXT VERIFICATION done"
-        assert "context" in parse_evaluation_sections(output)
+        sections, _ = parse_evaluation_sections(output)
+        assert "context" in sections
 
         # Mixed case with header - should also match (case-insensitive)
         output_mixed = "### Context Verification done"
-        assert "context" in parse_evaluation_sections(output_mixed)
+        sections_mixed, _ = parse_evaluation_sections(output_mixed)
+        assert "context" in sections_mixed
 
         # Without markdown header prefix - should NOT match (prevents false positives)
         output_no_header = "CONTEXT VERIFICATION done"
-        assert "context" not in parse_evaluation_sections(output_no_header)
+        sections_no_header, _ = parse_evaluation_sections(output_no_header)
+        assert "context" not in sections_no_header
 
 
 class TestCountRegressions:

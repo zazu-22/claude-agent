@@ -59,6 +59,7 @@ from claude_agent.logging import (
     SessionStatsTracker,
 )
 from claude_agent.metrics import (
+    calculate_evaluation_completeness,
     count_regressions,
     parse_evaluation_sections,
     record_session_metrics,
@@ -727,10 +728,13 @@ async def run_autonomous_agent(config: Config) -> None:
 
             # Record session metrics for drift detection
             features_at_end, _ = count_passing_tests(project_dir)
-            # Allow negative values: if regression verification marks features as failing,
-            # we want to capture that delta rather than reporting 0
-            features_completed = features_at_end - features_at_start
-            evaluation_sections = parse_evaluation_sections(response)
+            # Calculate net change and track regressions separately
+            features_delta = features_at_end - features_at_start
+            # features_regressed: count of features that went from passing to failing
+            features_regressed = abs(features_delta) if features_delta < 0 else 0
+            # features_completed: net change (can be negative for regressions)
+            features_completed = features_delta
+            evaluation_sections, evaluation_complete = parse_evaluation_sections(response)
             regressions = count_regressions(response)
 
             # The coding agent is designed to target exactly one feature per session.
@@ -743,13 +747,29 @@ async def run_autonomous_agent(config: Config) -> None:
             # features_attempted dynamically by parsing the session output for
             # "implementing Feature #N" patterns or similar markers.
             features_attempted = 1
+
+            # Detect multi-feature session (drift indicator)
+            is_multi_feature = abs(features_completed) > features_attempted
+            if is_multi_feature:
+                logger.warning(
+                    f"Multi-feature session detected: completed {features_completed} features "
+                    f"vs expected {features_attempted}. This may indicate drift from "
+                    "single-feature session architecture."
+                )
+
+            # Calculate evaluation completeness score
+            eval_completeness = calculate_evaluation_completeness(evaluation_sections)
+
             record_session_metrics(
                 project_dir=project_dir,
                 session_id=metrics_session_id,
                 features_attempted=features_attempted,
                 features_completed=features_completed,
+                features_regressed=features_regressed,
                 regressions_caught=regressions,
                 evaluation_sections_present=evaluation_sections,
+                evaluation_completeness_score=eval_completeness,
+                is_multi_feature=is_multi_feature,
             )
 
             # Re-check after coding session
