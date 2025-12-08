@@ -1,0 +1,27 @@
+# Drift Mitigation - Milestones Setup
+# ====================================
+#
+# Creates sprint milestones for the drift mitigation feature.
+# This file is idempotent - safe to run multiple times.
+#
+# Reference: reports/drift-mitigation-github-issues-plan.md
+
+name: "Drift Mitigation - Milestones"
+repo: "zazu-22/claude-agent"
+
+milestones:
+  - title: "Sprint 1: Foundation"
+    description: "Forced evaluation in Coding Agent, Enhanced Progress Notes, Basic Metrics, Initializer Forced Eval"
+    due_on: "+2 weeks"
+
+  - title: "Sprint 2: Integration & Init Quality"
+    description: "Metrics Integration, Feature List Evaluation, Validator Forced Eval"
+    due_on: "+4 weeks"
+
+  - title: "Sprint 3: Architecture"
+    description: "Architect Prompt, Architecture Lock Phase, Decision Records, Best-of-N Sampling"
+    due_on: "+6 weeks"
+
+  - title: "Sprint 4: Validation & Polish"
+    description: "Constraint Validation, Evaluation Hook, Drift Dashboard, Documentation"
+    due_on: "+8 weeks"

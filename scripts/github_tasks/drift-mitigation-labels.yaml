@@ -1,0 +1,105 @@
+# Drift Mitigation - Labels Setup
+# ================================
+#
+# Creates all labels needed for the drift mitigation feature sprint.
+# This file is idempotent - safe to run multiple times.
+#
+# Reference: reports/drift-mitigation-github-issues-plan.md
+
+name: "Drift Mitigation - Labels"
+repo: "zazu-22/claude-agent"
+
+labels:
+  # Priority Labels
+  - name: "priority:critical"
+    color: "B60205"
+    description: "Must be completed for MVP"
+
+  - name: "priority:high"
+    color: "D93F0B"
+    description: "Important for feature completeness"
+
+  - name: "priority:medium"
+    color: "FBCA04"
+    description: "Nice to have, can be deferred"
+
+  - name: "priority:low"
+    color: "0E8A16"
+    description: "Future enhancement"
+
+  # Type Labels
+  - name: "type:feature"
+    color: "1D76DB"
+    description: "New feature implementation"
+
+  - name: "type:enhancement"
+    color: "5319E7"
+    description: "Enhancement to existing functionality"
+
+  - name: "type:documentation"
+    color: "0075CA"
+    description: "Documentation updates"
+
+  - name: "type:refactor"
+    color: "D4C5F9"
+    description: "Code refactoring"
+
+  - name: "type:testing"
+    color: "BFD4F2"
+    description: "Test additions or improvements"
+
+  # Component Labels
+  - name: "component:prompts"
+    color: "C2E0C6"
+    description: "Prompt template changes"
+
+  - name: "component:agent"
+    color: "E99695"
+    description: "Core agent.py changes"
+
+  - name: "component:security"
+    color: "F9D0C4"
+    description: "Security module changes"
+
+  - name: "component:progress"
+    color: "FEF2C0"
+    description: "Progress tracking changes"
+
+  - name: "component:config"
+    color: "D4C5F9"
+    description: "Configuration changes"
+
+  # Phase Labels
+  - name: "phase:1-foundation"
+    color: "006B75"
+    description: "Phase 1 - Foundation"
+
+  - name: "phase:2-init-quality"
+    color: "0E8A16"
+    description: "Phase 2 - Initialization Quality"
+
+  - name: "phase:3-architecture"
+    color: "1D76DB"
+    description: "Phase 3 - Architectural Stability"
+
+  - name: "phase:4-validation"
+    color: "5319E7"
+    description: "Phase 4 - Validation Quality"
+
+  # Status Labels
+  - name: "status:blocked"
+    color: "B60205"
+    description: "Blocked by dependency"
+
+  - name: "status:ready"
+    color: "0E8A16"
+    description: "Ready for implementation"
+
+  - name: "status:in-review"
+    color: "FBCA04"
+    description: "In code review"
+
+  # Epic Label
+  - name: "epic"
+    color: "3E4B9E"
+    description: "Epic issue tracking multiple sub-issues"
