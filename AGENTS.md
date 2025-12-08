@@ -271,6 +271,12 @@ claude-agent/
 │       ├── initializer.md # Initializer agent prompt
 │       ├── review.md      # Spec review prompt
 │       └── validator.md   # Validator agent prompt
+├── scripts/               # Automation scripts
+│   ├── github_api.py      # GitHub API wrapper (code-first pattern)
+│   └── github_tasks/      # Task YAML definitions
+├── .github/workflows/     # GitHub Actions
+│   ├── github-setup.yml   # GitHub setup automation
+│   └── CLAUDE.md          # Workflow documentation
 ├── tests/                 # Test directory (create as needed)
 ├── pyproject.toml         # Project configuration
 ├── README.md              # User documentation
@@ -373,6 +379,17 @@ When working on this codebase with Claude Code, consider using specialized agent
 1. Add Click decorator in `cli.py`
 2. Pass through `merge_config()` in `config.py`
 3. Update help text and README
+
+## GitHub Automation
+
+This repository includes a reusable GitHub API automation system for bulk operations (labels, milestones, issues) without MCP context overhead. Uses a "code-first" pattern with YAML task definitions.
+
+**Key files:**
+- `scripts/github_api.py` - API wrapper script
+- `scripts/github_tasks/*.yaml` - Task definitions
+- `.github/workflows/github-setup.yml` - GitHub Actions workflow
+
+**See:** `.github/workflows/CLAUDE.md` for detailed usage instructions.
 
 ## Debugging Tips
 

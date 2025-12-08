@@ -1,0 +1,70 @@
+# Example GitHub Setup Task
+# ===========================
+#
+# This is a template task file demonstrating all available options.
+# Copy this file and modify for your specific needs.
+#
+# Usage:
+#   1. Copy this file: cp example.yaml my-sprint.yaml
+#   2. Edit the copy with your labels, milestones, and issues
+#   3. Run via GitHub Actions with dry_run=true first
+#   4. Run again with dry_run=false to execute
+
+name: "Example Task"
+repo: "owner/repo"  # Replace with your repository
+
+# Labels to create
+# -----------------
+# Labels are idempotent - existing labels are skipped
+labels:
+  - name: "priority:high"
+    color: "D93F0B"
+    description: "High priority item"
+
+  - name: "priority:medium"
+    color: "FBCA04"
+    description: "Medium priority item"
+
+  - name: "type:feature"
+    color: "1D76DB"
+    description: "New feature"
+
+  - name: "type:bug"
+    color: "B60205"
+    description: "Bug fix"
+
+# Milestones to create
+# --------------------
+# Milestones are idempotent - existing milestones are skipped
+# Due dates support relative formats: +1 day, +2 weeks, +1 month
+milestones:
+  - title: "Sprint 1"
+    description: "First sprint - core features"
+    due_on: "+2 weeks"
+
+  - title: "Sprint 2"
+    description: "Second sprint - enhancements"
+    due_on: "+4 weeks"
+
+# Issues to create
+# ----------------
+# Issues are NOT idempotent - running twice creates duplicates
+# Only run issue creation once per task file
+issues:
+  - title: "Example issue with inline body"
+    labels:
+      - "priority:high"
+      - "type:feature"
+    milestone: "Sprint 1"  # Must match milestone title exactly
+    body: |
+      ## Description
+      This is an example issue with an inline body.
+
+      ## Acceptance Criteria
+      - [ ] Criterion 1
+      - [ ] Criterion 2
+
+  # Example with body from external file:
+  # - title: "Issue with external body"
+  #   labels: ["type:feature"]
+  #   body_file: "path/to/issue-body.md"
