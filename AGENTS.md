@@ -247,6 +247,7 @@ The agent creates these files in the project directory:
 - `app_spec.txt` - Copy of the specification
 - `claude-progress.txt` - Session notes and handoff info
 - `validation-history.json` - Validation attempt records
+- `drift-metrics.json` - Drift detection metrics tracking
 - `spec-review.md` - Optional spec review output
 
 ## Directory Structure
@@ -337,6 +338,35 @@ Start → Is feature_list.json present?
 1. CLI arguments (highest)
 2. Config file (`.claude-agent.yaml`)
 3. Defaults (lowest)
+
+## Drift Mitigation
+
+The agent implements forced evaluation sequences to prevent drift from the specification.
+
+### Coding Agent Evaluation Sequence
+Before implementing any feature, the coding agent MUST complete:
+
+1. **Context Verification**: Quote feature_list.json, progress notes, and architectural constraints
+2. **Regression Verification**: Test previously passing features and report PASS/FAIL with evidence
+3. **Implementation Plan**: State what will be built, which files will be modified, and constraints honored
+
+Only after completing these steps with explicit output can implementation proceed.
+
+### Initializer Agent Evaluation Sequence
+Before generating feature_list.json, the initializer agent MUST complete:
+
+1. **Spec Decomposition**: Break down spec sections and list requirements
+2. **Feature Mapping**: Map each feature to specific spec text with traceability quotes
+3. **Coverage Check**: Verify all requirements are covered by features
+
+### Metrics Tracking
+Drift metrics are automatically tracked in `drift-metrics.json`:
+
+- **Session metrics**: features attempted/completed, regressions caught, evaluation sections present
+- **Validation metrics**: verdict, features tested/failed, failure reasons
+- **Drift indicators**: regression rate, velocity trend, rejection rate
+
+View metrics with: `claude-agent status --metrics`
 
 ## Agent Delegation & Tool Execution
 

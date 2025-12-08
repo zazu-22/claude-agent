@@ -47,7 +47,19 @@ Claude Agent uses a **two-agent pattern** for long-running autonomous coding:
 Progress persists through:
 - `feature_list.json` - Source of truth for all features and their status
 - `claude-progress.txt` - Session notes and handoff information
+- `drift-metrics.json` - Drift detection metrics tracking
 - Git commits - Records implementation history
+
+### Drift Metrics
+
+Use `claude-agent status --metrics` to view drift detection indicators:
+
+- **Total Sessions**: Number of coding sessions run
+- **Regression Rate**: Percentage of sessions that caught regressions
+- **Velocity Trend**: Whether feature completion rate is increasing, stable, or decreasing
+- **Rejection Rate**: Percentage of validation attempts that were rejected
+
+The agent automatically tracks these metrics to detect when implementation is drifting from the spec.
 
 ## Spec Workflow
 
@@ -132,6 +144,7 @@ claude-agent [OPTIONS]
 # Subcommands
 claude-agent init [DIR]    # Create .claude-agent.yaml template
 claude-agent status [DIR]  # Show project progress
+claude-agent status [DIR] --metrics  # Show drift metrics
 
 # Spec workflow commands
 claude-agent spec create   # Generate spec from goal
