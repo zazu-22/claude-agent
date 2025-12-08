@@ -49,6 +49,7 @@ from claude_agent.prompts.loader import (
     get_spec_validate_prompt,
     get_spec_decompose_prompt,
     write_spec_to_project,
+    render_coding_prompt,
 )
 from claude_agent.security import configure_security, set_security_logger
 from claude_agent.logging import (
@@ -57,6 +58,51 @@ from claude_agent.logging import (
     LogLevel,
     SessionStatsTracker,
 )
+from claude_agent.metrics import (
+    calculate_evaluation_completeness,
+    count_regressions,
+    parse_evaluation_sections,
+    record_session_metrics,
+    record_validation_metrics,
+)
+
+
+def get_next_session_id(project_dir: Path) -> int:
+    """
+    Determine the next session ID by reading metrics file.
+
+    Uses drift-metrics.json as the source of truth for session IDs to avoid
+    race conditions when reading progress notes (which are written by the
+    agent during sessions).
+
+    Note: This function assumes single-agent execution. If concurrent agents
+    are supported in the future, a lock file or atomic ID allocation mechanism
+    would be needed to prevent duplicate session IDs.
+    """
+    from claude_agent.metrics import load_metrics
+
+    # Use metrics file as source of truth for session IDs
+    # This avoids race conditions with progress notes parsing
+    metrics = load_metrics(project_dir)
+    if metrics.sessions:
+        max_session = max(s.session_id for s in metrics.sessions)
+        return max_session + 1
+
+    # Fall back to progress notes for backwards compatibility
+    from claude_agent.progress import parse_progress_notes
+
+    progress_path = project_dir / "claude-progress.txt"
+    if not progress_path.exists():
+        return 1
+
+    try:
+        entries = parse_progress_notes(progress_path)
+        if not entries:
+            return 1
+        max_session = max(e.session_number for e in entries)
+        return max_session + 1
+    except Exception:
+        return 1
 
 
 @dataclass
@@ -623,6 +669,9 @@ async def run_autonomous_agent(config: Config) -> None:
             # Run coding session
             print_session_header(iteration, is_first_run)
 
+            # Track features at session start for metrics
+            features_at_start, _ = count_passing_tests(project_dir)
+
             # Determine agent type for logging
             agent_type = "initializer" if is_first_run else "coding"
 
@@ -659,10 +708,13 @@ async def run_autonomous_agent(config: Config) -> None:
                 )
                 is_first_run = False  # Only use initializer once
             else:
-                prompt = get_coding_prompt(
+                # Get base coding prompt and render with template variables
+                raw_prompt = get_coding_prompt(
                     init_command=init_command,
                     dev_command=dev_command,
                 )
+                # Render {{last_passed_feature}} variable for regression testing
+                prompt = render_coding_prompt(raw_prompt, project_dir)
 
             # Run session with logging
             async with client:
@@ -676,6 +728,56 @@ async def run_autonomous_agent(config: Config) -> None:
                 status=status,
             )
             stats_tracker.save()
+
+            # Record session metrics for drift detection
+            features_at_end, _ = count_passing_tests(project_dir)
+            # Calculate net change and track regressions separately
+            features_delta = features_at_end - features_at_start
+            # features_regressed: count of features that went from passing to failing
+            features_regressed = abs(features_delta) if features_delta < 0 else 0
+            # features_completed: net change (can be negative for regressions)
+            features_completed = features_delta
+            evaluation_sections, evaluation_complete = parse_evaluation_sections(response)
+            regressions, regression_section_found = count_regressions(response)
+
+            # The coding agent is designed to target exactly one feature per session.
+            # This is a core architectural constraint for drift mitigation:
+            # - Small, focused sessions reduce stochastic cascade drift
+            # - Single-feature scope makes regression verification tractable
+            # - Predictable session duration enables better progress tracking
+            #
+            # If multi-feature sessions are needed in the future, calculate
+            # features_attempted dynamically by parsing the session output for
+            # "implementing Feature #N" patterns or similar markers.
+            features_attempted = 1
+
+            # Detect multi-feature session (drift indicator)
+            is_multi_feature = abs(features_completed) > features_attempted
+            if is_multi_feature:
+                logger.warning(
+                    f"Multi-feature session detected: completed {features_completed} features "
+                    f"vs expected {features_attempted}. This may indicate drift from "
+                    "single-feature session architecture."
+                )
+
+            # Calculate evaluation completeness score
+            eval_completeness = calculate_evaluation_completeness(evaluation_sections)
+
+            # Get session ID immediately before recording to minimize race window
+            # (session ID allocation and metric recording happen atomically)
+            metrics_session_id = get_next_session_id(project_dir)
+
+            record_session_metrics(
+                project_dir=project_dir,
+                session_id=metrics_session_id,
+                features_attempted=features_attempted,
+                features_completed=features_completed,
+                features_regressed=features_regressed,
+                regressions_caught=regressions,
+                evaluation_sections_present=evaluation_sections,
+                evaluation_completeness_score=eval_completeness,
+                is_multi_feature=is_multi_feature,
+            )
 
             # Re-check after coding session
             passing, total = count_passing_tests(project_dir)
@@ -762,6 +864,19 @@ async def run_autonomous_agent(config: Config) -> None:
                         t.get("test_index", -1) for t in result.rejected_tests
                     ],
                     summary=result.summary,
+                )
+
+                # Record validation metrics for drift detection
+                record_validation_metrics(
+                    project_dir=project_dir,
+                    verdict=result.verdict.lower(),
+                    features_tested=result.tests_verified or total,
+                    features_failed=len(result.rejected_tests),
+                    failure_reasons=[
+                        t.get("reason", "Unknown")
+                        for t in result.rejected_tests
+                        if t.get("reason")
+                    ],
                 )
 
                 if result.verdict == "APPROVED":

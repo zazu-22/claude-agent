@@ -56,6 +56,79 @@ class ProgressEntry:
 
 
 # =============================================================================
+# Enhanced Progress Notes Data Classes (for drift mitigation)
+# =============================================================================
+#
+# These dataclasses define the structured format for enhanced session progress
+# tracking with drift mitigation artifacts. They are designed for Sprint 2+
+# when the agent output will be parsed to extract structured evaluation data.
+#
+# Current status: Defined but not yet used. The parsing functions that will
+# populate these dataclasses will be implemented in the enhanced progress
+# parsing phase. See the drift mitigation documentation for planned usage.
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class ContextVerification:
+    """Captured context verification from forced evaluation."""
+
+    feature_list_quote: str
+    progress_notes_quote: str
+    architectural_constraints: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class RegressionResult:
+    """Result of a regression verification test."""
+
+    feature_index: int
+    feature_description: str
+    passed: bool
+    evidence: str
+
+
+@dataclass(frozen=True)
+class ImplementationPlan:
+    """Stated implementation plan before coding."""
+
+    target_description: str
+    files_to_modify: tuple[str, ...] = field(default_factory=tuple)
+    connection_to_existing: str = ""
+    constraints_honored: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class SessionProgress:
+    """Enhanced session entry capturing evaluation artifacts."""
+
+    session_number: int
+    timestamp: str
+    status: ProgressStatus
+
+    # Evaluation artifacts from forced evaluation
+    context_verification: Optional[ContextVerification] = None
+    regression_results: tuple[RegressionResult, ...] = field(default_factory=tuple)
+    implementation_plan: Optional[ImplementationPlan] = None
+
+    # Explicit assumptions made this session
+    assumptions: tuple[str, ...] = field(default_factory=tuple)
+
+    # Standard progress fields
+    completed_features: tuple[CompletedFeature, ...] = field(default_factory=tuple)
+    issues_found: tuple[str, ...] = field(default_factory=tuple)
+    next_steps: tuple[str, ...] = field(default_factory=tuple)
+    files_modified: tuple[str, ...] = field(default_factory=tuple)
+    git_commits: tuple[str, ...] = field(default_factory=tuple)
+
+    # Handoff notes for next session
+    handoff_current_state: str = ""
+    handoff_known_issues: tuple[str, ...] = field(default_factory=tuple)
+    handoff_suggested_next: str = ""
+    handoff_warnings: tuple[str, ...] = field(default_factory=tuple)
+
+
+# =============================================================================
 # Progress Notes Parsing
 # =============================================================================
 

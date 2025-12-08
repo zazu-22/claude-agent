@@ -5,14 +5,83 @@ Prompt Loading Utilities
 Load and render prompt templates with variable substitution.
 """
 
+import json
 from pathlib import Path
 
 
 PROMPTS_DIR = Path(__file__).parent
 
 
+def get_last_passed_feature(project_dir: Path) -> str:
+    """
+    Get the most recently passed feature for regression testing.
+
+    Returns a string like "Feature #12: User login form" or
+    "the most recently completed feature" if none found.
+
+    Args:
+        project_dir: Project directory containing feature_list.json
+
+    Returns:
+        String describing the last passed feature for prompt substitution
+    """
+    feature_list_path = project_dir / "feature_list.json"
+
+    if not feature_list_path.exists():
+        return "the most recently completed feature"
+
+    try:
+        with open(feature_list_path) as f:
+            features = json.load(f)
+
+        # Find features with passes=True, get the highest index
+        # (assumes features are completed in order)
+        passing_features = [
+            (i, f) for i, f in enumerate(features)
+            if f.get("passes", False)
+        ]
+
+        if not passing_features:
+            return "the most recently completed feature"
+
+        # Get the last passing feature (highest index)
+        last_idx, last_feature = passing_features[-1]
+        description = last_feature.get("description", "unknown")[:50]
+
+        return f"Feature #{last_idx}: {description}"
+
+    except (json.JSONDecodeError, IOError):
+        return "the most recently completed feature"
+
+
+def render_coding_prompt(template: str, project_dir: Path) -> str:
+    """
+    Render the coding agent prompt with template variables.
+
+    Substitutes:
+    - {{last_passed_feature}}: The most recently passed feature for regression testing
+
+    Args:
+        template: The raw prompt template string
+        project_dir: Project directory for feature lookup
+
+    Returns:
+        Rendered prompt string with variables substituted
+    """
+    last_feature = get_last_passed_feature(project_dir)
+    return template.replace("{{last_passed_feature}}", last_feature)
+
+
 def load_prompt(name: str) -> str:
-    """Load a prompt template from the prompts directory."""
+    """
+    Load a prompt template from the prompts directory.
+
+    Args:
+        name: Name of the prompt file (without .md extension)
+
+    Returns:
+        Contents of the prompt template file
+    """
     prompt_path = PROMPTS_DIR / f"{name}.md"
     return prompt_path.read_text()
 
@@ -22,6 +91,13 @@ def render_template(template: str, variables: dict[str, str]) -> str:
     Render a template with variable substitution.
 
     Uses {{variable_name}} syntax for placeholders.
+
+    Args:
+        template: Template string with {{variable}} placeholders
+        variables: Dictionary mapping variable names to values
+
+    Returns:
+        Rendered template with all placeholders replaced
     """
     result = template
     for key, value in variables.items():

@@ -23,6 +23,34 @@ If `CLAUDE.md` exists, follow any project-specific instructions it contains.
 If `test-credentials.json` exists, note that test credentials are available
 for authentication testing - future agents will use these for login flows.
 
+## MANDATORY FEATURE GENERATION SEQUENCE
+
+**CRITICAL: You MUST complete Steps 1-3 below with explicit output before generating feature_list.json.**
+**Features without spec traceability are DRIFT RISKS.**
+
+### Step 1 - SPEC DECOMPOSITION (explicit output required)
+For each section of the spec, list:
+- Section: "[quote section header]"
+- Key requirements: "[list requirements in this section]"
+- Ambiguities found: "[list anything unclear]"
+
+### Step 2 - FEATURE MAPPING (explicit output required)
+For EACH feature you will generate, state:
+- Feature: "[description]"
+- Traces to spec section: "[quote the specific spec text this implements]"
+- Why this granularity: "[why this is one feature vs split/combined]"
+
+### Step 3 - COVERAGE CHECK (explicit output required)
+- Spec requirements covered: [count] / [total]
+- Any requirements NOT covered by a feature: "[list]"
+- If any requirements uncovered, add features to cover them.
+
+### Step 4 - GENERATE feature_list.json
+ONLY NOW write the feature list.
+
+**CRITICAL: Each feature MUST have a spec traceability quote in Step 2.**
+**Features without spec text references indicate potential drift from requirements.**
+
 ### CRITICAL FIRST TASK: Create feature_list.json
 
 Based on the specification above, create a file called `feature_list.json` with {{feature_count}} detailed

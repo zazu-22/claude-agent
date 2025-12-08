@@ -94,6 +94,9 @@ class Config:
     # Logging settings
     logging: LoggingConfig = field(default_factory=LoggingConfig)
 
+    # Metrics settings
+    metrics_file: str = "drift-metrics.json"
+
     # Runtime flags (not persisted to config file)
     verbose: bool = False
 
