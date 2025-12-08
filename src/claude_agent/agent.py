@@ -671,7 +671,6 @@ async def run_autonomous_agent(config: Config) -> None:
 
             # Track features at session start for metrics
             features_at_start, _ = count_passing_tests(project_dir)
-            metrics_session_id = get_next_session_id(project_dir)
 
             # Determine agent type for logging
             agent_type = "initializer" if is_first_run else "coding"
@@ -739,7 +738,7 @@ async def run_autonomous_agent(config: Config) -> None:
             # features_completed: net change (can be negative for regressions)
             features_completed = features_delta
             evaluation_sections, evaluation_complete = parse_evaluation_sections(response)
-            regressions = count_regressions(response)
+            regressions, regression_section_found = count_regressions(response)
 
             # The coding agent is designed to target exactly one feature per session.
             # This is a core architectural constraint for drift mitigation:
@@ -763,6 +762,10 @@ async def run_autonomous_agent(config: Config) -> None:
 
             # Calculate evaluation completeness score
             eval_completeness = calculate_evaluation_completeness(evaluation_sections)
+
+            # Get session ID immediately before recording to minimize race window
+            # (session ID allocation and metric recording happen atomically)
+            metrics_session_id = get_next_session_id(project_dir)
 
             record_session_metrics(
                 project_dir=project_dir,

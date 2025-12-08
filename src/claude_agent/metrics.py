@@ -97,6 +97,8 @@ class DriftIndicators(TypedDict):
     regression_rate: float  # Percentage of sessions with regressions (0-100)
     velocity_trend: str  # "increasing" | "stable" | "decreasing" | "insufficient_data"
     rejection_rate: float  # Percentage of validations rejected (0-100)
+    multi_feature_rate: float  # Percentage of sessions with multi-feature drift (0-100)
+    incomplete_evaluation_rate: float  # Percentage of sessions with incomplete evaluations (0-100)
 
 
 def load_metrics(project_dir: Path) -> DriftMetrics:
@@ -418,11 +420,15 @@ def calculate_drift_indicators(metrics: DriftMetrics) -> DriftIndicators:
         - regression_rate: Percentage of sessions with regressions (0-100)
         - velocity_trend: "increasing" | "stable" | "decreasing" | "insufficient_data"
         - rejection_rate: Percentage of validations rejected (0-100)
+        - multi_feature_rate: Percentage of sessions with multi-feature drift (0-100)
+        - incomplete_evaluation_rate: Percentage of sessions with incomplete evaluations (0-100)
     """
     result: DriftIndicators = {
         "regression_rate": 0.0,
         "velocity_trend": "insufficient_data",
         "rejection_rate": 0.0,
+        "multi_feature_rate": 0.0,
+        "incomplete_evaluation_rate": 0.0,
     }
 
     # Calculate regression rate
@@ -464,6 +470,18 @@ def calculate_drift_indicators(metrics: DriftMetrics) -> DriftIndicators:
             metrics.rejection_count / len(metrics.validation_attempts)
         ) * 100
 
+    # Calculate multi-feature rate (sessions that deviated from single-feature architecture)
+    if metrics.total_sessions > 0:
+        result["multi_feature_rate"] = (
+            metrics.multi_feature_session_count / metrics.total_sessions
+        ) * 100
+
+    # Calculate incomplete evaluation rate
+    if metrics.total_sessions > 0:
+        result["incomplete_evaluation_rate"] = (
+            metrics.incomplete_evaluation_count / metrics.total_sessions
+        ) * 100
+
     return result
 
 
@@ -477,18 +495,30 @@ EXPECTED_EVAL_SECTIONS = {"context", "regression", "plan"}
 
 # Regex patterns for evaluation section headers
 # These require the header format: "### Step X - SECTION_NAME" or "## SECTION_NAME"
-# to avoid false matches on echoed text or comments about sections
-# Allow optional leading whitespace for indented output
+# to avoid false matches on echoed text or comments about sections.
+#
+# Supported formats (case-insensitive):
+#   - "### CONTEXT VERIFICATION"
+#   - "## Context Verification"
+#   - "### Step A - CONTEXT VERIFICATION"
+#   - "### Step 1 - CONTEXT VERIFICATION"
+#   - "###Step B-CONTEXT VERIFICATION" (minimal spacing)
+#   - "  ### CONTEXT VERIFICATION" (leading whitespace)
+#
+# Dash variants supported: ASCII hyphen (-), en-dash (–), em-dash (—)
+#
+# Note: The pattern requires markdown header prefix (##/###) to prevent false
+# matches on echoed instructions or comments about sections.
 CONTEXT_SECTION_PATTERN = re.compile(
-    r"^\s*#{2,3}\s*(?:Step\s*[A-Z]?\s*[-–—]?\s*)?CONTEXT\s+VERIFICATION",
+    r"^\s*#{2,3}\s*(?:Step\s*[A-Z0-9]*\s*[-–—]?\s*)?CONTEXT\s+VERIFICATION",
     re.MULTILINE | re.IGNORECASE,
 )
 REGRESSION_SECTION_PATTERN = re.compile(
-    r"^\s*#{2,3}\s*(?:Step\s*[A-Z]?\s*[-–—]?\s*)?REGRESSION\s+VERIFICATION",
+    r"^\s*#{2,3}\s*(?:Step\s*[A-Z0-9]*\s*[-–—]?\s*)?REGRESSION\s+VERIFICATION",
     re.MULTILINE | re.IGNORECASE,
 )
 PLAN_SECTION_PATTERN = re.compile(
-    r"^\s*#{2,3}\s*(?:Step\s*[A-Z]?\s*[-–—]?\s*)?IMPLEMENTATION\s+PLAN",
+    r"^\s*#{2,3}\s*(?:Step\s*[A-Z0-9]*\s*[-–—]?\s*)?IMPLEMENTATION\s+PLAN",
     re.MULTILINE | re.IGNORECASE,
 )
 
@@ -542,7 +572,7 @@ def calculate_evaluation_completeness(sections: list[str]) -> float:
     return len(set(sections) & EXPECTED_EVAL_SECTIONS) / len(EXPECTED_EVAL_SECTIONS)
 
 
-def count_regressions(output: str) -> int:
+def count_regressions(output: str) -> tuple[int, bool]:
     """
     Count regressions detected in agent output from REGRESSION VERIFICATION section.
 
@@ -557,6 +587,11 @@ def count_regressions(output: str) -> int:
     - Requires the section header to be a markdown heading
     - Matches "Feature [N]: FAIL" or "Feature #N: FAIL" patterns specifically
     - Stops at the next section header (###) or IMPLEMENTATION PLAN
+
+    Returns:
+        Tuple of (count, section_found):
+        - count: Number of regressions detected (0 if section not found)
+        - section_found: True if REGRESSION VERIFICATION section was present
     """
     # Look for the REGRESSION VERIFICATION section starting with a markdown header
     # Allow optional leading whitespace for indented output
@@ -570,7 +605,7 @@ def count_regressions(output: str) -> int:
 
     if not section_match:
         logger.debug("REGRESSION VERIFICATION section not found in agent output")
-        return 0
+        return 0, False
 
     section_content = section_match.group(1)
 
@@ -584,4 +619,4 @@ def count_regressions(output: str) -> int:
     )
     fail_matches = fail_pattern.findall(section_content)
 
-    return len(fail_matches)
+    return len(fail_matches), True

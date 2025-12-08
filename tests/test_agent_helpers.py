@@ -91,6 +91,68 @@ class TestParseEvaluationSections:
         sections_no_header, _ = parse_evaluation_sections(output_no_header)
         assert "context" not in sections_no_header
 
+    def test_numbered_steps(self):
+        """Supports numbered steps like 'Step 1 -' in addition to lettered 'Step A -'."""
+        output_numbered = "### Step 1 - CONTEXT VERIFICATION\nChecking context"
+        sections, _ = parse_evaluation_sections(output_numbered)
+        assert "context" in sections
+
+        output_double_digit = "### Step 12 - REGRESSION VERIFICATION\nChecking"
+        sections2, _ = parse_evaluation_sections(output_double_digit)
+        assert "regression" in sections2
+
+    def test_dash_variants(self):
+        """Supports ASCII hyphen, en-dash, and em-dash."""
+        # ASCII hyphen (-)
+        output_hyphen = "### Step A - CONTEXT VERIFICATION"
+        sections1, _ = parse_evaluation_sections(output_hyphen)
+        assert "context" in sections1
+
+        # En-dash (–)
+        output_endash = "### Step B – REGRESSION VERIFICATION"
+        sections2, _ = parse_evaluation_sections(output_endash)
+        assert "regression" in sections2
+
+        # Em-dash (—)
+        output_emdash = "### Step C — IMPLEMENTATION PLAN"
+        sections3, _ = parse_evaluation_sections(output_emdash)
+        assert "plan" in sections3
+
+    def test_minimal_spacing(self):
+        """Handles headers with minimal or no spacing around dashes."""
+        output_no_space = "###Step A-CONTEXT VERIFICATION"
+        sections, _ = parse_evaluation_sections(output_no_space)
+        assert "context" in sections
+
+        output_tight = "### Step B-REGRESSION VERIFICATION"
+        sections2, _ = parse_evaluation_sections(output_tight)
+        assert "regression" in sections2
+
+    def test_leading_whitespace(self):
+        """Handles indented headers with leading whitespace."""
+        output_indented = "    ### CONTEXT VERIFICATION\nChecking context"
+        sections, _ = parse_evaluation_sections(output_indented)
+        assert "context" in sections
+
+        output_tabbed = "\t### REGRESSION VERIFICATION"
+        sections2, _ = parse_evaluation_sections(output_tabbed)
+        assert "regression" in sections2
+
+    def test_double_hash_headers(self):
+        """Supports both ## and ### header levels."""
+        output_h2 = "## CONTEXT VERIFICATION"
+        sections1, _ = parse_evaluation_sections(output_h2)
+        assert "context" in sections1
+
+        output_h3 = "### CONTEXT VERIFICATION"
+        sections2, _ = parse_evaluation_sections(output_h3)
+        assert "context" in sections2
+
+        # Single # should not match
+        output_h1 = "# CONTEXT VERIFICATION"
+        sections3, _ = parse_evaluation_sections(output_h1)
+        assert "context" not in sections3
+
 
 class TestCountRegressions:
     """Tests for count_regressions() function."""
@@ -106,20 +168,24 @@ class TestCountRegressions:
         - Feature [12]: FAIL
           Evidence: "Form submission fails"
         """
-        assert count_regressions(output) == 2
+        count, found = count_regressions(output)
+        assert count == 2
+        assert found is True
 
     def test_only_passes(self):
-        """Output with only PASSes returns 0."""
+        """Output with only PASSes returns 0 with section found."""
         output = """
         ### REGRESSION VERIFICATION
         - Feature [1]: PASS
         - Feature [2]: PASS
         - Feature [3]: PASS
         """
-        assert count_regressions(output) == 0
+        count, found = count_regressions(output)
+        assert count == 0
+        assert found is True
 
     def test_no_regression_section(self):
-        """No regression section returns 0."""
+        """No regression section returns 0 with section not found."""
         output = """
         ### CONTEXT VERIFICATION
         Read the feature list.
@@ -127,7 +193,9 @@ class TestCountRegressions:
         ### IMPLEMENTATION PLAN
         Will implement feature X.
         """
-        assert count_regressions(output) == 0
+        count, found = count_regressions(output)
+        assert count == 0
+        assert found is False
 
     def test_case_insensitive_fail(self):
         """Matches 'FAIL', 'Fail', 'fail' case-insensitively."""
@@ -135,14 +203,20 @@ class TestCountRegressions:
         output_lower = "### REGRESSION VERIFICATION\n- Feature [1]: fail"
         output_mixed = "### REGRESSION VERIFICATION\n- Feature [1]: Fail"
 
-        assert count_regressions(output_upper) == 1
-        assert count_regressions(output_lower) == 1
-        assert count_regressions(output_mixed) == 1
+        count1, found1 = count_regressions(output_upper)
+        count2, found2 = count_regressions(output_lower)
+        count3, found3 = count_regressions(output_mixed)
+
+        assert count1 == 1 and found1 is True
+        assert count2 == 1 and found2 is True
+        assert count3 == 1 and found3 is True
 
     def test_case_insensitive_section_header(self):
         """Section header matching is case-insensitive."""
         output = "### regression verification\n- Feature [1]: FAIL"
-        assert count_regressions(output) == 1
+        count, found = count_regressions(output)
+        assert count == 1
+        assert found is True
 
     def test_fail_outside_section_not_counted(self):
         """FAIL outside regression section is not counted."""
@@ -157,7 +231,9 @@ class TestCountRegressions:
         Will fix the FAIL from before.
         """
         # Only the regression section should be searched
-        assert count_regressions(output) == 0
+        count, found = count_regressions(output)
+        assert count == 0
+        assert found is True
 
     def test_fail_requires_colon_prefix(self):
         """FAIL must be preceded by colon to count."""
@@ -168,16 +244,20 @@ class TestCountRegressions:
         - Feature [2]: FAIL
         """
         # Only ": FAIL" should count, not "previous FAIL"
-        assert count_regressions(output) == 1
+        count, found = count_regressions(output)
+        assert count == 1
+        assert found is True
 
     def test_empty_regression_section(self):
-        """Empty regression section returns 0."""
+        """Empty regression section returns 0 with section found."""
         output = """
         ### REGRESSION VERIFICATION
 
         ### IMPLEMENTATION PLAN
         """
-        assert count_regressions(output) == 0
+        count, found = count_regressions(output)
+        assert count == 0
+        assert found is True
 
     def test_regression_section_at_end(self):
         """Regression section at end of output (no trailing section)."""
@@ -189,7 +269,9 @@ class TestCountRegressions:
         - Feature [1]: FAIL
         - Feature [2]: FAIL
         """
-        assert count_regressions(output) == 2
+        count, found = count_regressions(output)
+        assert count == 2
+        assert found is True
 
 
 class TestGetNextSessionId:

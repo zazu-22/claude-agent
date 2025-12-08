@@ -384,6 +384,8 @@ def status(project_dir: Path, metrics: bool):
         click.echo(f"Regression Rate: {indicators['regression_rate']:.1f}%")
         click.echo(f"Velocity Trend: {indicators['velocity_trend']}")
         click.echo(f"Rejection Rate: {indicators['rejection_rate']:.1f}%")
+        click.echo(f"Multi-Feature Rate: {indicators['multi_feature_rate']:.1f}%")
+        click.echo(f"Incomplete Evaluation Rate: {indicators['incomplete_evaluation_rate']:.1f}%")
 
         if drift_metrics.total_regressions_caught > 0:
             click.echo(
@@ -393,10 +395,16 @@ def status(project_dir: Path, metrics: bool):
         if drift_metrics.sessions:
             click.echo("\nRecent Sessions:")
             for session in drift_metrics.sessions[-3:]:
+                flags = []
+                if session.is_multi_feature:
+                    flags.append("multi-feature")
+                if session.evaluation_completeness_score < 1.0:
+                    flags.append(f"eval:{session.evaluation_completeness_score:.0%}")
+                flag_str = f" [{', '.join(flags)}]" if flags else ""
                 click.echo(
                     f"  Session {session.session_id}: "
                     f"{session.features_completed} completed, "
-                    f"{session.regressions_caught} regressions"
+                    f"{session.regressions_caught} regressions{flag_str}"
                 )
 
 
