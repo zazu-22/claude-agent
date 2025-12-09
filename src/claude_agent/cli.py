@@ -100,6 +100,12 @@ from claude_agent.progress import (
     is_flag=True,
     help="Enable real-time structured log output to stderr",
 )
+@click.option(
+    "--skip-architecture",
+    is_flag=True,
+    default=False,
+    help="Skip architecture lock phase (not recommended)",
+)
 @click.version_option(version=__version__)
 @click.pass_context
 def main(
@@ -116,6 +122,7 @@ def main(
     reset: bool,
     auto_spec: bool,
     verbose: bool,
+    skip_architecture: bool,
 ):
     """
     Claude Agent - Autonomous coding agent powered by Claude.
@@ -214,6 +221,7 @@ def main(
             cli_config_path=config,
             cli_review=review,
             cli_verbose=verbose,
+            cli_skip_architecture=skip_architecture,
         )
     except ConfigParseError as e:
         print_error(e.get_actionable_error())
