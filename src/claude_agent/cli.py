@@ -21,12 +21,22 @@ from claude_agent.config import (
 from claude_agent.detection import detect_stack, get_available_stacks
 from claude_agent.errors import ActionableError, ConfigParseError, print_error
 from claude_agent.progress import (
+    bulk_unblock_features,
     find_feature_list,
     find_spec_for_coding,
     find_spec_validation_report,
+    get_blocked_features,
     get_session_state,
     print_progress_summary,
+    unblock_feature,
 )
+
+
+def _truncate(text: str, max_len: int) -> str:
+    """Truncate text with ellipsis if it exceeds max_len."""
+    if len(text) > max_len:
+        return text[: max_len - 3] + "..."
+    return text
 
 
 @click.group(invoke_without_command=True)
@@ -414,6 +424,93 @@ def status(project_dir: Path, metrics: bool):
                     f"{session.features_completed} completed, "
                     f"{session.regressions_caught} regressions{flag_str}"
                 )
+
+
+@main.command()
+@click.argument("feature_index", type=int, required=False)
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+@click.option("--list", "list_blocked", is_flag=True, help="List all blocked features")
+@click.option("--all", "unblock_all", is_flag=True, help="Unblock all blocked features")
+def unblock(feature_index: Optional[int], project_dir: Path, list_blocked: bool, unblock_all: bool):
+    """Unblock a feature that was blocked due to architecture deviation.
+
+    \b
+    When a feature is blocked due to an architecture conflict, you can:
+    1. Update the architecture files to resolve the conflict
+    2. Run this command to unblock the feature
+
+    \b
+    Examples:
+      claude-agent unblock 5              # Unblock feature #5
+      claude-agent unblock --list         # List all blocked features
+      claude-agent unblock --all          # Unblock all blocked features
+
+    \b
+    Manual alternative:
+      Edit feature_list.json and remove "blocked" and "blocked_reason" fields
+    """
+    project_dir = Path(project_dir).resolve()
+
+    # List blocked features
+    if list_blocked or (feature_index is None and not unblock_all):
+        blocked = get_blocked_features(project_dir)
+
+        if not blocked:
+            click.echo("No blocked features found.")
+            return
+
+        click.echo(f"\nBlocked features in {project_dir.name}:")
+        click.echo("-" * 70)
+        for item in blocked:
+            desc = _truncate(item['description'], 50)
+            reason = _truncate(item['blocked_reason'], 60)
+            click.echo(f"  #{item['index']}: {desc}")
+            click.echo(f"       Reason: {reason}")
+        click.echo("-" * 70)
+        click.echo("\nTo unblock: claude-agent unblock <index>")
+        click.echo("To unblock all: claude-agent unblock --all")
+        return
+
+    # Unblock all blocked features (using bulk operation for efficiency)
+    if unblock_all:
+        blocked = get_blocked_features(project_dir)
+
+        if not blocked:
+            click.echo("No blocked features to unblock.")
+            return
+
+        click.echo(f"Unblocking {len(blocked)} feature(s)...")
+
+        # Use bulk unblock for efficiency (single file read/write)
+        indices = [item["index"] for item in blocked]
+        successful_indices, errors = bulk_unblock_features(project_dir, indices)
+
+        # Build index->description lookup for reporting
+        desc_by_idx = {item["index"]: item["description"] for item in blocked}
+
+        # Report successes using the returned successful_indices list
+        for idx in successful_indices:
+            desc = _truncate(desc_by_idx.get(idx, ""), 40)
+            click.echo(f"  ✓ Unblocked feature #{idx}: {desc}")
+
+        # Report errors
+        for err in errors:
+            click.echo(f"  ✗ {err}", err=True)
+
+        click.echo(f"\nUnblocked {len(successful_indices)}/{len(blocked)} features.")
+        return
+
+    # Unblock specific feature
+    if feature_index is not None:
+        success, message = unblock_feature(project_dir, feature_index)
+
+        if success:
+            click.echo(click.style("✓ ", fg="green") + message)
+            click.echo("\nThe feature is now available for implementation.")
+            click.echo("Run 'claude-agent' to continue coding.")
+        else:
+            click.echo(click.style("✗ ", fg="red") + message, err=True)
+            sys.exit(1)
 
 
 # =============================================================================

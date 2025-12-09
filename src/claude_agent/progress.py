@@ -785,7 +785,11 @@ def count_passing_tests(project_dir: Path) -> tuple[int, int]:
         total = len(features)
         passing = sum(1 for f in features if f.get("passes", False))
         return passing, total
-    except (json.JSONDecodeError, IOError):
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse feature_list.json: {e}")
+        return 0, 0
+    except IOError as e:
+        logger.warning(f"Failed to read feature_list.json: {e}")
         return 0, 0
 
 
@@ -797,20 +801,24 @@ def count_tests_by_type(project_dir: Path) -> dict:
         Dict with keys:
         - total: total number of tests
         - passing: tests with passes=true
+        - blocked: tests with blocked=true (architecture violations)
         - automated_total: tests that can be automated
         - automated_passing: automated tests that pass
         - manual_total: tests requiring manual verification
         - manual_passing: manual tests marked as passing
+        - available: tests that can be worked on (not passing, not blocked)
     """
     feature_list_path = find_feature_list(project_dir)
 
     result = {
         "total": 0,
         "passing": 0,
+        "blocked": 0,
         "automated_total": 0,
         "automated_passing": 0,
         "manual_total": 0,
         "manual_passing": 0,
+        "available": 0,
     }
 
     if not feature_list_path:
@@ -820,14 +828,31 @@ def count_tests_by_type(project_dir: Path) -> dict:
         with open(feature_list_path) as f:
             features = json.load(f)
 
-        for f in features:
+        for i, f in enumerate(features):
             result["total"] += 1
             is_passing = f.get("passes", False)
             is_manual = f.get("requires_manual_testing", False)
+            is_blocked = f.get("blocked", False)
 
+            # Count blocked features (note: blocked and passing are NOT mutually exclusive)
+            # A feature can be passing but blocked from further modification
+            if is_blocked:
+                result["blocked"] += 1
+                # Warn if blocked=true but no blocked_reason provided
+                if "blocked_reason" not in f:
+                    logger.warning(
+                        f"Feature #{i} is blocked but missing 'blocked_reason' field"
+                    )
+
+            # Count passing features (independent of blocked status)
             if is_passing:
                 result["passing"] += 1
 
+            # Available = not passing AND not blocked (can be worked on)
+            if not is_passing and not is_blocked:
+                result["available"] += 1
+
+            # Manual/automated counts (independent of blocked/passing)
             if is_manual:
                 result["manual_total"] += 1
                 if is_passing:
@@ -838,8 +863,64 @@ def count_tests_by_type(project_dir: Path) -> dict:
                     result["automated_passing"] += 1
 
         return result
-    except (json.JSONDecodeError, IOError):
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse feature_list.json in count_tests_by_type: {e}")
         return result
+    except IOError as e:
+        logger.warning(f"Failed to read feature_list.json in count_tests_by_type: {e}")
+        return result
+
+
+def get_available_features(project_dir: Path) -> list[dict]:
+    """
+    Get features available for implementation (not passing, not blocked).
+
+    This function filters feature_list.json to return only features that:
+    1. Do not have passes=true (not yet implemented)
+    2. Do not have blocked=true (not blocked by architecture constraints)
+
+    Use this function to find the next feature to work on.
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        List of feature dicts with their original indices added as 'index' key.
+        Empty list if no features available or file doesn't exist.
+
+    Example:
+        >>> features = get_available_features(project_dir)
+        >>> if features:
+        ...     next_feature = features[0]
+        ...     print(f"Work on Feature #{next_feature['index']}: {next_feature['description']}")
+    """
+    feature_list_path = find_feature_list(project_dir)
+
+    if not feature_list_path:
+        return []
+
+    try:
+        with open(feature_list_path) as f:
+            features = json.load(f)
+
+        available = []
+        for i, feature in enumerate(features):
+            is_passing = feature.get("passes", False)
+            is_blocked = feature.get("blocked", False)
+
+            if not is_passing and not is_blocked:
+                # Add index for reference (consistent with get_blocked_features)
+                feature_with_index = feature.copy()
+                feature_with_index["index"] = i
+                available.append(feature_with_index)
+
+        return available
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse feature_list.json for available features: {e}")
+        return []
+    except IOError as e:
+        logger.warning(f"Failed to read feature_list.json for available features: {e}")
+        return []
 
 
 def is_automated_work_complete(project_dir: Path) -> bool:
@@ -882,8 +963,10 @@ def get_session_state(project_dir: Path) -> str:
                 attempts = data.get("attempts", [])
                 if attempts and attempts[-1].get("result") == "approved":
                     return "complete"
-            except (json.JSONDecodeError, IOError):
-                pass
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse validation-history.json: {e}")
+            except IOError as e:
+                logger.warning(f"Failed to read validation-history.json: {e}")
         # All pass but not yet approved
         return "validating"
     elif is_automated_work_complete(project_dir):
@@ -978,7 +1061,11 @@ def load_validation_history(project_dir: Path) -> list[dict]:
         with open(history_path) as f:
             data = json.load(f)
         return data.get("attempts", [])
-    except (json.JSONDecodeError, IOError):
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse validation-history.json: {e}")
+        return []
+    except IOError as e:
+        logger.warning(f"Failed to read validation-history.json: {e}")
         return []
 
 
@@ -1004,7 +1091,11 @@ def save_validation_attempt(
         try:
             with open(history_path) as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse validation-history.json, starting fresh: {e}")
+            data = {"attempts": []}
+        except IOError as e:
+            logger.warning(f"Failed to read validation-history.json, starting fresh: {e}")
             data = {"attempts": []}
     else:
         data = {"attempts": []}
@@ -1087,6 +1178,197 @@ def mark_tests_failed(
     return updated, errors
 
 
+def unblock_feature(
+    project_dir: Path,
+    feature_index: int,
+) -> tuple[bool, str]:
+    """
+    Unblock a previously blocked feature.
+
+    Removes the "blocked" and "blocked_reason" fields from the specified feature.
+
+    Args:
+        project_dir: Project directory path
+        feature_index: Index of the feature to unblock
+
+    Returns:
+        (success, message) tuple
+    """
+    feature_list_path = find_feature_list(project_dir)
+
+    if not feature_list_path:
+        return False, "feature_list.json does not exist"
+
+    try:
+        with open(feature_list_path) as f:
+            features = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse feature_list.json: {e}")
+        return False, f"Failed to parse feature_list.json: {e}"
+    except IOError as e:
+        logger.warning(f"Failed to read feature_list.json: {e}")
+        return False, f"Failed to read feature_list.json: {e}"
+
+    # Validate index
+    if feature_index < 0 or feature_index >= len(features):
+        return False, f"Invalid feature index: {feature_index} (max: {len(features) - 1})"
+
+    feature = features[feature_index]
+
+    # Check if feature is actually blocked
+    if not feature.get("blocked", False):
+        return False, f"Feature #{feature_index} is not blocked"
+
+    # Remove blocked fields
+    feature.pop("blocked", None)
+    feature.pop("blocked_reason", None)
+
+    # Write back using atomic write utility
+    try:
+        atomic_json_write(feature_list_path, features)
+    except Exception as e:
+        return False, f"Failed to write feature_list.json: {e}"
+
+    description = feature.get("description", "")[:50]
+    return True, f"Unblocked feature #{feature_index}: {description}"
+
+
+def bulk_unblock_features(
+    project_dir: Path,
+    feature_indices: list[int],
+) -> tuple[list[int], list[str]]:
+    """
+    Unblock multiple features in a single file read/write operation.
+
+    This is more efficient than calling unblock_feature() multiple times,
+    as it only reads and writes feature_list.json once.
+
+    Args:
+        project_dir: Project directory path
+        feature_indices: List of feature indices to unblock (duplicates are ignored)
+
+    Returns:
+        (successful_indices, error_messages) tuple where:
+        - successful_indices: List of indices that were successfully unblocked
+        - error_messages: List of error messages for failed operations
+
+    Race Condition Warning:
+        This function uses read-modify-write without file locking. If multiple
+        agents access the same project concurrently:
+
+        - Agent A reads feature_list.json at T0
+        - Agent B reads feature_list.json at T1
+        - Agent A writes changes at T2
+        - Agent B writes changes at T3 (overwrites A's changes)
+        - Result: Agent A's changes are lost (last-write-wins)
+
+        This tool assumes one agent per project directory. For production
+        deployments with concurrent access, consider adding file locking
+        via fcntl (Unix) or msvcrt (Windows).
+    """
+    feature_list_path = find_feature_list(project_dir)
+    errors: list[str] = []
+    successful_indices: list[int] = []
+
+    if not feature_list_path:
+        return [], ["feature_list.json does not exist"]
+
+    if not feature_indices:
+        return [], []
+
+    # Deduplicate indices to prevent double-counting
+    unique_indices = sorted(set(feature_indices))
+
+    try:
+        with open(feature_list_path) as f:
+            features = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse feature_list.json: {e}")
+        return [], [f"Failed to parse feature_list.json: {e}"]
+    except IOError as e:
+        logger.warning(f"Failed to read feature_list.json: {e}")
+        return [], [f"Failed to read feature_list.json: {e}"]
+
+    max_index = len(features) - 1
+
+    for idx in unique_indices:
+        # Validate index
+        if idx < 0 or idx > max_index:
+            errors.append(f"Invalid feature index: {idx} (max: {max_index})")
+            continue
+
+        feature = features[idx]
+
+        # Check if feature is actually blocked
+        if not feature.get("blocked", False):
+            errors.append(f"Feature #{idx} is not blocked")
+            continue
+
+        # Remove blocked fields
+        feature.pop("blocked", None)
+        feature.pop("blocked_reason", None)
+        successful_indices.append(idx)
+
+    # Write back if any changes were made
+    if successful_indices:
+        try:
+            atomic_json_write(feature_list_path, features)
+        except Exception as e:
+            # Return successful_indices so CLI can report which features were attempted
+            # even though the write failed (changes were made in memory but not persisted)
+            return successful_indices, [f"Failed to write feature_list.json: {e}"]
+
+    return successful_indices, errors
+
+
+def get_blocked_features(project_dir: Path) -> list[dict]:
+    """
+    Get all blocked features from feature_list.json.
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        List of dicts with keys: index, description, blocked_reason.
+        Empty list if no blocked features or file doesn't exist.
+
+    Note:
+        This function reads feature_list.json. If you need to modify multiple
+        features, consider using bulk_unblock_features() instead to avoid
+        multiple file reads.
+    """
+    feature_list_path = find_feature_list(project_dir)
+
+    if not feature_list_path:
+        return []
+
+    try:
+        with open(feature_list_path) as f:
+            features = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse feature_list.json for blocked features: {e}")
+        return []
+    except IOError as e:
+        logger.warning(f"Failed to read feature_list.json for blocked features: {e}")
+        return []
+
+    blocked = []
+    for i, feature in enumerate(features):
+        if feature.get("blocked", False):
+            # Warn if blocked=true but no blocked_reason provided
+            if "blocked_reason" not in feature:
+                logger.warning(
+                    f"Feature #{i} is blocked but missing 'blocked_reason' field"
+                )
+            blocked.append({
+                "index": i,
+                "description": feature.get("description", ""),
+                "blocked_reason": feature.get("blocked_reason", "Unknown reason"),
+            })
+
+    return blocked
+
+
 # =============================================================================
 # Spec Workflow State Tracking
 # =============================================================================
@@ -1119,7 +1401,15 @@ def get_spec_workflow_state(project_dir: Path) -> dict:
         data.setdefault("spec_file", None)
         data.setdefault("history", [])
         return data
-    except (json.JSONDecodeError, IOError):
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse spec-workflow.json: {e}")
+        return {
+            "phase": "none",
+            "spec_file": None,
+            "history": [],
+        }
+    except IOError as e:
+        logger.warning(f"Failed to read spec-workflow.json: {e}")
         return {
             "phase": "none",
             "spec_file": None,

@@ -37,10 +37,13 @@ git log --oneline -20
 # 7. Count remaining tests
 cat feature_list.json | grep '"passes": false' | wc -l
 
-# 8. Check for project-specific instructions
+# 8. Check for blocked features (architecture deviations)
+cat feature_list.json | grep -c '"blocked": true' || echo "0"
+
+# 9. Check for project-specific instructions
 cat CLAUDE.md 2>/dev/null || true
 
-# 9. Check for test credentials (for login/auth testing)
+# 10. Check for test credentials (for login/auth testing)
 cat test-credentials.json 2>/dev/null || true
 ```
 
@@ -50,6 +53,18 @@ for the application you're building.
 If `CLAUDE.md` exists, follow any project-specific instructions it contains.
 If `test-credentials.json` exists, use those credentials when testing login
 or authentication features via browser automation.
+
+**CHECK FOR UNBLOCKABLE FEATURES:**
+If any features have `"blocked": true`, check if architecture files have been updated:
+1. Read the `blocked_reason` for each blocked feature
+2. Check if `architecture/` files now support the blocked feature
+3. If the conflict is resolved, note in claude-progress.txt:
+   ```
+   UNBLOCK CANDIDATE: Feature #X may be unblockable
+   - Original block reason: [reason]
+   - Architecture now supports: [evidence]
+   ```
+4. The user can run `claude-agent unblock <index>` to unblock the feature
 
 ### STEP 2: START SERVERS (IF NOT RUNNING)
 
@@ -111,21 +126,57 @@ First, check if architecture lock files exist:
 ls architecture/ 2>/dev/null || echo "No architecture/ directory"
 ```
 
-If the architecture/ directory exists, read and quote relevant sections:
+**If no architecture/ directory exists:** Skip to Step B. This is expected for projects that haven't gone through the architecture lock phase.
 
-- [ ] contracts.yaml read:
-  Quote: "[relevant API contracts for this feature]"
+**If the architecture/ directory exists, you MUST read and quote relevant sections from all three lock files:**
 
-- [ ] schemas.yaml read:
-  Quote: "[relevant data models for this feature]"
+```bash
+# Read all architecture lock files
+cat architecture/contracts.yaml
+cat architecture/schemas.yaml
+cat architecture/decisions.yaml
+```
 
-- [ ] decisions.yaml read:
-  Quote: "[relevant decisions that constrain this feature]"
-  Constraints I must honor: "[list specific constraints]"
+**If any file contains malformed YAML or cannot be parsed:**
+1. Document the specific error in claude-progress.txt:
+   ```
+   ARCHITECTURE FILE ERROR:
+   - File: architecture/[filename].yaml
+   - Error: [parsing error message]
+   - Action: Skipping verification for this file
+   ```
+2. Skip architecture verification for that file only (continue with other files)
+3. **Continue implementation** but with these restrictions:
+   - Do NOT add/modify features that would normally touch that file's domain
+   - If the current feature REQUIRES that file's data, mark the feature as BLOCKED
+   - Example: If schemas.yaml is malformed and feature needs schema validation, BLOCK it
+4. Note in Step C constraints: "Incomplete verification: [filename].yaml unreadable"
 
-**ARCHITECTURE DEVIATION CHECK:**
-- Does this feature require changing a locked invariant? YES/NO
-- If YES: STOP and document why in claude-progress.txt. Do NOT proceed without explicit deviation approval.
+After reading, document your understanding:
+
+**Relevance Criteria:**
+- **Contracts are relevant** if they define endpoints this feature will call, implement, or depend on
+- **Schemas are relevant** if this feature reads, writes, or transforms those data structures
+- **Decisions are relevant** if they constrain technology choices, patterns, or approaches for this feature
+
+- [ ] **contracts.yaml read:**
+  - Relevant API contracts for this feature:
+    Quote: "[copy the exact contract name, endpoints, and methods that relate to this feature]"
+  - If no relevant contracts: "No contracts directly apply to this feature"
+
+- [ ] **schemas.yaml read:**
+  - Relevant data models for this feature:
+    Quote: "[copy the exact schema name, fields, and types that relate to this feature]"
+  - If no relevant schemas: "No schemas directly apply to this feature"
+
+- [ ] **decisions.yaml read:**
+  - Relevant decisions constraining this feature:
+    Quote: "[copy the exact decision ID, topic, choice, and constraints_created]"
+  - Constraints I must honor: "[list each constraint verbatim from the decisions]"
+  - If no relevant decisions: "No prior decisions constrain this feature"
+
+**IMPORTANT:** These quotes must be ACTUAL content from the files, not placeholders.
+Failure to read these files before implementation causes architecture drift.
 
 {{architecture_context}}
 
@@ -146,15 +197,72 @@ Before writing code, state:
 - Constraints I must honor: [list from Step A and A.1]
 - Architecture contracts I will implement: [list from Step A.1, if applicable]
 
+### Step C.1 - ARCHITECTURE DEVIATION CHECK (if architecture/ exists)
+**Only perform this step if the architecture/ directory exists.**
+
+Compare your implementation plan (Step C) against the architecture lock files (Step A.1).
+Answer each question explicitly:
+
+**1. Contract Deviation Check:**
+- Does my plan require MODIFYING or REMOVING existing endpoints in contracts.yaml?
+  Answer: YES/NO (Note: ADDING new endpoints to an existing contract is OK)
+  If YES, list specific modifications: "[endpoint and change needed]"
+
+**2. Schema Deviation Check:**
+- Does my plan require MODIFYING or REMOVING existing fields in schemas.yaml?
+  Answer: YES/NO (Note: ADDING new fields to an existing schema is OK)
+  If YES, list specific modifications: "[field and change needed]"
+
+**3. Decision Constraint Check:**
+- Does my plan violate any constraints from decisions.yaml?
+  Answer: YES/NO
+  If YES, list specific violations: "[constraint and how it's violated]"
+
+**Understanding Additions vs Modifications:**
+- **ADDITIONS are OK**: Adding `/api/auth/refresh-token` to an existing `user_auth` contract is legitimate evolution
+- **MODIFICATIONS require HALT**: Changing `POST /api/users` to `PUT /api/users` breaks existing contracts
+- **REMOVALS require HALT**: Removing a documented endpoint or field breaks compatibility
+
+**HALT CONDITION - If ANY answer above is YES:**
+1. STOP - Do not proceed to Step D
+2. Document the deviation in claude-progress.txt:
+   ```
+   ARCHITECTURE DEVIATION DETECTED:
+   - Feature: [feature being implemented]
+   - Deviation type: [contract modification/schema modification/decision violation]
+   - Specific conflict: [what existing element needs to change]
+   - Reasoning: [why the locked architecture seems insufficient]
+   ```
+3. Update feature_list.json - add `"blocked": true` and `"blocked_reason": "[deviation description]"` to this feature
+4. Mark this feature as BLOCKED in your session notes
+5. Proceed to the next feature instead
+
+**PROCEED CONDITION - If ALL answers are NO:**
+- State: "Architecture check passed - no breaking changes detected"
+- If adding new endpoints/fields, note: "Adding [X] to [contract/schema] - compatible evolution"
+- Proceed to Step D
+
 ### Step D - EXECUTE
 ONLY NOW proceed to implementation (Step 4 below).
 
-**CRITICAL: Steps A-C are WORTHLESS unless you actually performed them.**
+**CRITICAL: Steps A-C (and A.1/C.1 if architecture/ exists) are WORTHLESS unless you actually performed them.**
 **Evidence quotes above MUST be actual content from files, not placeholders.**
+**If architecture/ exists and you skipped A.1 or C.1, you WILL cause architecture drift.**
 
 ### STEP 4: CHOOSE ONE FEATURE TO IMPLEMENT
 
-Look at feature_list.json and find the highest-priority feature with "passes": false.
+Look at feature_list.json and find the highest-priority feature that:
+1. Has `"passes": false` (not yet implemented)
+2. Does NOT have `"blocked": true` (not blocked by architecture constraints)
+
+**SKIP BLOCKED FEATURES:** If a feature has `"blocked": true`, do NOT attempt to implement it.
+Blocked features require architecture deviation approval before they can be worked on.
+Instead, choose the next available feature that is not blocked.
+
+```bash
+# Check for blocked features (informational)
+cat feature_list.json | grep -B5 '"blocked": true' || echo "No blocked features"
+```
 
 Focus on completing one feature perfectly and completing its testing steps in this session before moving on to other features.
 It's ok if you only complete one feature in this session, as there will be more sessions later that continue to make progress.
@@ -191,7 +299,7 @@ Use browser automation tools:
 
 ### STEP 7: UPDATE feature_list.json (CAREFULLY!)
 
-**YOU CAN MODIFY TWO FIELDS:**
+**YOU CAN MODIFY THREE FIELDS:**
 
 1. **"passes"** - After thorough verification, change:
 ```json
@@ -206,6 +314,24 @@ to:
 ```json
 "requires_manual_testing": true
 ```
+
+3. **"blocked"** - For features that CANNOT be implemented due to architecture constraints:
+```json
+"blocked": true,
+"blocked_reason": "Requires changing locked API contract in architecture/contracts.yaml"
+```
+
+**WHEN TO MARK blocked: true:**
+- Feature requires violating a locked architectural constraint (API contract, schema, decision)
+- Implementation cannot proceed without explicit deviation approval
+- Feature conflicts with an existing architectural decision
+
+**CRITICAL:** When you mark a feature as blocked:
+1. Set `"blocked": true`
+2. Add `"blocked_reason"` explaining WHY it's blocked (reference the specific constraint)
+3. Document the blocking issue in claude-progress.txt
+4. DO NOT attempt to implement the feature - move to the next available feature
+5. The feature will be skipped by future sessions until the block is resolved
 
 **WHEN TO MARK requires_manual_testing: true:**
 - File uploads from local filesystem (browser automation can't access user files)
@@ -230,6 +356,7 @@ approve the implementation while noting which tests need manual user verificatio
 
 **ONLY CHANGE "passes" FIELD AFTER VERIFICATION WITH SCREENSHOTS.**
 **ONLY CHANGE "requires_manual_testing" FOR TESTS THAT TRULY CANNOT BE AUTOMATED.**
+**ONLY CHANGE "blocked" FOR FEATURES THAT VIOLATE ARCHITECTURE CONSTRAINTS.**
 
 ### STEP 8: COMMIT YOUR PROGRESS
 
