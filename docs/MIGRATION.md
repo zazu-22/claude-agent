@@ -1,5 +1,8 @@
 # Migration Guide: Drift Mitigation System
 
+> **Requirements:** claude-agent v0.4.0 or later with drift mitigation support.
+> Run `claude-agent --version` to check your version. Update with `uv sync`.
+
 This guide helps you transition existing claude-agent projects to use the new drift mitigation system. The migration is designed to be **fully backwards compatible** with no breaking changes.
 
 ## Overview
@@ -119,7 +122,45 @@ The `drift-metrics.json` file is created automatically:
 
 ### Step 3: Configure Architecture Lock (Recommended)
 
-Architecture lock creates contracts, schemas, and decision records to prevent architectural drift. For existing projects with established patterns, you have three options:
+Architecture lock creates contracts, schemas, and decision records to prevent architectural drift. For existing projects with established patterns, you have three options.
+
+**When does the architecture phase run?**
+
+```
+Start Agent Session
+        │
+        ▼
+┌───────────────────────┐
+│ architecture/ exists? │
+└───────────────────────┘
+        │
+   ┌────┴────┐
+   │         │
+  YES        NO
+   │         │
+   ▼         ▼
+ Skip    ┌──────────────────────┐
+ phase   │ --skip-architecture? │
+         └──────────────────────┘
+                  │
+             ┌────┴────┐
+             │         │
+            YES        NO
+             │         │
+             ▼         ▼
+           Skip    ┌─────────────────────────┐
+           phase   │ config: enabled: false? │
+                   └─────────────────────────┘
+                            │
+                       ┌────┴────┐
+                       │         │
+                      YES        NO
+                       │         │
+                       ▼         ▼
+                     Skip    Run Architect
+                     phase   Agent (creates
+                             architecture/)
+```
 
 #### Option A: Enable Architecture Lock (Recommended)
 
@@ -238,17 +279,17 @@ metrics_file: drift-metrics.json
 After running a session with the new system:
 
 ```bash
-# Check metrics are being recorded
+# Check metrics are being recorded (status uses positional argument)
 uv run claude-agent status ./your-project --metrics
 
 # Verify architecture files (if enabled)
 ls -la ./your-project/architecture/
 
-# Check for evaluation sections in logs (filter by session ID)
-uv run claude-agent logs --session abc123
+# Check for evaluation sections in logs (logs uses -p flag)
+uv run claude-agent logs -p ./your-project --session abc123
 
-# View detailed session statistics (turns, duration, features completed)
-uv run claude-agent stats
+# View detailed session statistics (stats uses -p flag)
+uv run claude-agent stats -p ./your-project
 ```
 
 Expected healthy metrics after several sessions:
@@ -265,16 +306,21 @@ Incomplete Evaluation Rate: 0.0%   # 0% is ideal
 
 ## Migration Commands Reference
 
+> **Note:** Commands use different syntax for project directory:
+> - `status` uses positional argument: `claude-agent status ./project`
+> - `logs` and `stats` use `-p` flag: `claude-agent logs -p ./project`
+> - Main agent uses `-p` flag: `claude-agent -p ./project`
+
 | Command | Purpose |
 |---------|---------|
-| `claude-agent status --metrics` | View drift metrics summary (regression rate, velocity trend, etc.) |
-| `claude-agent status` | Check project state and feature progress |
-| `claude-agent --skip-architecture` | Skip architecture phase for this session |
-| `claude-agent init` | Create/update `.claude-agent.yaml` config template in project root |
-| `claude-agent logs` | View recent activity including evaluations (last 50 entries) |
-| `claude-agent logs --session ID` | Filter log entries by session ID prefix |
-| `claude-agent stats` | View session statistics (turns used, duration, features completed per session) |
-| `claude-agent stats --last N` | Show statistics for the last N sessions only |
+| `claude-agent status <dir> --metrics` | View drift metrics summary (regression rate, velocity trend, etc.) |
+| `claude-agent status <dir>` | Check project state and feature progress |
+| `claude-agent -p <dir> --skip-architecture` | Skip architecture phase for this session |
+| `claude-agent init <dir>` | Create/update `.claude-agent.yaml` config template in project root |
+| `claude-agent logs -p <dir>` | View recent activity including evaluations (last 50 entries) |
+| `claude-agent logs -p <dir> --session ID` | Filter log entries by session ID prefix |
+| `claude-agent stats -p <dir>` | View session statistics (turns used, duration, features completed) |
+| `claude-agent stats -p <dir> --last N` | Show statistics for the last N sessions only |
 
 ## Understanding Drift Indicators
 
@@ -326,18 +372,28 @@ If `drift-metrics.json` isn't being created:
 
 ### Metrics File Corruption
 
-If you see errors loading `drift-metrics.json`:
+The system handles corrupted metrics files gracefully - it silently loads empty metrics rather than crashing. Signs of corruption include:
 
-```
-Error: Failed to load metrics - invalid JSON
+- Metrics showing `Total Sessions: 0` when you've run sessions
+- Drift indicators all showing default values despite activity
+- `status --metrics` showing no data after multiple sessions
+
+To diagnose and fix:
+
+```bash
+# Check if the file is valid JSON
+python -m json.tool drift-metrics.json
+
+# If invalid, you'll see an error like:
+# json.decoder.JSONDecodeError: Expecting ',' delimiter: line 5 column 3
 ```
 
 Options:
-1. **Backup and reset**: `mv drift-metrics.json drift-metrics.json.bak`
-2. **Validate JSON**: Use `python -m json.tool drift-metrics.json` to find syntax errors
-3. **Manual fix**: Edit the file to fix malformed JSON (missing commas, brackets, etc.)
+1. **Backup and reset**: `mv drift-metrics.json drift-metrics.json.bak` - next session creates fresh file
+2. **Manual fix**: Edit the file to fix malformed JSON (missing commas, brackets, etc.)
+3. **Validate structure**: Ensure the file has `sessions` array and aggregate fields
 
-The system will create a fresh metrics file on the next session if the file is missing or unreadable.
+The system automatically creates a fresh metrics file on the next session if the file is missing or unreadable.
 
 ### Permission Errors
 
