@@ -9,8 +9,13 @@ Implements append-only decision log as specified in drift-mitigation-design.md.
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import yaml
+
+# Module-level constants for decisions file path
+ARCH_DIR_NAME = "architecture"
+DECISIONS_FILE = "decisions.yaml"
 
 
 @dataclass
@@ -20,22 +25,38 @@ class DecisionRecord:
 
     Captures the full context of why a decision was made, enabling future
     sessions to understand constraints and avoid conflicting choices.
+
+    Required fields:
+        id: Format "DR-NNN" (e.g., "DR-001")
+        topic: What was being decided
+        choice: What was chosen
+
+    Optional fields (None when not provided):
+        timestamp: ISO format timestamp when decision was made
+        session: Session number that made this decision
+        rationale: Why this choice was made
+        alternatives_considered: Other options evaluated
+        constraints_created: What future sessions must honor
+        affects_features: Feature indices affected by this decision
     """
 
+    # Required fields
     id: str  # Format: "DR-NNN"
-    timestamp: str  # ISO format
-    session: int  # Session number that made this decision
     topic: str  # What was being decided
     choice: str  # What was chosen
-    alternatives_considered: list[str]  # Other options evaluated
-    rationale: str  # Why this choice was made
-    constraints_created: list[str]  # What future sessions must honor
+
+    # Optional fields with None defaults for consistency
+    timestamp: Optional[str] = None  # ISO format
+    session: Optional[int] = None  # Session number that made this decision
+    rationale: Optional[str] = None  # Why this choice was made
+    alternatives_considered: list[str] = field(default_factory=list)  # Other options evaluated
+    constraints_created: list[str] = field(default_factory=list)  # What future sessions must honor
     affects_features: list[int] = field(default_factory=list)  # Feature indices
 
 
 def get_decisions_path(project_dir: Path) -> Path:
     """Get path to decisions file."""
-    return project_dir / "architecture" / "decisions.yaml"
+    return project_dir / ARCH_DIR_NAME / DECISIONS_FILE
 
 
 class DecisionLoadError(Exception):
@@ -99,12 +120,12 @@ def load_decisions(project_dir: Path) -> list[DecisionRecord]:
 
         records.append(DecisionRecord(
             id=d["id"],
-            timestamp=d.get("timestamp", ""),
-            session=d.get("session", 0),
             topic=d["topic"],
             choice=d["choice"],
+            timestamp=d.get("timestamp"),  # None if not provided
+            session=d.get("session"),  # None if not provided
+            rationale=d.get("rationale"),  # None if not provided
             alternatives_considered=d.get("alternatives_considered", []),
-            rationale=d.get("rationale", ""),
             constraints_created=d.get("constraints_created", []),
             affects_features=d.get("affects_features", []),
         ))
@@ -159,6 +180,14 @@ def get_next_decision_id(project_dir: Path) -> str:
     """
     Get the next available decision ID.
 
+    Note: This function assumes single-agent execution. If concurrent agents
+    are supported in the future, a lock file or atomic ID allocation mechanism
+    would be needed to prevent duplicate IDs. Consider using UUIDs or timestamps
+    for uniqueness if concurrency becomes a requirement.
+
+    Args:
+        project_dir: Project directory path
+
     Returns:
         String like "DR-001", "DR-002", etc.
     """
@@ -206,3 +235,68 @@ def get_all_constraints(project_dir: Path) -> list[str]:
     for d in decisions:
         constraints.extend(d.constraints_created)
     return constraints
+
+
+def validate_feature_references(
+    project_dir: Path,
+    decision: DecisionRecord,
+    feature_count: int,
+) -> list[str]:
+    """
+    Validate that feature indices in a decision are within valid bounds.
+
+    This is an optional validation that checks feature indices against the
+    actual feature list size. Useful for catching errors when decisions
+    reference non-existent features.
+
+    Args:
+        project_dir: Project directory path
+        decision: The decision record to validate
+        feature_count: Total number of features in feature_list.json
+
+    Returns:
+        List of error messages (empty if all references are valid)
+
+    Example:
+        >>> errors = validate_feature_references(project_dir, decision, 50)
+        >>> if errors:
+        ...     for err in errors:
+        ...         print(f"Warning: {err}")
+    """
+    errors = []
+    max_index = feature_count - 1
+
+    for idx in decision.affects_features:
+        if idx < 0:
+            errors.append(
+                f"Decision {decision.id} has negative feature index {idx}"
+            )
+        elif idx > max_index:
+            errors.append(
+                f"Decision {decision.id} references feature index {idx}, "
+                f"but only {feature_count} features exist (max index: {max_index})"
+            )
+
+    return errors
+
+
+def validate_all_feature_references(
+    project_dir: Path,
+    feature_count: int,
+) -> list[str]:
+    """
+    Validate all decisions have valid feature references.
+
+    Args:
+        project_dir: Project directory path
+        feature_count: Total number of features in feature_list.json
+
+    Returns:
+        List of error messages (empty if all references are valid)
+    """
+    decisions = load_decisions(project_dir)
+    all_errors = []
+    for decision in decisions:
+        errors = validate_feature_references(project_dir, decision, feature_count)
+        all_errors.extend(errors)
+    return all_errors

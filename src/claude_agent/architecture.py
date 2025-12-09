@@ -12,6 +12,15 @@ from typing import Optional
 
 import yaml
 
+from claude_agent.decisions import load_decisions, DecisionLoadError
+
+# Module-level constants for architecture file paths
+ARCH_DIR_NAME = "architecture"
+CONTRACTS_FILE = "contracts.yaml"
+SCHEMAS_FILE = "schemas.yaml"
+DECISIONS_FILE = "decisions.yaml"
+REQUIRED_FILES = [CONTRACTS_FILE, SCHEMAS_FILE, DECISIONS_FILE]
+
 
 class ArchitectureValidationError(Exception):
     """Error validating architecture files."""
@@ -59,17 +68,17 @@ class Schema:
 
 def get_architecture_dir(project_dir: Path) -> Path:
     """Get path to architecture directory."""
-    return project_dir / "architecture"
+    return project_dir / ARCH_DIR_NAME
 
 
 def get_contracts_path(project_dir: Path) -> Path:
     """Get path to contracts file."""
-    return get_architecture_dir(project_dir) / "contracts.yaml"
+    return get_architecture_dir(project_dir) / CONTRACTS_FILE
 
 
 def get_schemas_path(project_dir: Path) -> Path:
     """Get path to schemas file."""
-    return get_architecture_dir(project_dir) / "schemas.yaml"
+    return get_architecture_dir(project_dir) / SCHEMAS_FILE
 
 
 def load_contracts(project_dir: Path) -> list[Contract]:
@@ -284,8 +293,6 @@ def validate_architecture_files(project_dir: Path) -> tuple[bool, list[str]]:
         - success: True if all validations pass
         - errors: List of error messages (empty if success)
     """
-    from claude_agent.decisions import load_decisions, DecisionLoadError
-
     errors = []
     arch_dir = get_architecture_dir(project_dir)
 
@@ -294,8 +301,7 @@ def validate_architecture_files(project_dir: Path) -> tuple[bool, list[str]]:
         return False, ["Architecture directory does not exist"]
 
     # Check all required files exist
-    required_files = ["contracts.yaml", "schemas.yaml", "decisions.yaml"]
-    for filename in required_files:
+    for filename in REQUIRED_FILES:
         if not (arch_dir / filename).exists():
             errors.append(f"Missing required file: {filename}")
 
@@ -343,9 +349,23 @@ def cleanup_partial_architecture(project_dir: Path) -> bool:
     if not arch_dir.exists():
         return False
 
+    # Safety check: verify it's actually a directory (not a symlink to a directory)
+    if not arch_dir.is_dir() or arch_dir.is_symlink():
+        return False
+
+    # Safety check: verify arch_dir is actually within project_dir
+    # This prevents path traversal attacks via symlinks or malicious paths
+    try:
+        resolved_arch = arch_dir.resolve()
+        resolved_project = project_dir.resolve()
+        if not resolved_arch.is_relative_to(resolved_project):
+            return False
+    except (ValueError, OSError):
+        # resolve() can raise OSError on broken symlinks, ValueError on relative paths
+        return False
+
     # Check if all required files exist
-    required_files = ["contracts.yaml", "schemas.yaml", "decisions.yaml"]
-    all_exist = all((arch_dir / f).exists() for f in required_files)
+    all_exist = all((arch_dir / f).exists() for f in REQUIRED_FILES)
 
     if all_exist:
         # Architecture is complete - don't clean up

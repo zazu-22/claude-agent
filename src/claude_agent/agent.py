@@ -524,15 +524,20 @@ async def run_architect_session(
     stack: str,
     project_dir: Path,
     logger: Optional[AgentLogger] = None,
+    max_retries: int = 2,
 ) -> tuple[str, bool]:
     """
-    Run the architecture lock agent session.
+    Run the architecture lock agent session with retry support.
+
+    If the agent creates files but they fail validation, this function will
+    clean up and retry up to max_retries times before giving up.
 
     Args:
         config: Configuration object
         stack: Detected tech stack
         project_dir: Project directory path
         logger: Optional AgentLogger for structured logging
+        max_retries: Maximum number of retry attempts (default: 2)
 
     Returns:
         (status, success) where success indicates if all architecture files were created
@@ -543,72 +548,105 @@ async def run_architect_session(
         cleanup_partial_architecture,
     )
 
-    # Start logging session
-    session_id = None
-    stats_tracker = None
-    if logger:
-        session_id = logger.start_session(
-            iteration=0,
-            model=config.agent.model,
-            stack=stack,
-            agent_type="architect",
-        )
-        stats_tracker = SessionStatsTracker(
-            project_dir=project_dir,
-            session_id=session_id,
-            agent_type="architect",
-        )
+    last_status = "error"
+    last_validation_errors: list[str] = []
 
-    # Create client
-    client = create_client(
-        project_dir=project_dir,
-        model=config.agent.model,
-        max_turns=config.agent.max_turns,
-        stack=stack,
-    )
-
-    # Get prompt
-    prompt = get_architect_prompt()
-
-    # Run session
-    async with client:
-        status, response = await run_agent_session(
-            client, prompt, project_dir, logger, stats_tracker
-        )
-
-    # End logging session
-    if logger:
-        logger.end_session(
-            turns_used=stats_tracker.stats.turns_used if stats_tracker else 0,
-            status=status,
-        )
-        if stats_tracker:
-            stats_tracker.save()
-
-    # Verify outputs - check both existence and content validity
-    files_exist = is_architecture_locked(project_dir)
-    validation_errors = []
-
-    if files_exist:
-        # Validate YAML content and structure
-        valid, validation_errors = validate_architecture_files(project_dir)
-        if not valid:
-            # Log validation errors
+    for attempt in range(1, max_retries + 1):
+        if attempt > 1:
+            print(f"\nRetrying architecture phase (attempt {attempt}/{max_retries})...")
             if logger:
-                for error in validation_errors:
-                    logger.warning(f"Architecture validation error: {error}")
-            # Files exist but are invalid - clean up partial architecture
-            cleanup_partial_architecture(project_dir)
-            return status, False
-        success = True
-    else:
-        # Files don't all exist - clean up any partial architecture
-        cleaned = cleanup_partial_architecture(project_dir)
-        if cleaned and logger:
-            logger.warning("Cleaned up partial architecture directory")
-        success = False
+                logger.info(f"Architecture retry attempt {attempt}/{max_retries}")
+            # Brief delay before retry
+            await asyncio.sleep(2)
 
-    return status, success
+        # Start logging session
+        session_id = None
+        stats_tracker = None
+        if logger:
+            session_id = logger.start_session(
+                iteration=0,
+                model=config.agent.model,
+                stack=stack,
+                agent_type="architect",
+            )
+            stats_tracker = SessionStatsTracker(
+                project_dir=project_dir,
+                session_id=session_id,
+                agent_type="architect",
+            )
+
+        # Create client
+        client = create_client(
+            project_dir=project_dir,
+            model=config.agent.model,
+            max_turns=config.agent.max_turns,
+            stack=stack,
+        )
+
+        # Get prompt
+        prompt = get_architect_prompt()
+
+        # Run session
+        async with client:
+            status, response = await run_agent_session(
+                client, prompt, project_dir, logger, stats_tracker
+            )
+
+        last_status = status
+
+        # End logging session
+        if logger:
+            logger.end_session(
+                turns_used=stats_tracker.stats.turns_used if stats_tracker else 0,
+                status=status,
+            )
+            if stats_tracker:
+                stats_tracker.save()
+
+        # Verify outputs - check both existence and content validity
+        files_exist = is_architecture_locked(project_dir)
+
+        if files_exist:
+            # Validate YAML content and structure
+            valid, validation_errors = validate_architecture_files(project_dir)
+            last_validation_errors = validation_errors
+
+            if valid:
+                # Success! All files valid
+                if attempt > 1 and logger:
+                    logger.info(f"Architecture succeeded on attempt {attempt}")
+                return status, True
+            else:
+                # Files exist but are invalid - log prominently and clean up
+                print(f"\n{'='*60}")
+                print("ARCHITECTURE VALIDATION FAILED")
+                print(f"{'='*60}")
+                print(f"Attempt {attempt}/{max_retries} - Found {len(validation_errors)} validation error(s):")
+                for i, error in enumerate(validation_errors, 1):
+                    print(f"  {i}. {error}")
+                    if logger:
+                        logger.warning(f"Architecture validation error [{i}]: {error}")
+                print(f"{'='*60}\n")
+
+                # Clean up invalid files before retry
+                cleanup_partial_architecture(project_dir)
+        else:
+            # Files don't all exist - clean up any partial architecture
+            print(f"\nArchitecture attempt {attempt}/{max_retries}: Required files not created")
+            if logger:
+                logger.warning(f"Architecture attempt {attempt}: Required files not created")
+            cleaned = cleanup_partial_architecture(project_dir)
+            if cleaned and logger:
+                logger.warning("Cleaned up partial architecture directory")
+
+    # All retries exhausted
+    if logger:
+        logger.warning(
+            f"Architecture failed after {max_retries} attempts. "
+            f"Last errors: {last_validation_errors}"
+        )
+
+    return last_status, False
 
 
 def _create_logging_config(config: Config) -> LoggingConfigClass:

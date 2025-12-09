@@ -98,7 +98,7 @@ decisions:
         assert decisions[0].affects_features == [1, 2]
 
     def test_load_handles_missing_optional_fields(self, tmp_path):
-        """Loads decisions with missing optional fields using defaults."""
+        """Loads decisions with missing optional fields using None defaults."""
         arch_dir = tmp_path / "architecture"
         arch_dir.mkdir()
         (arch_dir / "decisions.yaml").write_text("""
@@ -112,10 +112,12 @@ decisions:
         decisions = load_decisions(tmp_path)
         assert len(decisions) == 1
         assert decisions[0].id == "DR-001"
-        assert decisions[0].timestamp == ""
-        assert decisions[0].session == 0
+        # Optional fields default to None for consistency (Issue #39)
+        assert decisions[0].timestamp is None
+        assert decisions[0].session is None
+        assert decisions[0].rationale is None
+        # List fields still default to empty lists
         assert decisions[0].alternatives_considered == []
-        assert decisions[0].rationale == ""
         assert decisions[0].constraints_created == []
         assert decisions[0].affects_features == []
 
