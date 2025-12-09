@@ -1753,6 +1753,33 @@ class TestCountTestsByTypeWithBlocked:
         assert counts["blocked"] == 0
         assert counts["available"] == 2
 
+    def test_passing_and_blocked_feature(self, tmp_path):
+        """Verify feature can be both passing AND blocked (not mutually exclusive).
+
+        This edge case occurs when a feature was implemented and passes tests,
+        but is later blocked due to architectural constraints discovered afterward.
+        The feature counts toward both passing and blocked totals.
+        """
+        from claude_agent.progress import count_tests_by_type
+
+        feature_list = [
+            {"description": "Normal passing", "passes": True},
+            {"description": "Normal blocked", "passes": False, "blocked": True},
+            {"description": "Both passing AND blocked", "passes": True, "blocked": True},
+            {"description": "Available", "passes": False},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        counts = count_tests_by_type(tmp_path)
+
+        assert counts["total"] == 4
+        # Feature 1 and Feature 3 are passing
+        assert counts["passing"] == 2
+        # Feature 2 and Feature 3 are blocked
+        assert counts["blocked"] == 2
+        # Only Feature 4 is available (not passing AND not blocked)
+        assert counts["available"] == 1
+
     def test_empty_feature_list(self, tmp_path):
         """Verify empty feature list returns zero counts."""
         from claude_agent.progress import count_tests_by_type

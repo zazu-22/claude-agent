@@ -1314,7 +1314,9 @@ def bulk_unblock_features(
         try:
             atomic_json_write(feature_list_path, features)
         except Exception as e:
-            return [], [f"Failed to write feature_list.json: {e}"]
+            # Return successful_indices so CLI can report which features were attempted
+            # even though the write failed (changes were made in memory but not persisted)
+            return successful_indices, [f"Failed to write feature_list.json: {e}"]
 
     return successful_indices, errors
 
