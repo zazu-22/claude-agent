@@ -6,6 +6,8 @@ Command-line interface for the autonomous coding agent.
 """
 
 import asyncio
+import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -20,6 +22,19 @@ from claude_agent.config import (
 )
 from claude_agent.detection import detect_stack, get_available_stacks
 from claude_agent.errors import ActionableError, ConfigParseError, print_error
+from claude_agent.metrics import (
+    ARCH_DEVIATION_CRITICAL,
+    ARCH_DEVIATION_WARNING,
+    INCOMPLETE_EVAL_WARNING,
+    MULTI_FEATURE_WARNING,
+    RECENT_SESSION_LIMIT,
+    REGRESSION_RATE_CRITICAL,
+    REGRESSION_RATE_WARNING,
+    REJECTION_RATE_CRITICAL,
+    REJECTION_RATE_WARNING,
+    generate_sparkline,
+    get_dashboard_data,
+)
 from claude_agent.progress import (
     bulk_unblock_features,
     find_feature_list,
@@ -511,6 +526,216 @@ def unblock(feature_index: Optional[int], project_dir: Path, list_blocked: bool,
         else:
             click.echo(click.style("✗ ", fg="red") + message, err=True)
             sys.exit(1)
+
+
+# =============================================================================
+# Drift Command
+# =============================================================================
+
+
+@main.command()
+@click.argument(
+    "project_dir", type=click.Path(exists=True, path_type=Path), default="."
+)
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def drift(project_dir: Path, output_json: bool):
+    """Display drift detection metrics dashboard.
+
+    Shows a visual dashboard of drift metrics including:
+    - Session count and date range
+    - Regression rate trend (last 5 sessions)
+    - Session velocity trend
+    - Validator rejection rate
+    - Architecture deviation count
+
+    Health status is color-coded:
+    - Green: healthy
+    - Yellow: warning
+    - Red: critical
+
+    \b
+    Examples:
+      claude-agent drift                 # Show dashboard for current directory
+      claude-agent drift ./my-project    # Show dashboard for specific project
+      claude-agent drift --json          # Output raw JSON for scripting
+    """
+    project_dir = Path(project_dir).resolve()
+    dashboard = get_dashboard_data(project_dir)
+
+    if output_json:
+        # Machine-readable JSON output
+        output = {
+            "project_dir": str(project_dir),
+            "session_count": dashboard["session_count"],
+            "date_range": dashboard["date_range"],
+            "regression_rate_trend": dashboard["regression_rate_trend"],
+            "velocity_trend": dashboard["velocity_trend"],
+            "velocity_values": dashboard["velocity_values"],
+            "rejection_rate": dashboard["rejection_rate"],
+            "architecture_deviation_count": dashboard["architecture_deviation_count"],
+            "health_status": dashboard["health_status"],
+            "indicators": dashboard["indicators"],
+        }
+        click.echo(json.dumps(output, indent=2))
+        return
+
+    # Check NO_COLOR environment variable
+    use_color = os.environ.get("NO_COLOR") is None
+
+    # Color definitions
+    if use_color:
+        GREEN = "\033[32m"
+        YELLOW = "\033[33m"
+        RED = "\033[31m"
+        BOLD = "\033[1m"
+        DIM = "\033[2m"
+        RESET = "\033[0m"
+    else:
+        GREEN = YELLOW = RED = BOLD = DIM = RESET = ""
+
+    # Health status colors
+    health_colors = {
+        "healthy": GREEN,
+        "warning": YELLOW,
+        "critical": RED,
+    }
+
+    # Health status symbols (same for color and non-color modes)
+    health_symbols = {
+        "healthy": "[OK]",
+        "warning": "[!]",
+        "critical": "[X]",
+    }
+
+    click.echo("")
+    click.echo(f"{BOLD}Drift Detection Dashboard{RESET}")
+    click.echo("=" * 50)
+
+    # Health Status Banner
+    health_status = dashboard["health_status"]
+    health_color = health_colors.get(health_status, "")
+    health_symbol = health_symbols.get(health_status, "")
+    click.echo(f"\n{health_color}{BOLD}Status: {health_status.upper()} {health_symbol}{RESET}")
+
+    # Session Overview
+    click.echo(f"\n{BOLD}Session Overview{RESET}")
+    click.echo("-" * 30)
+
+    session_count = dashboard["session_count"]
+    if session_count == 0:
+        click.echo(f"  Sessions: {DIM}No sessions recorded yet{RESET}")
+        click.echo("")
+        click.echo("Run an agent session to start tracking drift metrics.")
+        return
+
+    date_range = dashboard["date_range"]
+    if date_range:
+        click.echo(f"  Sessions:   {session_count} ({date_range[0]} to {date_range[1]})")
+    else:
+        click.echo(f"  Sessions:   {session_count}")
+
+    # Metrics Section
+    click.echo(f"\n{BOLD}Key Metrics{RESET}")
+    click.echo("-" * 30)
+
+    indicators = dashboard["indicators"]
+
+    # Regression Rate with trend sparkline
+    regression_rate = indicators["regression_rate"]
+    regression_trend = dashboard["regression_rate_trend"]
+    regression_sparkline = generate_sparkline(regression_trend) if regression_trend else ""
+
+    if regression_rate > REGRESSION_RATE_CRITICAL:
+        rate_color = RED
+    elif regression_rate > REGRESSION_RATE_WARNING:
+        rate_color = YELLOW
+    else:
+        rate_color = GREEN
+
+    click.echo(f"  Regression Rate:     {rate_color}{regression_rate:.1f}%{RESET} {regression_sparkline}")
+
+    # Velocity Trend with sparkline
+    velocity_trend = dashboard["velocity_trend"]
+    velocity_values = dashboard["velocity_values"]
+    velocity_sparkline = generate_sparkline(velocity_values) if velocity_values else ""
+
+    if velocity_trend == "decreasing":
+        trend_color = RED
+    elif velocity_trend == "increasing":
+        trend_color = GREEN
+    else:
+        # Neutral states (stable/insufficient_data) use default terminal color
+        # to avoid DIM which has poor visibility on some terminal themes
+        trend_color = ""
+
+    click.echo(f"  Velocity Trend:      {trend_color}{velocity_trend}{RESET} {velocity_sparkline}")
+
+    # Rejection Rate
+    rejection_rate = dashboard["rejection_rate"]
+
+    if rejection_rate > REJECTION_RATE_CRITICAL:
+        reject_color = RED
+    elif rejection_rate > REJECTION_RATE_WARNING:
+        reject_color = YELLOW
+    else:
+        reject_color = GREEN
+
+    click.echo(f"  Rejection Rate:      {reject_color}{rejection_rate:.1f}%{RESET}")
+
+    # Architecture Deviations
+    arch_deviations = dashboard["architecture_deviation_count"]
+
+    if arch_deviations > ARCH_DEVIATION_CRITICAL:
+        arch_color = RED
+    elif arch_deviations > ARCH_DEVIATION_WARNING:
+        arch_color = YELLOW
+    else:
+        arch_color = GREEN
+
+    click.echo(f"  Arch Deviations:     {arch_color}{arch_deviations}{RESET}")
+
+    # Additional Indicators
+    click.echo(f"\n{BOLD}Additional Indicators{RESET}")
+    click.echo("-" * 30)
+
+    multi_rate = indicators["multi_feature_rate"]
+    incomplete_rate = indicators["incomplete_evaluation_rate"]
+
+    if multi_rate > MULTI_FEATURE_WARNING:
+        multi_color = YELLOW
+    else:
+        multi_color = GREEN
+
+    if incomplete_rate > INCOMPLETE_EVAL_WARNING:
+        incomplete_color = YELLOW
+    else:
+        incomplete_color = GREEN
+
+    click.echo(f"  Multi-Feature Rate:  {multi_color}{multi_rate:.1f}%{RESET}")
+    click.echo(f"  Incomplete Eval:     {incomplete_color}{incomplete_rate:.1f}%{RESET}")
+
+    # Recent Sessions Summary (uses pre-loaded data from dashboard to avoid redundant load)
+    recent_sessions = dashboard["recent_sessions"]
+    if recent_sessions:
+        click.echo(f"\n{BOLD}Recent Sessions (last {RECENT_SESSION_LIMIT}){RESET}")
+        click.echo("-" * 30)
+
+        for session in recent_sessions:
+            flags = []
+            if session.regressions_caught > 0:
+                flags.append(f"{RED}regr:{session.regressions_caught}{RESET}")
+            if session.is_multi_feature:
+                flags.append(f"{YELLOW}multi{RESET}")
+            if session.evaluation_completeness_score < 1.0:
+                flags.append(f"{DIM}eval:{session.evaluation_completeness_score:.0%}{RESET}")
+
+            flag_str = f" [{', '.join(flags)}]" if flags else ""
+            click.echo(
+                f"  Session {session.session_id}: "
+                f"+{session.features_completed} features{flag_str}"
+            )
+
+    click.echo("")
 
 
 # =============================================================================

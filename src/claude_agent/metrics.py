@@ -36,6 +36,29 @@ VELOCITY_MIN_ABSOLUTE_THRESHOLD = 0.5
 # so 0.01 provides a wide margin for accumulated errors.
 FLOAT_COMPARISON_EPSILON = 0.01
 
+# =============================================================================
+# Health Status Thresholds
+# =============================================================================
+# These thresholds determine the health status displayed in the drift dashboard.
+# Adjust based on project-specific tolerance for drift indicators.
+
+# Critical thresholds - project health is severely impacted
+REGRESSION_RATE_CRITICAL = 50  # Percentage of sessions with regressions
+REJECTION_RATE_CRITICAL = 60   # Percentage of validations rejected
+
+# Warning thresholds - project health needs attention
+REGRESSION_RATE_WARNING = 25   # Percentage of sessions with regressions
+REJECTION_RATE_WARNING = 30    # Percentage of validations rejected
+INCOMPLETE_EVAL_WARNING = 25   # Percentage of sessions with incomplete evaluations
+MULTI_FEATURE_WARNING = 50     # Percentage of sessions with multi-feature drift
+
+# Architecture deviation thresholds for display coloring
+ARCH_DEVIATION_CRITICAL = 10   # Total deviations for critical status
+ARCH_DEVIATION_WARNING = 5     # Total deviations for warning status
+
+# Dashboard display settings
+RECENT_SESSION_LIMIT = 5       # Number of recent sessions to display in dashboard
+
 
 @dataclass
 class SessionMetrics:
@@ -570,6 +593,214 @@ def calculate_evaluation_completeness(sections: list[str]) -> float:
     if not EXPECTED_EVAL_SECTIONS:
         return 1.0
     return len(set(sections) & EXPECTED_EVAL_SECTIONS) / len(EXPECTED_EVAL_SECTIONS)
+
+
+# =============================================================================
+# Dashboard Helper Functions
+# =============================================================================
+
+
+class DashboardData(TypedDict):
+    """Type definition for dashboard data returned by get_dashboard_data."""
+
+    session_count: int
+    date_range: tuple[str, str] | None  # (first_date, last_date) or None if no sessions
+    regression_rate_trend: list[float]  # Last 5 sessions regression rates
+    velocity_trend: str  # "increasing" | "stable" | "decreasing" | "insufficient_data"
+    velocity_values: list[float]  # Last 5 sessions feature counts
+    rejection_rate: float  # Percentage of validations rejected (0-100)
+    architecture_deviation_count: int  # Total architecture deviations
+    health_status: str  # "healthy" | "warning" | "critical"
+    indicators: DriftIndicators
+    recent_sessions: list[SessionMetrics]  # Last N sessions for display
+
+
+def get_session_date_range(metrics: DriftMetrics) -> tuple[str, str] | None:
+    """
+    Get the date range of sessions.
+
+    Args:
+        metrics: DriftMetrics object
+
+    Returns:
+        Tuple of (first_date, last_date) in YYYY-MM-DD format, or None if no sessions
+        or if timestamps are malformed
+    """
+    if not metrics.sessions:
+        return None
+
+    try:
+        first_timestamp = metrics.sessions[0].timestamp
+        last_timestamp = metrics.sessions[-1].timestamp
+
+        # Parse and format to ensure valid ISO date format
+        # Handle both 'Z' suffix and '+00:00' timezone formats
+        first_date = datetime.fromisoformat(
+            first_timestamp.replace("Z", "+00:00")
+        ).strftime("%Y-%m-%d")
+        last_date = datetime.fromisoformat(
+            last_timestamp.replace("Z", "+00:00")
+        ).strftime("%Y-%m-%d")
+
+        return (first_date, last_date)
+    except (ValueError, AttributeError) as e:
+        logger.warning(f"Invalid timestamp format in metrics: {e}")
+        return None
+
+
+def get_regression_rate_trend(metrics: DriftMetrics, last_n: int = 5) -> list[float]:
+    """
+    Get regression rate for the last N sessions.
+
+    Args:
+        metrics: DriftMetrics object
+        last_n: Number of recent sessions to include
+
+    Returns:
+        List of regression rates (1.0 = had regressions, 0.0 = no regressions)
+    """
+    if not metrics.sessions:
+        return []
+
+    recent_sessions = metrics.sessions[-last_n:]
+    return [1.0 if s.regressions_caught > 0 else 0.0 for s in recent_sessions]
+
+
+def get_velocity_values(metrics: DriftMetrics, last_n: int = 5) -> list[float]:
+    """
+    Get feature completion counts for the last N sessions.
+
+    Args:
+        metrics: DriftMetrics object
+        last_n: Number of recent sessions to include
+
+    Returns:
+        List of feature completion counts
+    """
+    if not metrics.sessions:
+        return []
+
+    recent_sessions = metrics.sessions[-last_n:]
+    return [float(s.features_completed) for s in recent_sessions]
+
+
+def get_architecture_deviation_count(metrics: DriftMetrics) -> int:
+    """
+    Get total architecture deviation count across all sessions.
+
+    Args:
+        metrics: DriftMetrics object
+
+    Returns:
+        Total count of architecture deviations
+    """
+    return sum(s.architecture_deviations for s in metrics.sessions)
+
+
+def calculate_health_status(indicators: DriftIndicators) -> str:
+    """
+    Calculate overall health status based on drift indicators.
+
+    Uses threshold constants defined at module level:
+    - Critical: regression_rate > REGRESSION_RATE_CRITICAL OR
+                rejection_rate > REJECTION_RATE_CRITICAL OR
+                velocity_trend == "decreasing"
+    - Warning: regression_rate > REGRESSION_RATE_WARNING OR
+               rejection_rate > REJECTION_RATE_WARNING OR
+               incomplete_evaluation_rate > INCOMPLETE_EVAL_WARNING
+    - Healthy: All metrics within acceptable ranges
+
+    Args:
+        indicators: DriftIndicators dict
+
+    Returns:
+        "healthy" | "warning" | "critical"
+    """
+    # Critical conditions
+    if indicators["regression_rate"] > REGRESSION_RATE_CRITICAL:
+        return "critical"
+    if indicators["rejection_rate"] > REJECTION_RATE_CRITICAL:
+        return "critical"
+    if indicators["velocity_trend"] == "decreasing":
+        return "critical"
+
+    # Warning conditions
+    if indicators["regression_rate"] > REGRESSION_RATE_WARNING:
+        return "warning"
+    if indicators["rejection_rate"] > REJECTION_RATE_WARNING:
+        return "warning"
+    if indicators["incomplete_evaluation_rate"] > INCOMPLETE_EVAL_WARNING:
+        return "warning"
+    if indicators["multi_feature_rate"] > MULTI_FEATURE_WARNING:
+        return "warning"
+
+    return "healthy"
+
+
+def get_dashboard_data(project_dir: Path) -> DashboardData:
+    """
+    Get all data needed for the drift dashboard.
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        DashboardData dict with all dashboard metrics
+    """
+    metrics = load_metrics(project_dir)
+    indicators = calculate_drift_indicators(metrics)
+    health_status = calculate_health_status(indicators)
+
+    return {
+        "session_count": metrics.total_sessions,
+        "date_range": get_session_date_range(metrics),
+        "regression_rate_trend": get_regression_rate_trend(metrics),
+        "velocity_trend": indicators["velocity_trend"],
+        "velocity_values": get_velocity_values(metrics),
+        "rejection_rate": indicators["rejection_rate"],
+        "architecture_deviation_count": get_architecture_deviation_count(metrics),
+        "health_status": health_status,
+        "indicators": indicators,
+        "recent_sessions": metrics.sessions[-RECENT_SESSION_LIMIT:],
+    }
+
+
+def generate_sparkline(values: list[float], width: int = 8) -> str:
+    """
+    Generate a simple ASCII sparkline from a list of values.
+
+    Uses Unicode block characters for a visual representation of trend.
+
+    Args:
+        values: List of numeric values
+        width: Maximum number of characters in sparkline
+
+    Returns:
+        String representation of sparkline
+    """
+    if not values:
+        return ""
+
+    # Sparkline characters (from lowest to highest)
+    blocks = " ▁▂▃▄▅▆▇█"
+
+    # Normalize values to 0-8 range
+    min_val = min(values)
+    max_val = max(values)
+
+    if max_val == min_val:
+        # All values are the same
+        return blocks[4] * min(len(values), width)
+
+    normalized = []
+    for v in values[-width:]:
+        # Map value to index 0-8 for blocks string (9 chars: space + 8 block levels)
+        # Formula: (value - min) / range * 8, clamped to valid index range
+        idx = int((v - min_val) / (max_val - min_val) * 8)
+        idx = max(0, min(8, idx))
+        normalized.append(blocks[idx])
+
+    return "".join(normalized)
 
 
 def count_regressions(output: str) -> tuple[int, bool]:

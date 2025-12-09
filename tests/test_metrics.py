@@ -6,9 +6,21 @@ import json
 import pytest
 from pathlib import Path
 
+from click.testing import CliRunner
+
+from claude_agent.cli import main
 from claude_agent.metrics import (
+    ARCH_DEVIATION_CRITICAL,
+    ARCH_DEVIATION_WARNING,
     FLOAT_COMPARISON_EPSILON,
+    INCOMPLETE_EVAL_WARNING,
     METRICS_FILENAME,
+    MULTI_FEATURE_WARNING,
+    RECENT_SESSION_LIMIT,
+    REGRESSION_RATE_CRITICAL,
+    REGRESSION_RATE_WARNING,
+    REJECTION_RATE_CRITICAL,
+    REJECTION_RATE_WARNING,
     SessionMetrics,
     ValidationMetrics,
     DriftMetrics,
@@ -19,6 +31,13 @@ from claude_agent.metrics import (
     calculate_drift_indicators,
     calculate_evaluation_completeness,
     validate_metrics_integrity,
+    get_session_date_range,
+    get_regression_rate_trend,
+    get_velocity_values,
+    get_architecture_deviation_count,
+    calculate_health_status,
+    get_dashboard_data,
+    generate_sparkline,
 )
 
 
@@ -984,3 +1003,516 @@ class TestNewMetricsFields:
                 features_completed=1,
                 evaluation_completeness_score=-0.1,  # Invalid: < 0.0
             )
+
+
+# =============================================================================
+# Dashboard Helper Function Tests
+# =============================================================================
+
+
+class TestGetSessionDateRange:
+    """Tests for get_session_date_range function."""
+
+    def test_returns_none_for_empty_metrics(self):
+        """Empty metrics returns None."""
+        metrics = DriftMetrics()
+        assert get_session_date_range(metrics) is None
+
+    def test_returns_date_range(self):
+        """Returns correct date range from sessions."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="2024-01-10T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=3,
+                ),
+                SessionMetrics(
+                    session_id=2,
+                    timestamp="2024-01-15T12:00:00Z",
+                    features_attempted=5,
+                    features_completed=4,
+                ),
+                SessionMetrics(
+                    session_id=3,
+                    timestamp="2024-01-20T14:00:00Z",
+                    features_attempted=5,
+                    features_completed=5,
+                ),
+            ]
+        )
+        date_range = get_session_date_range(metrics)
+        assert date_range == ("2024-01-10", "2024-01-20")
+
+    def test_same_date_for_single_session(self):
+        """Single session returns same date for start and end."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="2024-01-15T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=3,
+                ),
+            ]
+        )
+        date_range = get_session_date_range(metrics)
+        assert date_range == ("2024-01-15", "2024-01-15")
+
+    def test_returns_none_for_malformed_timestamp(self):
+        """Malformed timestamps return None instead of crashing."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="invalid-timestamp",
+                    features_attempted=5,
+                    features_completed=3,
+                ),
+            ]
+        )
+        date_range = get_session_date_range(metrics)
+        assert date_range is None
+
+    def test_handles_timezone_offset_format(self):
+        """Handles timestamps with +00:00 timezone format."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="2024-01-15T10:00:00+00:00",
+                    features_attempted=5,
+                    features_completed=3,
+                ),
+            ]
+        )
+        date_range = get_session_date_range(metrics)
+        assert date_range == ("2024-01-15", "2024-01-15")
+
+
+class TestGetRegressionRateTrend:
+    """Tests for get_regression_rate_trend function."""
+
+    def test_returns_empty_for_no_sessions(self):
+        """Empty metrics returns empty list."""
+        metrics = DriftMetrics()
+        assert get_regression_rate_trend(metrics) == []
+
+    def test_returns_regression_indicators(self):
+        """Returns 1.0 for sessions with regressions, 0.0 otherwise."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="2024-01-10T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=3,
+                    regressions_caught=2,
+                ),
+                SessionMetrics(
+                    session_id=2,
+                    timestamp="2024-01-11T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=4,
+                    regressions_caught=0,
+                ),
+                SessionMetrics(
+                    session_id=3,
+                    timestamp="2024-01-12T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=5,
+                    regressions_caught=1,
+                ),
+            ]
+        )
+        trend = get_regression_rate_trend(metrics)
+        assert trend == [1.0, 0.0, 1.0]
+
+    def test_respects_last_n_parameter(self):
+        """Only returns last N sessions."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=i,
+                    timestamp=f"2024-01-{10+i}T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=3,
+                    regressions_caught=1 if i % 2 == 0 else 0,
+                )
+                for i in range(10)
+            ]
+        )
+        trend = get_regression_rate_trend(metrics, last_n=3)
+        assert len(trend) == 3
+
+
+class TestGetVelocityValues:
+    """Tests for get_velocity_values function."""
+
+    def test_returns_empty_for_no_sessions(self):
+        """Empty metrics returns empty list."""
+        metrics = DriftMetrics()
+        assert get_velocity_values(metrics) == []
+
+    def test_returns_feature_counts(self):
+        """Returns features_completed values."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="2024-01-10T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=3,
+                ),
+                SessionMetrics(
+                    session_id=2,
+                    timestamp="2024-01-11T10:00:00Z",
+                    features_attempted=10,
+                    features_completed=8,
+                ),
+            ]
+        )
+        values = get_velocity_values(metrics)
+        assert values == [3.0, 8.0]
+
+
+class TestGetArchitectureDeviationCount:
+    """Tests for get_architecture_deviation_count function."""
+
+    def test_returns_zero_for_empty_metrics(self):
+        """Empty metrics returns 0."""
+        metrics = DriftMetrics()
+        assert get_architecture_deviation_count(metrics) == 0
+
+    def test_sums_deviations_across_sessions(self):
+        """Returns sum of architecture_deviations."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="2024-01-10T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=3,
+                    architecture_deviations=2,
+                ),
+                SessionMetrics(
+                    session_id=2,
+                    timestamp="2024-01-11T10:00:00Z",
+                    features_attempted=5,
+                    features_completed=4,
+                    architecture_deviations=3,
+                ),
+            ]
+        )
+        count = get_architecture_deviation_count(metrics)
+        assert count == 5
+
+
+class TestCalculateHealthStatus:
+    """Tests for calculate_health_status function."""
+
+    def test_healthy_when_all_good(self):
+        """Returns 'healthy' when all indicators are good."""
+        indicators = {
+            "regression_rate": 10.0,
+            "velocity_trend": "stable",
+            "rejection_rate": 20.0,
+            "multi_feature_rate": 10.0,
+            "incomplete_evaluation_rate": 10.0,
+        }
+        assert calculate_health_status(indicators) == "healthy"
+
+    def test_critical_on_high_regression_rate(self):
+        """Returns 'critical' when regression_rate > 50%."""
+        indicators = {
+            "regression_rate": 60.0,
+            "velocity_trend": "stable",
+            "rejection_rate": 20.0,
+            "multi_feature_rate": 10.0,
+            "incomplete_evaluation_rate": 10.0,
+        }
+        assert calculate_health_status(indicators) == "critical"
+
+    def test_critical_on_high_rejection_rate(self):
+        """Returns 'critical' when rejection_rate > 60%."""
+        indicators = {
+            "regression_rate": 10.0,
+            "velocity_trend": "stable",
+            "rejection_rate": 70.0,
+            "multi_feature_rate": 10.0,
+            "incomplete_evaluation_rate": 10.0,
+        }
+        assert calculate_health_status(indicators) == "critical"
+
+    def test_critical_on_decreasing_velocity(self):
+        """Returns 'critical' when velocity_trend is 'decreasing'."""
+        indicators = {
+            "regression_rate": 10.0,
+            "velocity_trend": "decreasing",
+            "rejection_rate": 20.0,
+            "multi_feature_rate": 10.0,
+            "incomplete_evaluation_rate": 10.0,
+        }
+        assert calculate_health_status(indicators) == "critical"
+
+    def test_warning_on_moderate_regression_rate(self):
+        """Returns 'warning' when regression_rate > 25%."""
+        indicators = {
+            "regression_rate": 30.0,
+            "velocity_trend": "stable",
+            "rejection_rate": 20.0,
+            "multi_feature_rate": 10.0,
+            "incomplete_evaluation_rate": 10.0,
+        }
+        assert calculate_health_status(indicators) == "warning"
+
+    def test_warning_on_moderate_rejection_rate(self):
+        """Returns 'warning' when rejection_rate > 30%."""
+        indicators = {
+            "regression_rate": 10.0,
+            "velocity_trend": "stable",
+            "rejection_rate": 40.0,
+            "multi_feature_rate": 10.0,
+            "incomplete_evaluation_rate": 10.0,
+        }
+        assert calculate_health_status(indicators) == "warning"
+
+    def test_warning_on_high_incomplete_eval_rate(self):
+        """Returns 'warning' when incomplete_evaluation_rate > 25%."""
+        indicators = {
+            "regression_rate": 10.0,
+            "velocity_trend": "stable",
+            "rejection_rate": 20.0,
+            "multi_feature_rate": 10.0,
+            "incomplete_evaluation_rate": 30.0,
+        }
+        assert calculate_health_status(indicators) == "warning"
+
+    def test_warning_on_high_multi_feature_rate(self):
+        """Returns 'warning' when multi_feature_rate > 50%."""
+        indicators = {
+            "regression_rate": 10.0,
+            "velocity_trend": "stable",
+            "rejection_rate": 20.0,
+            "multi_feature_rate": 60.0,
+            "incomplete_evaluation_rate": 10.0,
+        }
+        assert calculate_health_status(indicators) == "warning"
+
+
+class TestGenerateSparkline:
+    """Tests for generate_sparkline function."""
+
+    def test_returns_empty_for_empty_list(self):
+        """Empty values returns empty string."""
+        assert generate_sparkline([]) == ""
+
+    def test_generates_sparkline_for_increasing_values(self):
+        """Increasing values produce ascending sparkline."""
+        sparkline = generate_sparkline([1, 2, 3, 4, 5])
+        assert len(sparkline) == 5
+        # First char should be lowest, last should be highest
+        assert sparkline[0] == " " or sparkline[0] == "▁"
+        assert sparkline[-1] == "█"
+
+    def test_constant_values_produce_same_blocks(self):
+        """Constant values produce same block characters."""
+        sparkline = generate_sparkline([5, 5, 5, 5])
+        assert len(sparkline) == 4
+        # All should be the same character
+        assert len(set(sparkline)) == 1
+
+    def test_respects_width_parameter(self):
+        """Sparkline respects width limit."""
+        sparkline = generate_sparkline([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], width=5)
+        # Should show last 5 values
+        assert len(sparkline) == 5
+
+
+class TestGetDashboardData:
+    """Tests for get_dashboard_data function."""
+
+    def test_returns_empty_dashboard_for_new_project(self, tmp_path):
+        """New project returns dashboard with zero values."""
+        dashboard = get_dashboard_data(tmp_path)
+
+        assert dashboard["session_count"] == 0
+        assert dashboard["date_range"] is None
+        assert dashboard["regression_rate_trend"] == []
+        assert dashboard["velocity_trend"] == "insufficient_data"
+        assert dashboard["velocity_values"] == []
+        assert dashboard["rejection_rate"] == 0.0
+        assert dashboard["architecture_deviation_count"] == 0
+        assert dashboard["health_status"] == "healthy"
+
+    def test_returns_populated_dashboard(self, tmp_path):
+        """Project with sessions returns populated dashboard."""
+        # Record some sessions
+        record_session_metrics(
+            tmp_path,
+            session_id=1,
+            features_attempted=5,
+            features_completed=3,
+            regressions_caught=1,
+            architecture_deviations=2,
+        )
+        record_session_metrics(
+            tmp_path,
+            session_id=2,
+            features_attempted=5,
+            features_completed=4,
+            regressions_caught=0,
+            architecture_deviations=1,
+        )
+
+        dashboard = get_dashboard_data(tmp_path)
+
+        assert dashboard["session_count"] == 2
+        assert dashboard["date_range"] is not None
+        assert len(dashboard["regression_rate_trend"]) == 2
+        assert len(dashboard["velocity_values"]) == 2
+        assert dashboard["architecture_deviation_count"] == 3
+        assert "indicators" in dashboard
+
+
+# =============================================================================
+# CLI Integration Tests for Drift Command
+# =============================================================================
+
+
+class TestDriftCLI:
+    """CLI integration tests for the drift command."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create a CLI test runner."""
+        return CliRunner()
+
+    def test_drift_help_shows_description(self, runner):
+        """Verify drift --help shows command description."""
+        result = runner.invoke(main, ["drift", "--help"])
+        assert result.exit_code == 0
+        assert "dashboard" in result.output.lower()
+        assert "--json" in result.output
+
+    def test_drift_on_empty_project(self, runner, tmp_path):
+        """Verify drift command works on empty project with no metrics."""
+        result = runner.invoke(main, ["drift", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "No sessions recorded" in result.output
+        assert "HEALTHY" in result.output
+
+    def test_drift_json_output_on_empty_project(self, runner, tmp_path):
+        """Verify --json outputs valid JSON with empty metrics."""
+        result = runner.invoke(main, ["drift", "--json", str(tmp_path)])
+        assert result.exit_code == 0
+
+        # Should be valid JSON
+        output = json.loads(result.output)
+        assert output["session_count"] == 0
+        assert output["health_status"] == "healthy"
+        assert output["date_range"] is None
+
+    def test_drift_shows_sessions(self, runner, tmp_path):
+        """Verify drift shows session data when metrics exist."""
+        # Create some metrics
+        record_session_metrics(
+            tmp_path,
+            session_id=1,
+            features_attempted=5,
+            features_completed=3,
+        )
+
+        result = runner.invoke(main, ["drift", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "Session 1" in result.output
+        assert "HEALTHY" in result.output
+
+    def test_drift_json_output_with_data(self, runner, tmp_path):
+        """Verify --json outputs correct data with metrics."""
+        record_session_metrics(
+            tmp_path,
+            session_id=1,
+            features_attempted=5,
+            features_completed=3,
+            regressions_caught=1,
+            architecture_deviations=2,
+        )
+        record_session_metrics(
+            tmp_path,
+            session_id=2,
+            features_attempted=5,
+            features_completed=4,
+        )
+
+        result = runner.invoke(main, ["drift", "--json", str(tmp_path)])
+        assert result.exit_code == 0
+
+        output = json.loads(result.output)
+        assert output["session_count"] == 2
+        assert output["date_range"] is not None
+        assert len(output["regression_rate_trend"]) == 2
+        assert output["architecture_deviation_count"] == 2
+        assert "indicators" in output
+
+    def test_drift_respects_no_color_env(self, runner, tmp_path):
+        """Verify NO_COLOR=1 disables ANSI color codes."""
+        record_session_metrics(
+            tmp_path,
+            session_id=1,
+            features_attempted=5,
+            features_completed=3,
+        )
+
+        result = runner.invoke(
+            main, ["drift", str(tmp_path)], env={"NO_COLOR": "1"}
+        )
+        assert result.exit_code == 0
+        # ANSI escape codes start with \033[ - should not be present
+        assert "\033[" not in result.output
+        # Should still show the dashboard content
+        assert "Drift Detection Dashboard" in result.output
+        assert "HEALTHY" in result.output
+
+
+class TestThresholdConstants:
+    """Tests to verify threshold constants are properly exported and used."""
+
+    def test_critical_thresholds_are_exported(self):
+        """Verify critical threshold constants are accessible."""
+        assert REGRESSION_RATE_CRITICAL == 50
+        assert REJECTION_RATE_CRITICAL == 60
+
+    def test_warning_thresholds_are_exported(self):
+        """Verify warning threshold constants are accessible."""
+        assert REGRESSION_RATE_WARNING == 25
+        assert REJECTION_RATE_WARNING == 30
+        assert INCOMPLETE_EVAL_WARNING == 25
+        assert MULTI_FEATURE_WARNING == 50
+
+    def test_arch_deviation_thresholds_are_exported(self):
+        """Verify architecture deviation thresholds are accessible."""
+        assert ARCH_DEVIATION_CRITICAL == 10
+        assert ARCH_DEVIATION_WARNING == 5
+
+    def test_recent_session_limit_is_exported(self):
+        """Verify RECENT_SESSION_LIMIT constant is accessible."""
+        assert RECENT_SESSION_LIMIT == 5
+
+    def test_health_status_uses_constants(self):
+        """Verify calculate_health_status respects threshold constants."""
+        # Just at critical threshold should be warning (not critical)
+        indicators = {
+            "regression_rate": REGRESSION_RATE_CRITICAL,
+            "velocity_trend": "stable",
+            "rejection_rate": 0.0,
+            "multi_feature_rate": 0.0,
+            "incomplete_evaluation_rate": 0.0,
+        }
+        # Exactly at threshold is warning (using > not >=)
+        assert calculate_health_status(indicators) == "warning"
+
+        # Above critical should be critical
+        indicators["regression_rate"] = REGRESSION_RATE_CRITICAL + 1
+        assert calculate_health_status(indicators) == "critical"
