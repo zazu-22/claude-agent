@@ -67,7 +67,12 @@ from claude_agent.prompts.loader import (
     render_coding_prompt,
     write_spec_to_project,
 )
-from claude_agent.security import configure_security, set_security_logger
+from claude_agent.security import (
+    configure_security,
+    evaluation_validation_hook,
+    set_security_logger,
+    ValidationResult,
+)
 
 
 def is_architecture_locked(project_dir: Path) -> bool:
@@ -446,6 +451,71 @@ async def run_agent_session(
         return "error", str(e)
 
 
+def validate_session_output(
+    response: str,
+    agent_type: str,
+    strict_mode: bool = False,
+    logger: Optional[AgentLogger] = None,
+) -> ValidationResult:
+    """
+    Validate agent session output for required evaluation sections.
+
+    Integrates the evaluation_validation_hook into the session workflow.
+    Logs validation results and returns structured validation data for
+    enriching handoffs between agents.
+
+    Args:
+        response: Agent output text to validate
+        agent_type: Type of agent ("coding", "initializer", "validator")
+        strict_mode: If True, missing sections trigger retry action
+        logger: Optional AgentLogger for logging validation results
+
+    Returns:
+        ValidationResult with validation status and extracted evaluation data
+    """
+    result = evaluation_validation_hook(response, agent_type, strict_mode)
+
+    # Log validation results
+    if logger:
+        eval_data = result.evaluation_data or {}
+        sections_found = eval_data.get("sections_found", [])
+        sections_missing = eval_data.get("sections_missing", [])
+        total_sections = len(sections_found) + len(sections_missing)
+
+        if result.is_valid:
+            logger.info(
+                f"Evaluation validation passed for {agent_type} agent: "
+                f"{len(sections_found)}/{total_sections} sections"
+            )
+        else:
+            logger.warning(
+                f"Evaluation validation issue for {agent_type} agent: {result.error_message}"
+            )
+
+    return result
+
+
+def _print_validation_status(result: ValidationResult, agent_type: str) -> None:
+    """
+    Print validation status to console.
+
+    Args:
+        result: ValidationResult from validation hook
+        agent_type: Type of agent for display
+    """
+    eval_data = result.evaluation_data or {}
+    sections_found = eval_data.get("sections_found", [])
+    sections_missing = eval_data.get("sections_missing", [])
+    completeness = eval_data.get("completeness_score", 0.0)
+
+    if result.is_valid:
+        print(f"\n[Evaluation Check] {agent_type}: All {len(sections_found)} sections present ✓")
+    else:
+        print(f"\n[Evaluation Check] {agent_type}: {len(sections_found)}/{len(sections_found) + len(sections_missing)} sections ({completeness:.0%})")
+        if sections_missing:
+            print(f"  Missing: {', '.join(sorted(sections_missing))}")
+
+
 async def run_validator_session(
     config: Config,
     stack: str,
@@ -505,6 +575,15 @@ async def run_validator_session(
         status, response = await run_agent_session(
             client, prompt, project_dir, logger, stats_tracker
         )
+
+    # Validate session output for required evaluation sections
+    eval_validation = validate_session_output(
+        response=response,
+        agent_type="validator",
+        strict_mode=False,  # Lenient mode - log but don't block
+        logger=logger,
+    )
+    _print_validation_status(eval_validation, "validator")
 
     # Parse response
     result = parse_validator_response(response)
@@ -948,6 +1027,17 @@ async def run_autonomous_agent(config: Config) -> None:
                 status, response = await run_agent_session(
                     client, prompt, project_dir, logger, stats_tracker
                 )
+
+            # Validate session output for required evaluation sections
+            # Note: Validation is logged and printed; metrics are recorded separately
+            # using parse_evaluation_sections() below for detailed tracking
+            validation_result = validate_session_output(
+                response=response,
+                agent_type=agent_type,
+                strict_mode=False,  # Lenient mode - log but don't block
+                logger=logger,
+            )
+            _print_validation_status(validation_result, agent_type)
 
             # End logging session and save stats
             logger.end_session(
