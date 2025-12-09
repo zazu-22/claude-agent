@@ -49,6 +49,7 @@ class EventType(str, Enum):
     VALIDATION_START = "validation_start"
     VALIDATION_RESULT = "validation_result"
     ERROR = "error"
+    LOG_MESSAGE = "log_message"
 
 
 # Map event types to their default log levels
@@ -64,6 +65,7 @@ EVENT_LEVELS: dict[EventType, LogLevel] = {
     EventType.VALIDATION_START: LogLevel.INFO,
     EventType.VALIDATION_RESULT: LogLevel.INFO,
     EventType.ERROR: LogLevel.ERROR,
+    EventType.LOG_MESSAGE: LogLevel.INFO,
 }
 
 
@@ -483,6 +485,38 @@ class AgentLogger:
             recent_events=list(self._recent_events),  # Include recent event context
         )
 
+    def debug(self, message: str) -> None:
+        """Log a debug message."""
+        self.log_event(
+            EventType.LOG_MESSAGE,
+            level=LogLevel.DEBUG,
+            message=truncate_string(message, self.config.max_summary_length),
+        )
+
+    def info(self, message: str) -> None:
+        """Log an info message."""
+        self.log_event(
+            EventType.LOG_MESSAGE,
+            level=LogLevel.INFO,
+            message=truncate_string(message, self.config.max_summary_length),
+        )
+
+    def warning(self, message: str) -> None:
+        """Log a warning message."""
+        self.log_event(
+            EventType.LOG_MESSAGE,
+            level=LogLevel.WARNING,
+            message=truncate_string(message, self.config.max_summary_length),
+        )
+
+    def error(self, message: str) -> None:
+        """Log an error message (simple version without context)."""
+        self.log_event(
+            EventType.LOG_MESSAGE,
+            level=LogLevel.ERROR,
+            message=truncate_string(message, self.config.max_summary_length),
+        )
+
     def _print_verbose(self, entry: LogEntry) -> None:
         """Print formatted log entry to stderr for verbose mode."""
         # Check NO_COLOR environment variable
@@ -521,6 +555,8 @@ class AgentLogger:
             details = f"#{entry.data.get('index')}: {entry.data.get('reason', '')[:40]}"
         elif entry.event == EventType.SESSION_END:
             details = f"turns={entry.data.get('turns_used')} status={entry.data.get('status')}"
+        elif entry.event == EventType.LOG_MESSAGE:
+            details = entry.data.get("message", "")[:60]
         else:
             details = str(entry.data)[:60]
 
