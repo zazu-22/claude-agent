@@ -111,21 +111,37 @@ First, check if architecture lock files exist:
 ls architecture/ 2>/dev/null || echo "No architecture/ directory"
 ```
 
-If the architecture/ directory exists, read and quote relevant sections:
+**If no architecture/ directory exists:** Skip to Step B. This is expected for projects that haven't gone through the architecture lock phase.
 
-- [ ] contracts.yaml read:
-  Quote: "[relevant API contracts for this feature]"
+**If the architecture/ directory exists, you MUST read and quote relevant sections from all three lock files:**
 
-- [ ] schemas.yaml read:
-  Quote: "[relevant data models for this feature]"
+```bash
+# Read all architecture lock files
+cat architecture/contracts.yaml
+cat architecture/schemas.yaml
+cat architecture/decisions.yaml
+```
 
-- [ ] decisions.yaml read:
-  Quote: "[relevant decisions that constrain this feature]"
-  Constraints I must honor: "[list specific constraints]"
+After reading, document your understanding:
 
-**ARCHITECTURE DEVIATION CHECK:**
-- Does this feature require changing a locked invariant? YES/NO
-- If YES: STOP and document why in claude-progress.txt. Do NOT proceed without explicit deviation approval.
+- [ ] **contracts.yaml read:**
+  - Relevant API contracts for this feature:
+    Quote: "[copy the exact contract name, endpoints, and methods that relate to this feature]"
+  - If no relevant contracts: "No contracts directly apply to this feature"
+
+- [ ] **schemas.yaml read:**
+  - Relevant data models for this feature:
+    Quote: "[copy the exact schema name, fields, and types that relate to this feature]"
+  - If no relevant schemas: "No schemas directly apply to this feature"
+
+- [ ] **decisions.yaml read:**
+  - Relevant decisions constraining this feature:
+    Quote: "[copy the exact decision ID, topic, choice, and constraints_created]"
+  - Constraints I must honor: "[list each constraint verbatim from the decisions]"
+  - If no relevant decisions: "No prior decisions constrain this feature"
+
+**IMPORTANT:** These quotes must be ACTUAL content from the files, not placeholders.
+Failure to read these files before implementation causes architecture drift.
 
 {{architecture_context}}
 
@@ -146,11 +162,50 @@ Before writing code, state:
 - Constraints I must honor: [list from Step A and A.1]
 - Architecture contracts I will implement: [list from Step A.1, if applicable]
 
+### Step C.1 - ARCHITECTURE DEVIATION CHECK (if architecture/ exists)
+**Only perform this step if the architecture/ directory exists.**
+
+Compare your implementation plan (Step C) against the architecture lock files (Step A.1).
+Answer each question explicitly:
+
+**1. Contract Deviation Check:**
+- Does my plan require adding/removing/changing any API endpoints in contracts.yaml?
+  Answer: YES/NO
+  If YES, list specific deviations: "[endpoint changes needed]"
+
+**2. Schema Deviation Check:**
+- Does my plan require adding/removing/changing any fields in schemas.yaml?
+  Answer: YES/NO
+  If YES, list specific deviations: "[schema changes needed]"
+
+**3. Decision Constraint Check:**
+- Does my plan violate any constraints from decisions.yaml?
+  Answer: YES/NO
+  If YES, list specific violations: "[constraint and how it's violated]"
+
+**HALT CONDITION - If ANY answer above is YES:**
+1. STOP - Do not proceed to Step D
+2. Document the deviation in claude-progress.txt:
+   ```
+   ARCHITECTURE DEVIATION DETECTED:
+   - Feature: [feature being implemented]
+   - Deviation type: [contract/schema/decision]
+   - Specific conflict: [what needs to change]
+   - Reasoning: [why the locked architecture seems insufficient]
+   ```
+3. Mark this feature as BLOCKED in your session notes
+4. Proceed to the next feature instead
+
+**PROCEED CONDITION - If ALL answers are NO:**
+- State: "Architecture check passed - no deviations detected"
+- Proceed to Step D
+
 ### Step D - EXECUTE
 ONLY NOW proceed to implementation (Step 4 below).
 
-**CRITICAL: Steps A-C are WORTHLESS unless you actually performed them.**
+**CRITICAL: Steps A-C (and A.1/C.1 if architecture/ exists) are WORTHLESS unless you actually performed them.**
 **Evidence quotes above MUST be actual content from files, not placeholders.**
+**If architecture/ exists and you skipped A.1 or C.1, you WILL cause architecture drift.**
 
 ### STEP 4: CHOOSE ONE FEATURE TO IMPLEMENT
 
