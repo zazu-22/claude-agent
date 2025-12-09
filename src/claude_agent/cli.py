@@ -24,8 +24,10 @@ from claude_agent.progress import (
     find_feature_list,
     find_spec_for_coding,
     find_spec_validation_report,
+    get_blocked_features,
     get_session_state,
     print_progress_summary,
+    unblock_feature,
 )
 
 
@@ -414,6 +416,83 @@ def status(project_dir: Path, metrics: bool):
                     f"{session.features_completed} completed, "
                     f"{session.regressions_caught} regressions{flag_str}"
                 )
+
+
+@main.command()
+@click.argument("feature_index", type=int, required=False)
+@click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
+@click.option("--list", "list_blocked", is_flag=True, help="List all blocked features")
+@click.option("--all", "unblock_all", is_flag=True, help="Unblock all blocked features")
+def unblock(feature_index: Optional[int], project_dir: Path, list_blocked: bool, unblock_all: bool):
+    """Unblock a feature that was blocked due to architecture deviation.
+
+    \b
+    When a feature is blocked due to an architecture conflict, you can:
+    1. Update the architecture files to resolve the conflict
+    2. Run this command to unblock the feature
+
+    \b
+    Examples:
+      claude-agent unblock 5              # Unblock feature #5
+      claude-agent unblock --list         # List all blocked features
+      claude-agent unblock --all          # Unblock all blocked features
+
+    \b
+    Manual alternative:
+      Edit feature_list.json and remove "blocked" and "blocked_reason" fields
+    """
+    project_dir = Path(project_dir).resolve()
+
+    # List blocked features
+    if list_blocked or (feature_index is None and not unblock_all):
+        blocked = get_blocked_features(project_dir)
+
+        if not blocked:
+            click.echo("No blocked features found.")
+            return
+
+        click.echo(f"\nBlocked features in {project_dir.name}:")
+        click.echo("-" * 70)
+        for item in blocked:
+            click.echo(f"  #{item['index']}: {item['description'][:50]}")
+            click.echo(f"       Reason: {item['blocked_reason'][:60]}")
+        click.echo("-" * 70)
+        click.echo(f"\nTo unblock: claude-agent unblock <index>")
+        click.echo("To unblock all: claude-agent unblock --all")
+        return
+
+    # Unblock all blocked features
+    if unblock_all:
+        blocked = get_blocked_features(project_dir)
+
+        if not blocked:
+            click.echo("No blocked features to unblock.")
+            return
+
+        click.echo(f"Unblocking {len(blocked)} feature(s)...")
+        success_count = 0
+        for item in blocked:
+            success, message = unblock_feature(project_dir, item["index"])
+            if success:
+                click.echo(f"  ✓ {message}")
+                success_count += 1
+            else:
+                click.echo(f"  ✗ Feature #{item['index']}: {message}", err=True)
+
+        click.echo(f"\nUnblocked {success_count}/{len(blocked)} features.")
+        return
+
+    # Unblock specific feature
+    if feature_index is not None:
+        success, message = unblock_feature(project_dir, feature_index)
+
+        if success:
+            click.echo(click.style("✓ ", fg="green") + message)
+            click.echo("\nThe feature is now available for implementation.")
+            click.echo("Run 'claude-agent' to continue coding.")
+        else:
+            click.echo(click.style("✗ ", fg="red") + message, err=True)
+            sys.exit(1)
 
 
 # =============================================================================

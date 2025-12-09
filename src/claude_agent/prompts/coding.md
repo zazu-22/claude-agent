@@ -37,10 +37,13 @@ git log --oneline -20
 # 7. Count remaining tests
 cat feature_list.json | grep '"passes": false' | wc -l
 
-# 8. Check for project-specific instructions
+# 8. Check for blocked features (architecture deviations)
+cat feature_list.json | grep -c '"blocked": true' || echo "0"
+
+# 9. Check for project-specific instructions
 cat CLAUDE.md 2>/dev/null || true
 
-# 9. Check for test credentials (for login/auth testing)
+# 10. Check for test credentials (for login/auth testing)
 cat test-credentials.json 2>/dev/null || true
 ```
 
@@ -50,6 +53,18 @@ for the application you're building.
 If `CLAUDE.md` exists, follow any project-specific instructions it contains.
 If `test-credentials.json` exists, use those credentials when testing login
 or authentication features via browser automation.
+
+**CHECK FOR UNBLOCKABLE FEATURES:**
+If any features have `"blocked": true`, check if architecture files have been updated:
+1. Read the `blocked_reason` for each blocked feature
+2. Check if `architecture/` files now support the blocked feature
+3. If the conflict is resolved, note in claude-progress.txt:
+   ```
+   UNBLOCK CANDIDATE: Feature #X may be unblockable
+   - Original block reason: [reason]
+   - Architecture now supports: [evidence]
+   ```
+4. The user can run `claude-agent unblock <index>` to unblock the feature
 
 ### STEP 2: START SERVERS (IF NOT RUNNING)
 
