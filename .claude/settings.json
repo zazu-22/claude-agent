@@ -4,7 +4,9 @@
       "Bash(npx:*)",
       "Bash(uv run pytest:*)",
       "Bash(stm show:*)",
-      "Bash(claudekit list:*)"
+      "Bash(claudekit list:*)",
+      "Bash(echo:*)",
+      "Bash(date:*)"
     ],
     "deny": [],
     "ask": []
@@ -24,3 +26,4 @@
     ]
   }
 }
+
