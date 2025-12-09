@@ -36,6 +36,26 @@ VELOCITY_MIN_ABSOLUTE_THRESHOLD = 0.5
 # so 0.01 provides a wide margin for accumulated errors.
 FLOAT_COMPARISON_EPSILON = 0.01
 
+# =============================================================================
+# Health Status Thresholds
+# =============================================================================
+# These thresholds determine the health status displayed in the drift dashboard.
+# Adjust based on project-specific tolerance for drift indicators.
+
+# Critical thresholds - project health is severely impacted
+REGRESSION_RATE_CRITICAL = 50  # Percentage of sessions with regressions
+REJECTION_RATE_CRITICAL = 60   # Percentage of validations rejected
+
+# Warning thresholds - project health needs attention
+REGRESSION_RATE_WARNING = 25   # Percentage of sessions with regressions
+REJECTION_RATE_WARNING = 30    # Percentage of validations rejected
+INCOMPLETE_EVAL_WARNING = 25   # Percentage of sessions with incomplete evaluations
+MULTI_FEATURE_WARNING = 50     # Percentage of sessions with multi-feature drift
+
+# Architecture deviation thresholds for display coloring
+ARCH_DEVIATION_CRITICAL = 10   # Total deviations for critical status
+ARCH_DEVIATION_WARNING = 5     # Total deviations for warning status
+
 
 @dataclass
 class SessionMetrics:
@@ -667,9 +687,13 @@ def calculate_health_status(indicators: DriftIndicators) -> str:
     """
     Calculate overall health status based on drift indicators.
 
-    Health thresholds:
-    - Critical: regression_rate > 50% OR rejection_rate > 60% OR velocity_trend == "decreasing"
-    - Warning: regression_rate > 25% OR rejection_rate > 30% OR incomplete_evaluation_rate > 25%
+    Uses threshold constants defined at module level:
+    - Critical: regression_rate > REGRESSION_RATE_CRITICAL OR
+                rejection_rate > REJECTION_RATE_CRITICAL OR
+                velocity_trend == "decreasing"
+    - Warning: regression_rate > REGRESSION_RATE_WARNING OR
+               rejection_rate > REJECTION_RATE_WARNING OR
+               incomplete_evaluation_rate > INCOMPLETE_EVAL_WARNING
     - Healthy: All metrics within acceptable ranges
 
     Args:
@@ -679,21 +703,21 @@ def calculate_health_status(indicators: DriftIndicators) -> str:
         "healthy" | "warning" | "critical"
     """
     # Critical conditions
-    if indicators["regression_rate"] > 50:
+    if indicators["regression_rate"] > REGRESSION_RATE_CRITICAL:
         return "critical"
-    if indicators["rejection_rate"] > 60:
+    if indicators["rejection_rate"] > REJECTION_RATE_CRITICAL:
         return "critical"
     if indicators["velocity_trend"] == "decreasing":
         return "critical"
 
     # Warning conditions
-    if indicators["regression_rate"] > 25:
+    if indicators["regression_rate"] > REGRESSION_RATE_WARNING:
         return "warning"
-    if indicators["rejection_rate"] > 30:
+    if indicators["rejection_rate"] > REJECTION_RATE_WARNING:
         return "warning"
-    if indicators["incomplete_evaluation_rate"] > 25:
+    if indicators["incomplete_evaluation_rate"] > INCOMPLETE_EVAL_WARNING:
         return "warning"
-    if indicators["multi_feature_rate"] > 50:
+    if indicators["multi_feature_rate"] > MULTI_FEATURE_WARNING:
         return "warning"
 
     return "healthy"

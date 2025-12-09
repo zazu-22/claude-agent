@@ -6,9 +6,20 @@ import json
 import pytest
 from pathlib import Path
 
+from click.testing import CliRunner
+
+from claude_agent.cli import main
 from claude_agent.metrics import (
+    ARCH_DEVIATION_CRITICAL,
+    ARCH_DEVIATION_WARNING,
     FLOAT_COMPARISON_EPSILON,
+    INCOMPLETE_EVAL_WARNING,
     METRICS_FILENAME,
+    MULTI_FEATURE_WARNING,
+    REGRESSION_RATE_CRITICAL,
+    REGRESSION_RATE_WARNING,
+    REJECTION_RATE_CRITICAL,
+    REJECTION_RATE_WARNING,
     SessionMetrics,
     ValidationMetrics,
     DriftMetrics,
@@ -1332,3 +1343,122 @@ class TestGetDashboardData:
         assert len(dashboard["velocity_values"]) == 2
         assert dashboard["architecture_deviation_count"] == 3
         assert "indicators" in dashboard
+
+
+# =============================================================================
+# CLI Integration Tests for Drift Command
+# =============================================================================
+
+
+class TestDriftCLI:
+    """CLI integration tests for the drift command."""
+
+    @pytest.fixture
+    def runner(self):
+        """Create a CLI test runner."""
+        return CliRunner()
+
+    def test_drift_help_shows_description(self, runner):
+        """Verify drift --help shows command description."""
+        result = runner.invoke(main, ["drift", "--help"])
+        assert result.exit_code == 0
+        assert "dashboard" in result.output.lower()
+        assert "--json" in result.output
+
+    def test_drift_on_empty_project(self, runner, tmp_path):
+        """Verify drift command works on empty project with no metrics."""
+        result = runner.invoke(main, ["drift", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "No sessions recorded" in result.output
+        assert "HEALTHY" in result.output
+
+    def test_drift_json_output_on_empty_project(self, runner, tmp_path):
+        """Verify --json outputs valid JSON with empty metrics."""
+        result = runner.invoke(main, ["drift", "--json", str(tmp_path)])
+        assert result.exit_code == 0
+
+        # Should be valid JSON
+        output = json.loads(result.output)
+        assert output["session_count"] == 0
+        assert output["health_status"] == "healthy"
+        assert output["date_range"] is None
+
+    def test_drift_shows_sessions(self, runner, tmp_path):
+        """Verify drift shows session data when metrics exist."""
+        # Create some metrics
+        record_session_metrics(
+            tmp_path,
+            session_id=1,
+            features_attempted=5,
+            features_completed=3,
+        )
+
+        result = runner.invoke(main, ["drift", str(tmp_path)])
+        assert result.exit_code == 0
+        assert "Session 1" in result.output
+        assert "HEALTHY" in result.output
+
+    def test_drift_json_output_with_data(self, runner, tmp_path):
+        """Verify --json outputs correct data with metrics."""
+        record_session_metrics(
+            tmp_path,
+            session_id=1,
+            features_attempted=5,
+            features_completed=3,
+            regressions_caught=1,
+            architecture_deviations=2,
+        )
+        record_session_metrics(
+            tmp_path,
+            session_id=2,
+            features_attempted=5,
+            features_completed=4,
+        )
+
+        result = runner.invoke(main, ["drift", "--json", str(tmp_path)])
+        assert result.exit_code == 0
+
+        output = json.loads(result.output)
+        assert output["session_count"] == 2
+        assert output["date_range"] is not None
+        assert len(output["regression_rate_trend"]) == 2
+        assert output["architecture_deviation_count"] == 2
+        assert "indicators" in output
+
+
+class TestThresholdConstants:
+    """Tests to verify threshold constants are properly exported and used."""
+
+    def test_critical_thresholds_are_exported(self):
+        """Verify critical threshold constants are accessible."""
+        assert REGRESSION_RATE_CRITICAL == 50
+        assert REJECTION_RATE_CRITICAL == 60
+
+    def test_warning_thresholds_are_exported(self):
+        """Verify warning threshold constants are accessible."""
+        assert REGRESSION_RATE_WARNING == 25
+        assert REJECTION_RATE_WARNING == 30
+        assert INCOMPLETE_EVAL_WARNING == 25
+        assert MULTI_FEATURE_WARNING == 50
+
+    def test_arch_deviation_thresholds_are_exported(self):
+        """Verify architecture deviation thresholds are accessible."""
+        assert ARCH_DEVIATION_CRITICAL == 10
+        assert ARCH_DEVIATION_WARNING == 5
+
+    def test_health_status_uses_constants(self):
+        """Verify calculate_health_status respects threshold constants."""
+        # Just at critical threshold should be warning (not critical)
+        indicators = {
+            "regression_rate": REGRESSION_RATE_CRITICAL,
+            "velocity_trend": "stable",
+            "rejection_rate": 0.0,
+            "multi_feature_rate": 0.0,
+            "incomplete_evaluation_rate": 0.0,
+        }
+        # Exactly at threshold is warning (using > not >=)
+        assert calculate_health_status(indicators) == "warning"
+
+        # Above critical should be critical
+        indicators["regression_rate"] = REGRESSION_RATE_CRITICAL + 1
+        assert calculate_health_status(indicators) == "critical"

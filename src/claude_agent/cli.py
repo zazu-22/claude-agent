@@ -6,6 +6,8 @@ Command-line interface for the autonomous coding agent.
 """
 
 import asyncio
+import json
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -20,6 +22,19 @@ from claude_agent.config import (
 )
 from claude_agent.detection import detect_stack, get_available_stacks
 from claude_agent.errors import ActionableError, ConfigParseError, print_error
+from claude_agent.metrics import (
+    ARCH_DEVIATION_CRITICAL,
+    ARCH_DEVIATION_WARNING,
+    INCOMPLETE_EVAL_WARNING,
+    MULTI_FEATURE_WARNING,
+    REGRESSION_RATE_CRITICAL,
+    REGRESSION_RATE_WARNING,
+    REJECTION_RATE_CRITICAL,
+    REJECTION_RATE_WARNING,
+    generate_sparkline,
+    get_dashboard_data,
+    load_metrics,
+)
 from claude_agent.progress import (
     find_feature_list,
     find_spec_for_coding,
@@ -447,15 +462,6 @@ def drift(project_dir: Path, output_json: bool):
       claude-agent drift ./my-project    # Show dashboard for specific project
       claude-agent drift --json          # Output raw JSON for scripting
     """
-    import json as json_module
-    import os
-
-    from claude_agent.metrics import (
-        get_dashboard_data,
-        generate_sparkline,
-        load_metrics,
-    )
-
     project_dir = Path(project_dir).resolve()
     dashboard = get_dashboard_data(project_dir)
 
@@ -473,7 +479,7 @@ def drift(project_dir: Path, output_json: bool):
             "health_status": dashboard["health_status"],
             "indicators": dashboard["indicators"],
         }
-        click.echo(json_module.dumps(output, indent=2))
+        click.echo(json.dumps(output, indent=2))
         return
 
     # Check NO_COLOR environment variable
@@ -542,9 +548,9 @@ def drift(project_dir: Path, output_json: bool):
     regression_trend = dashboard["regression_rate_trend"]
     regression_sparkline = generate_sparkline(regression_trend) if regression_trend else ""
 
-    if regression_rate > 50:
+    if regression_rate > REGRESSION_RATE_CRITICAL:
         rate_color = RED
-    elif regression_rate > 25:
+    elif regression_rate > REGRESSION_RATE_WARNING:
         rate_color = YELLOW
     else:
         rate_color = GREEN
@@ -561,16 +567,17 @@ def drift(project_dir: Path, output_json: bool):
     elif velocity_trend == "increasing":
         trend_color = GREEN
     else:
-        trend_color = DIM
+        # Use empty string (default color) for stable/insufficient_data for visibility
+        trend_color = ""
 
     click.echo(f"  Velocity Trend:      {trend_color}{velocity_trend}{RESET} {velocity_sparkline}")
 
     # Rejection Rate
     rejection_rate = dashboard["rejection_rate"]
 
-    if rejection_rate > 60:
+    if rejection_rate > REJECTION_RATE_CRITICAL:
         reject_color = RED
-    elif rejection_rate > 30:
+    elif rejection_rate > REJECTION_RATE_WARNING:
         reject_color = YELLOW
     else:
         reject_color = GREEN
@@ -580,9 +587,9 @@ def drift(project_dir: Path, output_json: bool):
     # Architecture Deviations
     arch_deviations = dashboard["architecture_deviation_count"]
 
-    if arch_deviations > 10:
+    if arch_deviations > ARCH_DEVIATION_CRITICAL:
         arch_color = RED
-    elif arch_deviations > 5:
+    elif arch_deviations > ARCH_DEVIATION_WARNING:
         arch_color = YELLOW
     else:
         arch_color = GREEN
@@ -596,15 +603,15 @@ def drift(project_dir: Path, output_json: bool):
     multi_rate = indicators["multi_feature_rate"]
     incomplete_rate = indicators["incomplete_evaluation_rate"]
 
-    if multi_rate > 50:
+    if multi_rate > MULTI_FEATURE_WARNING:
         multi_color = YELLOW
     else:
-        multi_color = DIM
+        multi_color = GREEN
 
-    if incomplete_rate > 25:
+    if incomplete_rate > INCOMPLETE_EVAL_WARNING:
         incomplete_color = YELLOW
     else:
-        incomplete_color = DIM
+        incomplete_color = GREEN
 
     click.echo(f"  Multi-Feature Rate:  {multi_color}{multi_rate:.1f}%{RESET}")
     click.echo(f"  Incomplete Eval:     {incomplete_color}{incomplete_rate:.1f}%{RESET}")
