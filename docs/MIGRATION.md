@@ -37,16 +37,13 @@ The drift mitigation system is designed with full backwards compatibility:
 
 ### Legacy Data Handling
 
-When loading existing `drift-metrics.json` files, the system automatically adds defaults for new fields:
+When loading existing `drift-metrics.json` files, the system automatically provides sensible defaults for any new fields that were added in later versions. This ensures:
 
-```python
-# Automatic defaults for older metrics files
-session_data["features_regressed"] = 0           # Added field
-session_data["evaluation_completeness_score"] = 1.0  # Added field
-session_data["is_multi_feature"] = False         # Added field
-```
+- Old metrics files load without errors
+- Missing fields receive safe default values (e.g., zero for counts, 1.0 for completeness scores)
+- Old sessions are treated as having complete evaluation until new sessions provide actual data
 
-This means old sessions are treated as having complete evaluation (optimistic assumption) until new sessions provide actual data.
+This approach means you never need to manually update or migrate your metrics files.
 
 ## Step-by-Step Migration
 
@@ -132,12 +129,12 @@ Run the architecture phase to lock your existing patterns:
 uv run claude-agent -p ./your-project
 ```
 
-The agent will:
-1. Analyze existing code to identify API contracts
+When the architecture phase runs (automatically triggered if `architecture/` doesn't exist), the **Architect Agent** will:
+1. Analyze your existing code to identify API contracts
 2. Extract data schemas from models/types
-3. Document architectural decisions
+3. Document architectural decisions based on patterns found
 
-This creates the `architecture/` directory:
+This is fully automated - the agent creates the `architecture/` directory:
 
 ```
 your-project/
@@ -224,7 +221,7 @@ decisions:
 
 ### Step 4: Update Configuration (Optional)
 
-Add drift mitigation settings to `.claude-agent.yaml`:
+Add drift mitigation settings to `.claude-agent.yaml` in your **project root directory**:
 
 ```yaml
 # Architecture lock settings
@@ -247,8 +244,11 @@ uv run claude-agent status ./your-project --metrics
 # Verify architecture files (if enabled)
 ls -la ./your-project/architecture/
 
-# Check for evaluation sections in logs
+# Check for evaluation sections in logs (filter by session ID)
 uv run claude-agent logs --session abc123
+
+# View detailed session statistics (turns, duration, features completed)
+uv run claude-agent stats
 ```
 
 Expected healthy metrics after several sessions:
@@ -267,12 +267,14 @@ Incomplete Evaluation Rate: 0.0%   # 0% is ideal
 
 | Command | Purpose |
 |---------|---------|
-| `claude-agent status --metrics` | View drift metrics summary |
-| `claude-agent status` | Check project state |
+| `claude-agent status --metrics` | View drift metrics summary (regression rate, velocity trend, etc.) |
+| `claude-agent status` | Check project state and feature progress |
 | `claude-agent --skip-architecture` | Skip architecture phase for this session |
-| `claude-agent init` | Create/update config template |
-| `claude-agent logs` | View recent activity including evaluations |
-| `claude-agent stats` | View session statistics |
+| `claude-agent init` | Create/update `.claude-agent.yaml` config template in project root |
+| `claude-agent logs` | View recent activity including evaluations (last 50 entries) |
+| `claude-agent logs --session ID` | Filter log entries by session ID prefix |
+| `claude-agent stats` | View session statistics (turns used, duration, features completed per session) |
+| `claude-agent stats --last N` | Show statistics for the last N sessions only |
 
 ## Understanding Drift Indicators
 
@@ -317,9 +319,39 @@ Percentage of sessions missing required evaluation sections.
 
 If `drift-metrics.json` isn't being created:
 
-1. Ensure you're running version 0.3.0 or later
-2. Check file permissions in project directory
+1. Ensure you're running the latest version (`uv sync` to update)
+2. Check file permissions in project directory (must be writable)
 3. Run `claude-agent status --metrics` to trigger creation
+4. Check for disk space issues
+
+### Metrics File Corruption
+
+If you see errors loading `drift-metrics.json`:
+
+```
+Error: Failed to load metrics - invalid JSON
+```
+
+Options:
+1. **Backup and reset**: `mv drift-metrics.json drift-metrics.json.bak`
+2. **Validate JSON**: Use `python -m json.tool drift-metrics.json` to find syntax errors
+3. **Manual fix**: Edit the file to fix malformed JSON (missing commas, brackets, etc.)
+
+The system will create a fresh metrics file on the next session if the file is missing or unreadable.
+
+### Permission Errors
+
+If you see permission denied errors:
+
+```bash
+# Check file ownership
+ls -la drift-metrics.json architecture/
+
+# Fix permissions if needed
+chmod 644 drift-metrics.json
+chmod 755 architecture/
+chmod 644 architecture/*.yaml
+```
 
 ### Architecture Validation Failures
 
@@ -388,4 +420,4 @@ After migration:
 3. Address any high regression rates or velocity decreases
 4. Consider enabling `architecture.required: true` once architecture is stable
 
-For questions or issues, see the [GitHub repository](https://github.com/anthropics/claude-agent).
+For questions or issues, see the [GitHub repository](https://github.com/zazu-22/claude-agent).
