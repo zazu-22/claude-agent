@@ -6,7 +6,7 @@ Capture and query architectural decisions made during coding sessions.
 Implements append-only decision log as specified in drift-mitigation-design.md.
 """
 
-import uuid
+import uuid  # Used for decision record IDs
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,8 +50,12 @@ class DecisionRecord:
     timestamp: Optional[str] = None  # ISO format
     session: Optional[int] = None  # Session number that made this decision
     rationale: Optional[str] = None  # Why this choice was made
-    alternatives_considered: list[str] = field(default_factory=list)  # Other options evaluated
-    constraints_created: list[str] = field(default_factory=list)  # What future sessions must honor
+    alternatives_considered: list[str] = field(
+        default_factory=list
+    )  # Other options evaluated
+    constraints_created: list[str] = field(
+        default_factory=list
+    )  # What future sessions must honor
     affects_features: list[int] = field(default_factory=list)  # Feature indices
 
 
@@ -88,9 +92,7 @@ def load_decisions(project_dir: Path) -> list[DecisionRecord]:
         with open(decisions_path) as f:
             data = yaml.safe_load(f) or {}
     except yaml.YAMLError as e:
-        raise DecisionLoadError(
-            f"Failed to parse decisions.yaml: {e}"
-        ) from e
+        raise DecisionLoadError(f"Failed to parse decisions.yaml: {e}") from e
 
     if not isinstance(data, dict):
         raise DecisionLoadError(
@@ -119,17 +121,19 @@ def load_decisions(project_dir: Path) -> list[DecisionRecord]:
                 f"Decision at index {i} missing required fields: {', '.join(missing)}"
             )
 
-        records.append(DecisionRecord(
-            id=d["id"],
-            topic=d["topic"],
-            choice=d["choice"],
-            timestamp=d.get("timestamp"),  # None if not provided
-            session=d.get("session"),  # None if not provided
-            rationale=d.get("rationale"),  # None if not provided
-            alternatives_considered=d.get("alternatives_considered", []),
-            constraints_created=d.get("constraints_created", []),
-            affects_features=d.get("affects_features", []),
-        ))
+        records.append(
+            DecisionRecord(
+                id=d["id"],
+                topic=d["topic"],
+                choice=d["choice"],
+                timestamp=d.get("timestamp"),  # None if not provided
+                session=d.get("session"),  # None if not provided
+                rationale=d.get("rationale"),  # None if not provided
+                alternatives_considered=d.get("alternatives_considered", []),
+                constraints_created=d.get("constraints_created", []),
+                affects_features=d.get("affects_features", []),
+            )
+        )
 
     return records
 
@@ -274,9 +278,7 @@ def validate_feature_references(
 
     for idx in decision.affects_features:
         if idx < 0:
-            errors.append(
-                f"Decision {decision.id} has negative feature index {idx}"
-            )
+            errors.append(f"Decision {decision.id} has negative feature index {idx}")
         elif idx > max_index:
             errors.append(
                 f"Decision {decision.id} references feature index {idx}, "

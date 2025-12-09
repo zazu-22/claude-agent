@@ -18,10 +18,25 @@ from claude_agent.client import create_client
 from claude_agent.config import Config
 from claude_agent.detection import (
     detect_stack,
-    get_stack_init_command,
     get_stack_dev_command,
+    get_stack_init_command,
 )
 from claude_agent.errors import ActionableError, print_error
+from claude_agent.logging import (
+    AgentLogger,
+    LogLevel,
+    SessionStatsTracker,
+)
+from claude_agent.logging import (
+    LoggingConfig as LoggingConfigClass,
+)
+from claude_agent.metrics import (
+    calculate_evaluation_completeness,
+    count_regressions,
+    parse_evaluation_sections,
+    record_session_metrics,
+    record_validation_metrics,
+)
 from claude_agent.progress import (
     count_passing_tests,
     count_tests_by_type,
@@ -34,38 +49,25 @@ from claude_agent.progress import (
     is_automated_work_complete,
     mark_tests_failed,
     parse_validation_verdict,
-    print_session_header,
     print_progress_summary,
+    print_session_header,
     print_startup_banner,
     record_spec_step,
     save_validation_attempt,
 )
 from claude_agent.prompts.loader import (
     get_architect_prompt,
-    get_initializer_prompt,
     get_coding_prompt,
+    get_initializer_prompt,
     get_review_prompt,
-    get_validator_prompt,
     get_spec_create_prompt,
-    get_spec_validate_prompt,
     get_spec_decompose_prompt,
-    write_spec_to_project,
+    get_spec_validate_prompt,
+    get_validator_prompt,
     render_coding_prompt,
+    write_spec_to_project,
 )
 from claude_agent.security import configure_security, set_security_logger
-from claude_agent.logging import (
-    AgentLogger,
-    LoggingConfig as LoggingConfigClass,
-    LogLevel,
-    SessionStatsTracker,
-)
-from claude_agent.metrics import (
-    calculate_evaluation_completeness,
-    count_regressions,
-    parse_evaluation_sections,
-    record_session_metrics,
-    record_validation_metrics,
-)
 
 
 def is_architecture_locked(project_dir: Path) -> bool:
@@ -390,7 +392,9 @@ async def run_agent_session(
 
                         # Log tool result
                         if logger and last_tool_name:
-                            logger.log_tool_result(last_tool_name, is_error, result_content)
+                            logger.log_tool_result(
+                                last_tool_name, is_error, result_content
+                            )
 
             # Handle ResultMessage (session end - critical diagnostic info)
             elif msg_type == "ResultMessage":
@@ -420,15 +424,18 @@ async def run_agent_session(
         return "continue", response_text
 
     except Exception as e:
-        print_error(ActionableError(
-            message=f"Agent session failed: {type(e).__name__}",
-            context=str(e),
-            example="claude-agent logs --errors",
-            help_command="claude-agent --help",
-        ))
+        print_error(
+            ActionableError(
+                message=f"Agent session failed: {type(e).__name__}",
+                context=str(e),
+                example="claude-agent logs --errors",
+                help_command="claude-agent --help",
+            )
+        )
         # Log error
         if logger:
             import traceback
+
             logger.log_error(
                 error_type=type(e).__name__,
                 message=str(e),
@@ -544,8 +551,8 @@ async def run_architect_session(
         and contain valid YAML with required fields
     """
     from claude_agent.architecture import (
-        validate_architecture_files,
         cleanup_partial_architecture,
+        validate_architecture_files,
     )
 
     last_status = "error"
@@ -618,23 +625,29 @@ async def run_architect_session(
                 return status, True
             else:
                 # Files exist but are invalid - log prominently and clean up
-                print(f"\n{'='*60}")
+                print(f"\n{'=' * 60}")
                 print("ARCHITECTURE VALIDATION FAILED")
-                print(f"{'='*60}")
-                print(f"Attempt {attempt}/{max_retries} - Found {len(validation_errors)} validation error(s):")
+                print(f"{'=' * 60}")
+                print(
+                    f"Attempt {attempt}/{max_retries} - Found {len(validation_errors)} validation error(s):"
+                )
                 for i, error in enumerate(validation_errors, 1):
                     print(f"  {i}. {error}")
                     if logger:
                         logger.warning(f"Architecture validation error [{i}]: {error}")
-                print(f"{'='*60}\n")
+                print(f"{'=' * 60}\n")
 
                 # Clean up invalid files before retry
                 cleanup_partial_architecture(project_dir)
         else:
             # Files don't all exist - clean up any partial architecture
-            print(f"\nArchitecture attempt {attempt}/{max_retries}: Required files not created")
+            print(
+                f"\nArchitecture attempt {attempt}/{max_retries}: Required files not created"
+            )
             if logger:
-                logger.warning(f"Architecture attempt {attempt}: Required files not created")
+                logger.warning(
+                    f"Architecture attempt {attempt}: Required files not created"
+                )
             cleaned = cleanup_partial_architecture(project_dir)
             if cleaned and logger:
                 logger.warning("Cleaned up partial architecture directory")
@@ -724,13 +737,17 @@ async def run_autonomous_agent(config: Config) -> None:
                 print(f"Found existing spec: {existing_spec}")
                 spec_content = existing_spec.read_text()
             else:
-                print_error(ActionableError(
-                    message="No spec file or goal provided",
-                    context="The agent needs to know what to build.",
-                    example='claude-agent --spec PATH or --goal "description"',
-                    help_command="claude-agent --help",
-                ))
-                print("\n  Tip: Run claude-agent with no args to use the interactive wizard.")
+                print_error(
+                    ActionableError(
+                        message="No spec file or goal provided",
+                        context="The agent needs to know what to build.",
+                        example='claude-agent --spec PATH or --goal "description"',
+                        help_command="claude-agent --help",
+                    )
+                )
+                print(
+                    "\n  Tip: Run claude-agent with no args to use the interactive wizard."
+                )
                 return
 
         # Run review session if requested
@@ -807,20 +824,25 @@ async def run_autonomous_agent(config: Config) -> None:
                 print("=" * 70 + "\n")
             else:
                 if config.architecture.required:
-                    print_error(ActionableError(
-                        message="Architecture lock phase failed",
-                        context="Required architecture files were not created.",
-                        example="claude-agent --skip-architecture",
-                        help_command="claude-agent --help",
-                    ))
+                    print_error(
+                        ActionableError(
+                            message="Architecture lock phase failed",
+                            context="Required architecture files were not created.",
+                            example="claude-agent --skip-architecture",
+                            help_command="claude-agent --help",
+                        )
+                    )
                     return
                 else:
                     # Prominent warning when architecture fails but isn't required
                     print("\n" + "!" * 70)
                     print("  WARNING: ARCHITECTURE LOCK PHASE FAILED")
+                    print("  Check architecture/ directory for partial files")
                     print("!" * 70)
                     print()
-                    print("  The architect agent did not create valid architecture files.")
+                    print(
+                        "  The architect agent did not create valid architecture files."
+                    )
                     print("  This means drift protection is REDUCED for this project.")
                     print()
                     print("  Implications:")
@@ -831,7 +853,9 @@ async def run_autonomous_agent(config: Config) -> None:
                     print("  To require architecture (fail instead of warn):")
                     print("    Set 'architecture.required: true' in .claude-agent.yaml")
                     print()
-                    print("  Continuing to coding sessions without architecture lock...")
+                    print(
+                        "  Continuing to coding sessions without architecture lock..."
+                    )
                     print("!" * 70 + "\n")
 
     # Main loop
@@ -940,7 +964,9 @@ async def run_autonomous_agent(config: Config) -> None:
             features_regressed = abs(features_delta) if features_delta < 0 else 0
             # features_completed: net change (can be negative for regressions)
             features_completed = features_delta
-            evaluation_sections, evaluation_complete = parse_evaluation_sections(response)
+            evaluation_sections, evaluation_complete = parse_evaluation_sections(
+                response
+            )
             regressions, regression_section_found = count_regressions(response)
 
             # The coding agent is designed to target exactly one feature per session.
@@ -1309,12 +1335,14 @@ async def run_spec_create_session(
                 "goal": goal[:200],
             },
         )
-        print_error(ActionableError(
-            message="spec-draft.md was not created",
-            context="The spec creation agent may have encountered issues.",
-            example="claude-agent logs --errors",
-            help_command="claude-agent spec create --help",
-        ))
+        print_error(
+            ActionableError(
+                message="spec-draft.md was not created",
+                context="The spec creation agent may have encountered issues.",
+                example="claude-agent logs --errors",
+                help_command="claude-agent spec create --help",
+            )
+        )
         print("\n  Try running the command again or check the logs for details.")
         return "error", project_dir / "spec-draft.md"
 
@@ -1411,9 +1439,7 @@ async def run_spec_validate_session(
             "warnings": verdict.warnings,
             "suggestions": verdict.suggestions,
             "output_file": (
-                str(validated_path.relative_to(project_dir))
-                if validated_path
-                else None
+                str(validated_path.relative_to(project_dir)) if validated_path else None
             ),
             "validation_report": (
                 str(validation_report_path.relative_to(project_dir))
@@ -1426,7 +1452,9 @@ async def run_spec_validate_session(
     # Print results
     if passed:
         print(f"\nValidation PASSED (verdict: {verdict.verdict})")
-        print(f"  Blocking: {verdict.blocking}, Warnings: {verdict.warnings}, Suggestions: {verdict.suggestions}")
+        print(
+            f"  Blocking: {verdict.blocking}, Warnings: {verdict.warnings}, Suggestions: {verdict.suggestions}"
+        )
         if validated_path:
             print(f"  Validated spec: {validated_path}")
         else:
@@ -1434,7 +1462,9 @@ async def run_spec_validate_session(
             print("  Warning: spec-validated.md not found (expected for PASS verdict)")
     else:
         print(f"\nValidation FAILED (verdict: {verdict.verdict})")
-        print(f"  Blocking: {verdict.blocking}, Warnings: {verdict.warnings}, Suggestions: {verdict.suggestions}")
+        print(
+            f"  Blocking: {verdict.blocking}, Warnings: {verdict.warnings}, Suggestions: {verdict.suggestions}"
+        )
         if verdict.error:
             print(f"  Parse error: {verdict.error}")
         if validation_report_path:
@@ -1530,12 +1560,14 @@ async def run_spec_decompose_session(
     if feature_list_path:
         print(f"\nCreated: {feature_list_path}")
     else:
-        print_error(ActionableError(
-            message="feature_list.json was not created",
-            context="The decomposition agent may have encountered issues.",
-            example="claude-agent logs --errors",
-            help_command="claude-agent spec decompose --help",
-        ))
+        print_error(
+            ActionableError(
+                message="feature_list.json was not created",
+                context="The decomposition agent may have encountered issues.",
+                example="claude-agent logs --errors",
+                help_command="claude-agent spec decompose --help",
+            )
+        )
         print("\n  Try running the command again or check the logs for details.")
 
     # Return a default path if not found (for type consistency)
@@ -1580,36 +1612,42 @@ async def run_spec_workflow(config: Config, goal: Optional[str]) -> bool:
     # Step 1: Create (skip if already done)
     if phase == "none":
         if not goal:
-            print_error(ActionableError(
-                message="--goal is required when no spec exists",
-                context="Starting a new spec workflow requires a goal.",
-                example='claude-agent spec auto --goal "Build a REST API"',
-                help_command="claude-agent spec auto --help",
-            ))
+            print_error(
+                ActionableError(
+                    message="--goal is required when no spec exists",
+                    context="Starting a new spec workflow requires a goal.",
+                    example='claude-agent spec auto --goal "Build a REST API"',
+                    help_command="claude-agent spec auto --help",
+                )
+            )
             return False
 
         print("\nStep 1/3: Creating specification...")
         status, spec_path = await run_spec_create_session(config, goal)
 
         if not spec_path.exists():
-            print_error(ActionableError(
-                message="Spec creation failed - spec-draft.md not created",
-                context="The first step of the workflow failed.",
-                example="claude-agent logs --errors",
-                help_command="claude-agent spec status",
-            ))
+            print_error(
+                ActionableError(
+                    message="Spec creation failed - spec-draft.md not created",
+                    context="The first step of the workflow failed.",
+                    example="claude-agent logs --errors",
+                    help_command="claude-agent spec status",
+                )
+            )
             print("\n  Check the logs and retry with 'claude-agent spec auto'.")
             return False
     else:
         print("\nStep 1/3: Creating specification... [SKIPPED - already exists]")
         spec_path = find_spec_draft(project_dir)
         if spec_path is None:
-            print_error(ActionableError(
-                message="spec-draft.md not found but phase indicates it should exist",
-                context="Workflow state is inconsistent. The file may have been deleted.",
-                example="claude-agent --reset",
-                help_command="claude-agent spec status",
-            ))
+            print_error(
+                ActionableError(
+                    message="spec-draft.md not found but phase indicates it should exist",
+                    context="Workflow state is inconsistent. The file may have been deleted.",
+                    example="claude-agent --reset",
+                    help_command="claude-agent spec status",
+                )
+            )
             print("\n  Use --reset to start fresh, or check spec status for details.")
             return False
 
@@ -1619,12 +1657,14 @@ async def run_spec_workflow(config: Config, goal: Optional[str]) -> bool:
         status, passed = await run_spec_validate_session(config, spec_path)
 
         if not passed:
-            print_error(ActionableError(
-                message="Validation failed - blocking issues found",
-                context="The spec has issues that must be fixed before decomposition.",
-                example="cat specs/spec-validation.md",
-                help_command="claude-agent spec status",
-            ))
+            print_error(
+                ActionableError(
+                    message="Validation failed - blocking issues found",
+                    context="The spec has issues that must be fixed before decomposition.",
+                    example="cat specs/spec-validation.md",
+                    help_command="claude-agent spec status",
+                )
+            )
             print("\n  Review spec-validation.md and fix issues before continuing.")
             return False
     else:
@@ -1633,12 +1673,14 @@ async def run_spec_workflow(config: Config, goal: Optional[str]) -> bool:
     # Find the validated spec (may be in root or specs/)
     validated_path = find_spec_validated(project_dir)
     if validated_path is None:
-        print_error(ActionableError(
-            message="spec-validated.md not found",
-            context="Validation may have failed to save the approved spec.",
-            example="claude-agent spec validate",
-            help_command="claude-agent spec status",
-        ))
+        print_error(
+            ActionableError(
+                message="spec-validated.md not found",
+                context="Validation may have failed to save the approved spec.",
+                example="claude-agent spec validate",
+                help_command="claude-agent spec status",
+            )
+        )
         print("\n  Run 'claude-agent spec validate' to retry validation.")
         return False
 
@@ -1650,25 +1692,31 @@ async def run_spec_workflow(config: Config, goal: Optional[str]) -> bool:
         )
 
         if not feature_path.exists():
-            print_error(ActionableError(
-                message="Decomposition failed - feature_list.json not created",
-                context="The final step of the workflow failed.",
-                example="claude-agent spec decompose",
-                help_command="claude-agent logs --errors",
-            ))
+            print_error(
+                ActionableError(
+                    message="Decomposition failed - feature_list.json not created",
+                    context="The final step of the workflow failed.",
+                    example="claude-agent spec decompose",
+                    help_command="claude-agent logs --errors",
+                )
+            )
             print("\n  Run 'claude-agent spec decompose' to retry.")
             return False
     else:
         print("\nStep 3/3: Decomposing into features... [SKIPPED - already decomposed]")
         feature_path = find_feature_list(project_dir)
         if not feature_path:
-            print_error(ActionableError(
-                message="feature_list.json not found but phase indicates it should exist",
-                context="Workflow state is inconsistent. The file may have been deleted.",
-                example="claude-agent --reset",
-                help_command="claude-agent spec status",
-            ))
-            print("\n  Use --reset to start fresh, or run 'claude-agent spec decompose'.")
+            print_error(
+                ActionableError(
+                    message="feature_list.json not found but phase indicates it should exist",
+                    context="Workflow state is inconsistent. The file may have been deleted.",
+                    example="claude-agent --reset",
+                    help_command="claude-agent spec status",
+                )
+            )
+            print(
+                "\n  Use --reset to start fresh, or run 'claude-agent spec decompose'."
+            )
             return False
 
     # Summary

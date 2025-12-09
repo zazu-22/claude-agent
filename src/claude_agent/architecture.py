@@ -6,13 +6,13 @@ Validation functions for architecture lock files (contracts.yaml, schemas.yaml, 
 Ensures files contain valid YAML with required fields before coding sessions proceed.
 """
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
-from claude_agent.decisions import load_decisions, DecisionLoadError
+from claude_agent.decisions import DecisionLoadError, load_decisions
 
 # Module-level constants for architecture file paths
 ARCH_DIR_NAME = "architecture"
@@ -105,28 +105,26 @@ def _validate_yaml_list(
             data = yaml.safe_load(f) or {}
     except yaml.YAMLError as e:
         raise ArchitectureValidationError(
-            file_name,
-            f"Failed to parse YAML: {e}"
+            file_name, f"Failed to parse YAML: {e}"
         ) from e
 
     if not isinstance(data, dict):
         raise ArchitectureValidationError(
-            file_name,
-            f"Invalid format: expected dict, got {type(data).__name__}"
+            file_name, f"Invalid format: expected dict, got {type(data).__name__}"
         )
 
     items_list = data.get(list_key, [])
     if not isinstance(items_list, list):
         raise ArchitectureValidationError(
             file_name,
-            f"Invalid '{list_key}' field: expected list, got {type(items_list).__name__}"
+            f"Invalid '{list_key}' field: expected list, got {type(items_list).__name__}",
         )
 
     for i, item in enumerate(items_list):
         if not isinstance(item, dict):
             raise ArchitectureValidationError(
                 file_name,
-                f"Invalid {item_name} at index {i}: expected dict, got {type(item).__name__}"
+                f"Invalid {item_name} at index {i}: expected dict, got {type(item).__name__}",
             )
 
     return items_list
@@ -165,8 +163,7 @@ def load_contracts(project_dir: Path) -> list[Contract]:
         # Check required field: name
         if "name" not in c:
             raise ArchitectureValidationError(
-                "contracts.yaml",
-                f"Contract at index {i} missing required field: name"
+                "contracts.yaml", f"Contract at index {i} missing required field: name"
             )
 
         # endpoints is required (can be empty list)
@@ -174,7 +171,7 @@ def load_contracts(project_dir: Path) -> list[Contract]:
         if not isinstance(endpoints_data, list):
             raise ArchitectureValidationError(
                 "contracts.yaml",
-                f"Contract '{c['name']}' has invalid 'endpoints': expected list"
+                f"Contract '{c['name']}' has invalid 'endpoints': expected list",
             )
 
         endpoints = []
@@ -182,31 +179,35 @@ def load_contracts(project_dir: Path) -> list[Contract]:
             if not isinstance(ep, dict):
                 raise ArchitectureValidationError(
                     "contracts.yaml",
-                    f"Contract '{c['name']}' endpoint at index {j}: expected dict"
+                    f"Contract '{c['name']}' endpoint at index {j}: expected dict",
                 )
 
             # path and method are required for endpoints
             if "path" not in ep:
                 raise ArchitectureValidationError(
                     "contracts.yaml",
-                    f"Contract '{c['name']}' endpoint at index {j} missing: path"
+                    f"Contract '{c['name']}' endpoint at index {j} missing: path",
                 )
             if "method" not in ep:
                 raise ArchitectureValidationError(
                     "contracts.yaml",
-                    f"Contract '{c['name']}' endpoint at index {j} missing: method"
+                    f"Contract '{c['name']}' endpoint at index {j} missing: method",
                 )
 
-            endpoints.append(ContractEndpoint(
-                path=ep["path"],
-                method=ep["method"],
-            ))
+            endpoints.append(
+                ContractEndpoint(
+                    path=ep["path"],
+                    method=ep["method"],
+                )
+            )
 
-        contracts.append(Contract(
-            name=c["name"],
-            description=c.get("description", ""),
-            endpoints=endpoints,
-        ))
+        contracts.append(
+            Contract(
+                name=c["name"],
+                description=c.get("description", ""),
+                endpoints=endpoints,
+            )
+        )
 
     return contracts
 
@@ -234,8 +235,7 @@ def load_schemas(project_dir: Path) -> list[Schema]:
         # Check required field: name
         if "name" not in s:
             raise ArchitectureValidationError(
-                "schemas.yaml",
-                f"Schema at index {i} missing required field: name"
+                "schemas.yaml", f"Schema at index {i} missing required field: name"
             )
 
         # fields is required (can be empty list)
@@ -243,7 +243,7 @@ def load_schemas(project_dir: Path) -> list[Schema]:
         if not isinstance(fields_data, list):
             raise ArchitectureValidationError(
                 "schemas.yaml",
-                f"Schema '{s['name']}' has invalid 'fields': expected list"
+                f"Schema '{s['name']}' has invalid 'fields': expected list",
             )
 
         fields = []
@@ -251,32 +251,36 @@ def load_schemas(project_dir: Path) -> list[Schema]:
             if not isinstance(f, dict):
                 raise ArchitectureValidationError(
                     "schemas.yaml",
-                    f"Schema '{s['name']}' field at index {j}: expected dict"
+                    f"Schema '{s['name']}' field at index {j}: expected dict",
                 )
 
             # name and type are required for fields
             if "name" not in f:
                 raise ArchitectureValidationError(
                     "schemas.yaml",
-                    f"Schema '{s['name']}' field at index {j} missing: name"
+                    f"Schema '{s['name']}' field at index {j} missing: name",
                 )
             if "type" not in f:
                 raise ArchitectureValidationError(
                     "schemas.yaml",
-                    f"Schema '{s['name']}' field at index {j} missing: type"
+                    f"Schema '{s['name']}' field at index {j} missing: type",
                 )
 
-            fields.append(SchemaField(
-                name=f["name"],
-                type=f["type"],
-                constraints=f.get("constraints", []),
-            ))
+            fields.append(
+                SchemaField(
+                    name=f["name"],
+                    type=f["type"],
+                    constraints=f.get("constraints", []),
+                )
+            )
 
-        schemas.append(Schema(
-            name=s["name"],
-            description=s.get("description", ""),
-            fields=fields,
-        ))
+        schemas.append(
+            Schema(
+                name=s["name"],
+                description=s.get("description", ""),
+                fields=fields,
+            )
+        )
 
     return schemas
 
@@ -347,7 +351,6 @@ def cleanup_partial_architecture(project_dir: Path) -> bool:
     Returns:
         True if cleanup was performed, False if no cleanup needed
     """
-    import shutil
 
     arch_dir = get_architecture_dir(project_dir)
 
