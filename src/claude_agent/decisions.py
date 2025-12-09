@@ -38,6 +38,12 @@ def get_decisions_path(project_dir: Path) -> Path:
     return project_dir / "architecture" / "decisions.yaml"
 
 
+class DecisionLoadError(Exception):
+    """Error loading or parsing decision records."""
+
+    pass
+
+
 def load_decisions(project_dir: Path) -> list[DecisionRecord]:
     """
     Load all decision records from the decisions file.
@@ -47,17 +53,50 @@ def load_decisions(project_dir: Path) -> list[DecisionRecord]:
 
     Returns:
         List of DecisionRecord objects, empty list if file doesn't exist
+
+    Raises:
+        DecisionLoadError: If YAML is malformed or required fields are missing
     """
     decisions_path = get_decisions_path(project_dir)
 
     if not decisions_path.exists():
         return []
 
-    with open(decisions_path) as f:
-        data = yaml.safe_load(f) or {}
+    try:
+        with open(decisions_path) as f:
+            data = yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        raise DecisionLoadError(
+            f"Failed to parse decisions.yaml: {e}"
+        ) from e
+
+    if not isinstance(data, dict):
+        raise DecisionLoadError(
+            f"Invalid decisions.yaml format: expected dict, got {type(data).__name__}"
+        )
+
+    decisions_list = data.get("decisions", [])
+    if not isinstance(decisions_list, list):
+        raise DecisionLoadError(
+            f"Invalid 'decisions' field: expected list, got {type(decisions_list).__name__}"
+        )
 
     records = []
-    for d in data.get("decisions", []):
+    required_fields = ["id", "topic", "choice"]
+
+    for i, d in enumerate(decisions_list):
+        if not isinstance(d, dict):
+            raise DecisionLoadError(
+                f"Invalid decision at index {i}: expected dict, got {type(d).__name__}"
+            )
+
+        # Check required fields
+        missing = [f for f in required_fields if f not in d]
+        if missing:
+            raise DecisionLoadError(
+                f"Decision at index {i} missing required fields: {', '.join(missing)}"
+            )
+
         records.append(DecisionRecord(
             id=d["id"],
             timestamp=d.get("timestamp", ""),

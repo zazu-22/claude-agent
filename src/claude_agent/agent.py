@@ -715,8 +715,13 @@ async def run_autonomous_agent(config: Config) -> None:
 
     # Check if architecture phase needed (after initializer may have run)
     architecture_exists = is_architecture_locked(project_dir)
+    should_run_architecture = (
+        config.architecture.enabled
+        and not config.skip_architecture
+        and not architecture_exists
+    )
 
-    if not architecture_exists and not config.skip_architecture and config.architecture.enabled:
+    if should_run_architecture:
         # Only run architecture phase if feature_list.json exists (initializer completed)
         if find_feature_list(project_dir):
             print("\n" + "=" * 70)

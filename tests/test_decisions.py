@@ -14,6 +14,7 @@ from pathlib import Path
 
 from claude_agent.decisions import (
     DecisionRecord,
+    DecisionLoadError,
     load_decisions,
     append_decision,
     get_next_decision_id,
@@ -117,6 +118,143 @@ decisions:
         assert decisions[0].rationale == ""
         assert decisions[0].constraints_created == []
         assert decisions[0].affects_features == []
+
+
+class TestLoadDecisionsErrorHandling:
+    """Test error handling for malformed decisions files."""
+
+    def test_malformed_yaml_raises_error(self, tmp_path):
+        """Raises DecisionLoadError for invalid YAML syntax."""
+        arch_dir = tmp_path / "architecture"
+        arch_dir.mkdir()
+        (arch_dir / "decisions.yaml").write_text("""
+version: 1
+decisions:
+  - id: DR-001
+    topic: [unclosed bracket
+""")
+
+        with pytest.raises(DecisionLoadError) as exc_info:
+            load_decisions(tmp_path)
+        assert "Failed to parse decisions.yaml" in str(exc_info.value)
+
+    def test_non_dict_root_raises_error(self, tmp_path):
+        """Raises DecisionLoadError when root is not a dict."""
+        arch_dir = tmp_path / "architecture"
+        arch_dir.mkdir()
+        (arch_dir / "decisions.yaml").write_text("- just a list\n- of items")
+
+        with pytest.raises(DecisionLoadError) as exc_info:
+            load_decisions(tmp_path)
+        assert "expected dict, got list" in str(exc_info.value)
+
+    def test_decisions_not_list_raises_error(self, tmp_path):
+        """Raises DecisionLoadError when 'decisions' field is not a list."""
+        arch_dir = tmp_path / "architecture"
+        arch_dir.mkdir()
+        (arch_dir / "decisions.yaml").write_text("""
+version: 1
+decisions: "not a list"
+""")
+
+        with pytest.raises(DecisionLoadError) as exc_info:
+            load_decisions(tmp_path)
+        assert "expected list, got str" in str(exc_info.value)
+
+    def test_decision_not_dict_raises_error(self, tmp_path):
+        """Raises DecisionLoadError when a decision entry is not a dict."""
+        arch_dir = tmp_path / "architecture"
+        arch_dir.mkdir()
+        (arch_dir / "decisions.yaml").write_text("""
+version: 1
+decisions:
+  - "just a string"
+""")
+
+        with pytest.raises(DecisionLoadError) as exc_info:
+            load_decisions(tmp_path)
+        assert "Invalid decision at index 0" in str(exc_info.value)
+        assert "expected dict, got str" in str(exc_info.value)
+
+    def test_missing_required_field_id_raises_error(self, tmp_path):
+        """Raises DecisionLoadError when 'id' field is missing."""
+        arch_dir = tmp_path / "architecture"
+        arch_dir.mkdir()
+        (arch_dir / "decisions.yaml").write_text("""
+version: 1
+decisions:
+  - topic: Test
+    choice: A
+""")
+
+        with pytest.raises(DecisionLoadError) as exc_info:
+            load_decisions(tmp_path)
+        assert "missing required fields: id" in str(exc_info.value)
+
+    def test_missing_required_field_topic_raises_error(self, tmp_path):
+        """Raises DecisionLoadError when 'topic' field is missing."""
+        arch_dir = tmp_path / "architecture"
+        arch_dir.mkdir()
+        (arch_dir / "decisions.yaml").write_text("""
+version: 1
+decisions:
+  - id: DR-001
+    choice: A
+""")
+
+        with pytest.raises(DecisionLoadError) as exc_info:
+            load_decisions(tmp_path)
+        assert "missing required fields: topic" in str(exc_info.value)
+
+    def test_missing_required_field_choice_raises_error(self, tmp_path):
+        """Raises DecisionLoadError when 'choice' field is missing."""
+        arch_dir = tmp_path / "architecture"
+        arch_dir.mkdir()
+        (arch_dir / "decisions.yaml").write_text("""
+version: 1
+decisions:
+  - id: DR-001
+    topic: Test
+""")
+
+        with pytest.raises(DecisionLoadError) as exc_info:
+            load_decisions(tmp_path)
+        assert "missing required fields: choice" in str(exc_info.value)
+
+    def test_missing_multiple_required_fields_raises_error(self, tmp_path):
+        """Raises DecisionLoadError listing all missing required fields."""
+        arch_dir = tmp_path / "architecture"
+        arch_dir.mkdir()
+        (arch_dir / "decisions.yaml").write_text("""
+version: 1
+decisions:
+  - rationale: Only optional field
+""")
+
+        with pytest.raises(DecisionLoadError) as exc_info:
+            load_decisions(tmp_path)
+        error_msg = str(exc_info.value)
+        assert "id" in error_msg
+        assert "topic" in error_msg
+        assert "choice" in error_msg
+
+    def test_error_at_second_decision_reports_correct_index(self, tmp_path):
+        """Error message includes correct index for failed decision."""
+        arch_dir = tmp_path / "architecture"
+        arch_dir.mkdir()
+        (arch_dir / "decisions.yaml").write_text("""
+version: 1
+decisions:
+  - id: DR-001
+    topic: Valid
+    choice: A
+  - id: DR-002
+    topic: Missing choice
+""")
+
+        with pytest.raises(DecisionLoadError) as exc_info:
+            load_decisions(tmp_path)
+        assert "Decision at index 1" in str(exc_info.value)
 
 
 class TestAppendDecision:
