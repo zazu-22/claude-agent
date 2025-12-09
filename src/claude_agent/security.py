@@ -4,6 +4,8 @@ Security Hooks for Claude Agent
 
 Pre-tool-use hooks that validate bash commands for security.
 Uses an allowlist approach - only explicitly permitted commands can run.
+
+Also includes evaluation validation hooks for drift mitigation.
 """
 
 import os
@@ -393,3 +395,354 @@ async def bash_security_hook(input_data, tool_use_id=None, context=None):
         logger.log_security_allow(command, config.stack)
 
     return {}
+
+
+# =============================================================================
+# Evaluation Validation Hook for Drift Mitigation
+# =============================================================================
+
+
+@dataclass
+class ValidationResult:
+    """
+    Result from evaluation validation.
+
+    Used to communicate validation outcomes and guide retry behavior.
+    """
+
+    is_valid: bool
+    error_message: Optional[str] = None
+    action: str = "proceed"  # "proceed" | "retry" | "abort"
+    evaluation_data: Optional[dict] = field(default_factory=dict)
+
+    def __post_init__(self):
+        """Ensure evaluation_data is never None."""
+        if self.evaluation_data is None:
+            self.evaluation_data = {}
+
+
+# Agent-specific required evaluation sections
+# Each agent type has different mandatory sections that must be present
+AGENT_REQUIRED_SECTIONS: dict[str, set[str]] = {
+    "coding": {"context", "regression", "plan"},
+    "initializer": {"spec_decomposition", "feature_mapping", "coverage_check"},
+    "validator": {"spec_alignment", "test_execution", "aggregate_verdict"},
+}
+
+# Regex patterns for each evaluation section type
+# These match structured headers in agent output (e.g., "### Step A - CONTEXT VERIFICATION")
+# Patterns support various formatting: different heading levels, step prefixes, dash variants
+EVALUATION_SECTION_PATTERNS: dict[str, re.Pattern] = {
+    # Coding agent sections
+    "context": re.compile(
+        r"^\s*#{2,3}\s*(?:Step\s*[A-Z0-9]*\s*[-–—]?\s*)?CONTEXT\s+VERIFICATION",
+        re.MULTILINE | re.IGNORECASE,
+    ),
+    "regression": re.compile(
+        r"^\s*#{2,3}\s*(?:Step\s*[A-Z0-9]*\s*[-–—]?\s*)?REGRESSION\s+VERIFICATION",
+        re.MULTILINE | re.IGNORECASE,
+    ),
+    "plan": re.compile(
+        r"^\s*#{2,3}\s*(?:Step\s*[A-Z0-9]*\s*[-–—]?\s*)?IMPLEMENTATION\s+PLAN",
+        re.MULTILINE | re.IGNORECASE,
+    ),
+    # Initializer agent sections
+    "spec_decomposition": re.compile(
+        r"^\s*#{2,3}\s*(?:Step\s*[0-9]*\s*[-–—]?\s*)?SPEC\s+DECOMPOSITION",
+        re.MULTILINE | re.IGNORECASE,
+    ),
+    "feature_mapping": re.compile(
+        r"^\s*#{2,3}\s*(?:Step\s*[0-9]*\s*[-–—]?\s*)?FEATURE\s+MAPPING",
+        re.MULTILINE | re.IGNORECASE,
+    ),
+    "coverage_check": re.compile(
+        r"^\s*#{2,3}\s*(?:Step\s*[0-9]*\s*[-–—]?\s*)?COVERAGE\s+CHECK",
+        re.MULTILINE | re.IGNORECASE,
+    ),
+    # Validator agent sections
+    "spec_alignment": re.compile(
+        r"^\s*#{2,3}\s*(?:Step\s*[A-Z]*\s*[-–—]?\s*)?SPEC\s+ALIGNMENT\s+CHECK",
+        re.MULTILINE | re.IGNORECASE,
+    ),
+    "test_execution": re.compile(
+        r"^\s*#{2,3}\s*(?:Step\s*[A-Z]*\s*[-–—]?\s*)?TEST\s+EXECUTION\s+WITH\s+EVIDENCE",
+        re.MULTILINE | re.IGNORECASE,
+    ),
+    "aggregate_verdict": re.compile(
+        r"^\s*#{2,3}\s*(?:Step\s*[A-Z]*\s*[-–—]?\s*)?AGGREGATE\s+VERDICT",
+        re.MULTILINE | re.IGNORECASE,
+    ),
+}
+
+# Section content extraction patterns (captures content after header until next section or end)
+# Use \Z for end-of-string in MULTILINE mode ($ matches end-of-line in that mode)
+SECTION_CONTENT_PATTERNS: dict[str, re.Pattern] = {
+    "context": re.compile(
+        r"(?:^\s*#{2,3}\s*(?:Step\s*[A-Z0-9]*\s*[-–—]?\s*)?CONTEXT\s+VERIFICATION.*?\n)"
+        r"(.*?)(?=^\s*#{2,3}\s|\Z)",
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    ),
+    "regression": re.compile(
+        r"(?:^\s*#{2,3}\s*(?:Step\s*[A-Z0-9]*\s*[-–—]?\s*)?REGRESSION\s+VERIFICATION.*?\n)"
+        r"(.*?)(?=^\s*#{2,3}\s|\Z)",
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    ),
+    "plan": re.compile(
+        r"(?:^\s*#{2,3}\s*(?:Step\s*[A-Z0-9]*\s*[-–—]?\s*)?IMPLEMENTATION\s+PLAN.*?\n)"
+        r"(.*?)(?=^\s*#{2,3}\s|\Z)",
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    ),
+    "spec_decomposition": re.compile(
+        r"(?:^\s*#{2,3}\s*(?:Step\s*[0-9]*\s*[-–—]?\s*)?SPEC\s+DECOMPOSITION.*?\n)"
+        r"(.*?)(?=^\s*#{2,3}\s|\Z)",
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    ),
+    "feature_mapping": re.compile(
+        r"(?:^\s*#{2,3}\s*(?:Step\s*[0-9]*\s*[-–—]?\s*)?FEATURE\s+MAPPING.*?\n)"
+        r"(.*?)(?=^\s*#{2,3}\s|\Z)",
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    ),
+    "coverage_check": re.compile(
+        r"(?:^\s*#{2,3}\s*(?:Step\s*[0-9]*\s*[-–—]?\s*)?COVERAGE\s+CHECK.*?\n)"
+        r"(.*?)(?=^\s*#{2,3}\s|\Z)",
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    ),
+    "spec_alignment": re.compile(
+        r"(?:^\s*#{2,3}\s*(?:Step\s*[A-Z]*\s*[-–—]?\s*)?SPEC\s+ALIGNMENT\s+CHECK.*?\n)"
+        r"(.*?)(?=^\s*#{2,3}\s|\Z)",
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    ),
+    "test_execution": re.compile(
+        r"(?:^\s*#{2,3}\s*(?:Step\s*[A-Z]*\s*[-–—]?\s*)?TEST\s+EXECUTION\s+WITH\s+EVIDENCE.*?\n)"
+        r"(.*?)(?=^\s*#{2,3}\s|\Z)",
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    ),
+    "aggregate_verdict": re.compile(
+        r"(?:^\s*#{2,3}\s*(?:Step\s*[A-Z]*\s*[-–—]?\s*)?AGGREGATE\s+VERDICT.*?\n)"
+        r"(.*?)(?=^\s*#{2,3}\s|\Z)",
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    ),
+}
+
+
+def extract_evaluation_sections(output: str, agent_type: str) -> dict[str, str]:
+    """
+    Extract evaluation section content from agent output.
+
+    Parses markdown output to retrieve structured evaluation information
+    for the specified agent type. Returns a dictionary mapping section
+    names to their content.
+
+    Args:
+        output: Agent output text (markdown format)
+        agent_type: Type of agent ("coding", "initializer", "validator")
+
+    Returns:
+        Dictionary mapping section names to extracted content.
+        Empty dict if no sections found or invalid agent type.
+    """
+    if agent_type not in AGENT_REQUIRED_SECTIONS:
+        return {}
+
+    required_sections = AGENT_REQUIRED_SECTIONS[agent_type]
+    extracted = {}
+
+    for section_name in required_sections:
+        pattern = SECTION_CONTENT_PATTERNS.get(section_name)
+        if pattern:
+            match = pattern.search(output)
+            if match:
+                content = match.group(1).strip()
+                if content:
+                    extracted[section_name] = content
+
+    return extracted
+
+
+def _check_section_present(output: str, section_name: str) -> bool:
+    """
+    Check if a specific evaluation section header is present in output.
+
+    Args:
+        output: Agent output text
+        section_name: Section identifier (e.g., "context", "regression")
+
+    Returns:
+        True if section header pattern is found
+    """
+    pattern = EVALUATION_SECTION_PATTERNS.get(section_name)
+    if pattern:
+        return pattern.search(output) is not None
+    return False
+
+
+def evaluation_validation_hook(
+    output: str,
+    agent_type: str,
+    strict_mode: bool = False,
+) -> ValidationResult:
+    """
+    Validate that agent output includes mandatory evaluation sections.
+
+    This hook enforces compliance with the drift-mitigation design framework
+    by checking for required evaluation sections in agent output. When sections
+    are missing, it can trigger retry operations with emphasis on the missing
+    content.
+
+    Args:
+        output: Agent output text to validate
+        agent_type: Type of agent ("coding", "initializer", "validator")
+        strict_mode: If True, missing sections trigger "retry" action.
+                    If False, missing sections are logged but allow "proceed".
+
+    Returns:
+        ValidationResult with:
+        - is_valid: True if all required sections present
+        - error_message: Description of missing sections (if any)
+        - action: "proceed" (valid), "retry" (missing sections), or "abort" (invalid agent type)
+        - evaluation_data: Dict with keys:
+            - "sections_found": List of present section names
+            - "sections_missing": List of missing section names
+            - "section_content": Dict mapping section names to extracted content
+            - "completeness_score": Float 0.0-1.0 indicating coverage
+    """
+    # Validate agent type
+    if agent_type not in AGENT_REQUIRED_SECTIONS:
+        return ValidationResult(
+            is_valid=False,
+            error_message=f"Invalid agent type: {agent_type}. "
+            f"Must be one of: {list(AGENT_REQUIRED_SECTIONS.keys())}",
+            action="abort",
+            evaluation_data={
+                "sections_found": [],
+                "sections_missing": [],
+                "section_content": {},
+                "completeness_score": 0.0,
+            },
+        )
+
+    required_sections = AGENT_REQUIRED_SECTIONS[agent_type]
+    sections_found = []
+    sections_missing = []
+
+    # Check which sections are present
+    for section_name in required_sections:
+        if _check_section_present(output, section_name):
+            sections_found.append(section_name)
+        else:
+            sections_missing.append(section_name)
+
+    # Extract content from found sections
+    section_content = extract_evaluation_sections(output, agent_type)
+
+    # Calculate completeness score
+    completeness_score = len(sections_found) / len(required_sections) if required_sections else 1.0
+
+    # Build evaluation data
+    evaluation_data = {
+        "sections_found": sections_found,
+        "sections_missing": sections_missing,
+        "section_content": section_content,
+        "completeness_score": completeness_score,
+    }
+
+    # Determine validation result
+    if not sections_missing:
+        # All sections present - valid
+        return ValidationResult(
+            is_valid=True,
+            error_message=None,
+            action="proceed",
+            evaluation_data=evaluation_data,
+        )
+
+    # Some sections missing
+    missing_str = ", ".join(sorted(sections_missing))
+    error_message = (
+        f"Missing required evaluation sections for {agent_type} agent: {missing_str}. "
+        f"Found {len(sections_found)}/{len(required_sections)} sections "
+        f"(completeness: {completeness_score:.0%})."
+    )
+
+    if strict_mode:
+        # In strict mode, trigger retry for missing sections
+        retry_emphasis = _build_retry_emphasis(sections_missing, agent_type)
+        return ValidationResult(
+            is_valid=False,
+            error_message=error_message + "\n\n" + retry_emphasis,
+            action="retry",
+            evaluation_data=evaluation_data,
+        )
+    else:
+        # In lenient mode, warn but allow proceeding
+        return ValidationResult(
+            is_valid=False,
+            error_message=error_message,
+            action="proceed",
+            evaluation_data=evaluation_data,
+        )
+
+
+def _build_retry_emphasis(missing_sections: list[str], agent_type: str) -> str:
+    """
+    Build retry emphasis message for missing evaluation sections.
+
+    Generates specific guidance based on which sections are missing,
+    helping the agent understand what content is required.
+
+    Args:
+        missing_sections: List of missing section names
+        agent_type: Type of agent
+
+    Returns:
+        Formatted string with retry guidance
+    """
+    emphasis_lines = ["RETRY REQUIRED - Please output the following missing sections:"]
+
+    section_guidance = {
+        # Coding agent sections
+        "context": (
+            "### Step A - CONTEXT VERIFICATION\n"
+            "Include: feature_list.json quote, progress notes quote, architectural constraints"
+        ),
+        "regression": (
+            "### Step B - REGRESSION VERIFICATION\n"
+            "Include: Test results for previously passing features with PASS/FAIL verdicts"
+        ),
+        "plan": (
+            "### Step C - IMPLEMENTATION PLAN\n"
+            "Include: What you will build, files to modify, constraints to honor"
+        ),
+        # Initializer agent sections
+        "spec_decomposition": (
+            "### Step 1 - SPEC DECOMPOSITION\n"
+            "Include: Section headers quoted, key requirements listed, ambiguities noted"
+        ),
+        "feature_mapping": (
+            "### Step 2 - FEATURE MAPPING\n"
+            "Include: Each feature with spec text traceability quote"
+        ),
+        "coverage_check": (
+            "### Step 3 - COVERAGE CHECK\n"
+            "Include: Requirements covered count, any uncovered requirements listed"
+        ),
+        # Validator agent sections
+        "spec_alignment": (
+            "### Step A - SPEC ALIGNMENT CHECK\n"
+            "Include: Feature description, spec requirement quote, 'working' criteria"
+        ),
+        "test_execution": (
+            "### Step B - TEST EXECUTION WITH EVIDENCE\n"
+            "Include: Steps performed, expected/actual results, screenshot reference, PASS/FAIL"
+        ),
+        "aggregate_verdict": (
+            "### Step C - AGGREGATE VERDICT WITH REASONING\n"
+            "Include: Features tested count, pass/fail counts, verdict reasoning"
+        ),
+    }
+
+    for section in missing_sections:
+        guidance = section_guidance.get(section, f"Output section: {section}")
+        emphasis_lines.append(f"\n{guidance}")
+
+    return "\n".join(emphasis_lines)
