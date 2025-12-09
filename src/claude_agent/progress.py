@@ -874,14 +874,14 @@ def get_available_features(project_dir: Path) -> list[dict]:
         project_dir: Project directory path
 
     Returns:
-        List of feature dicts with their original indices added as '_index' key.
+        List of feature dicts with their original indices added as 'index' key.
         Empty list if no features available or file doesn't exist.
 
     Example:
         >>> features = get_available_features(project_dir)
         >>> if features:
         ...     next_feature = features[0]
-        ...     print(f"Work on Feature #{next_feature['_index']}: {next_feature['description']}")
+        ...     print(f"Work on Feature #{next_feature['index']}: {next_feature['description']}")
     """
     feature_list_path = find_feature_list(project_dir)
 
@@ -898,50 +898,17 @@ def get_available_features(project_dir: Path) -> list[dict]:
             is_blocked = feature.get("blocked", False)
 
             if not is_passing and not is_blocked:
-                # Add index for reference
+                # Add index for reference (consistent with get_blocked_features)
                 feature_with_index = feature.copy()
-                feature_with_index["_index"] = i
+                feature_with_index["index"] = i
                 available.append(feature_with_index)
 
         return available
-    except (json.JSONDecodeError, IOError):
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse feature_list.json for available features: {e}")
         return []
-
-
-def get_blocked_features(project_dir: Path) -> list[dict]:
-    """
-    Get features that are blocked (cannot be implemented due to architecture constraints).
-
-    This function returns features where blocked=true, typically set when:
-    - A feature requires violating a locked architectural constraint
-    - Implementation cannot proceed without explicit deviation approval
-
-    Args:
-        project_dir: Project directory path
-
-    Returns:
-        List of blocked feature dicts with their original indices added as '_index' key
-        and 'blocked_reason' if available.
-        Empty list if no blocked features or file doesn't exist.
-    """
-    feature_list_path = find_feature_list(project_dir)
-
-    if not feature_list_path:
-        return []
-
-    try:
-        with open(feature_list_path) as f:
-            features = json.load(f)
-
-        blocked = []
-        for i, feature in enumerate(features):
-            if feature.get("blocked", False):
-                feature_with_index = feature.copy()
-                feature_with_index["_index"] = i
-                blocked.append(feature_with_index)
-
-        return blocked
-    except (json.JSONDecodeError, IOError):
+    except IOError as e:
+        logger.warning(f"Failed to read feature_list.json for available features: {e}")
         return []
 
 
@@ -1255,12 +1222,96 @@ def unblock_feature(
     return True, f"Unblocked feature #{feature_index}: {description}"
 
 
+def bulk_unblock_features(
+    project_dir: Path,
+    feature_indices: list[int],
+) -> tuple[int, list[str]]:
+    """
+    Unblock multiple features in a single file read/write operation.
+
+    This is more efficient than calling unblock_feature() multiple times,
+    as it only reads and writes feature_list.json once.
+
+    Args:
+        project_dir: Project directory path
+        feature_indices: List of feature indices to unblock
+
+    Returns:
+        (success_count, error_messages) tuple where:
+        - success_count: Number of features successfully unblocked
+        - error_messages: List of error messages for failed operations
+
+    Note:
+        This function reads feature_list.json once, modifies it in memory,
+        then writes it back. If the agent is running concurrently, there
+        is a potential race condition. Consider using file locking for
+        production deployments with concurrent access.
+    """
+    feature_list_path = find_feature_list(project_dir)
+    errors: list[str] = []
+    success_count = 0
+
+    if not feature_list_path:
+        return 0, ["feature_list.json does not exist"]
+
+    if not feature_indices:
+        return 0, []
+
+    try:
+        with open(feature_list_path) as f:
+            features = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse feature_list.json: {e}")
+        return 0, [f"Failed to parse feature_list.json: {e}"]
+    except IOError as e:
+        logger.warning(f"Failed to read feature_list.json: {e}")
+        return 0, [f"Failed to read feature_list.json: {e}"]
+
+    max_index = len(features) - 1
+
+    for idx in feature_indices:
+        # Validate index
+        if idx < 0 or idx > max_index:
+            errors.append(f"Invalid feature index: {idx} (max: {max_index})")
+            continue
+
+        feature = features[idx]
+
+        # Check if feature is actually blocked
+        if not feature.get("blocked", False):
+            errors.append(f"Feature #{idx} is not blocked")
+            continue
+
+        # Remove blocked fields
+        feature.pop("blocked", None)
+        feature.pop("blocked_reason", None)
+        success_count += 1
+
+    # Write back if any changes were made
+    if success_count > 0:
+        try:
+            atomic_json_write(feature_list_path, features)
+        except Exception as e:
+            return 0, [f"Failed to write feature_list.json: {e}"]
+
+    return success_count, errors
+
+
 def get_blocked_features(project_dir: Path) -> list[dict]:
     """
     Get all blocked features from feature_list.json.
 
+    Args:
+        project_dir: Project directory path
+
     Returns:
-        List of dicts with keys: index, description, blocked_reason
+        List of dicts with keys: index, description, blocked_reason.
+        Empty list if no blocked features or file doesn't exist.
+
+    Note:
+        This function reads feature_list.json. If you need to modify multiple
+        features, consider using bulk_unblock_features() instead to avoid
+        multiple file reads.
     """
     feature_list_path = find_feature_list(project_dir)
 
@@ -1270,13 +1321,21 @@ def get_blocked_features(project_dir: Path) -> list[dict]:
     try:
         with open(feature_list_path) as f:
             features = json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
+    except json.JSONDecodeError as e:
+        logger.warning(f"Failed to parse feature_list.json for blocked features: {e}")
+        return []
+    except IOError as e:
         logger.warning(f"Failed to read feature_list.json for blocked features: {e}")
         return []
 
     blocked = []
     for i, feature in enumerate(features):
         if feature.get("blocked", False):
+            # Warn if blocked=true but no blocked_reason provided
+            if "blocked_reason" not in feature:
+                logger.warning(
+                    f"Feature #{i} is blocked but missing 'blocked_reason' field"
+                )
             blocked.append({
                 "index": i,
                 "description": feature.get("description", ""),

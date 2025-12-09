@@ -1785,9 +1785,9 @@ class TestGetAvailableFeatures:
 
         assert len(available) == 2
         assert available[0]["description"] == "Available 1"
-        assert available[0]["_index"] == 2
+        assert available[0]["index"] == 2
         assert available[1]["description"] == "Available 2"
-        assert available[1]["_index"] == 3
+        assert available[1]["index"] == 3
 
     def test_returns_empty_when_all_passing(self, tmp_path):
         """Verify returns empty list when all features pass."""
@@ -1827,7 +1827,7 @@ class TestGetAvailableFeatures:
         assert available == []
 
     def test_adds_index_to_features(self, tmp_path):
-        """Verify _index is correctly added to each feature."""
+        """Verify index is correctly added to each feature."""
         from claude_agent.progress import get_available_features
 
         feature_list = [
@@ -1840,7 +1840,7 @@ class TestGetAvailableFeatures:
         available = get_available_features(tmp_path)
 
         assert len(available) == 1
-        assert available[0]["_index"] == 2  # Index of "Available"
+        assert available[0]["index"] == 2  # Index of "Available"
         assert available[0]["description"] == "Available"
 
     def test_preserves_feature_fields(self, tmp_path):
@@ -1863,7 +1863,7 @@ class TestGetAvailableFeatures:
         assert available[0]["description"] == "Feature with details"
         assert available[0]["test_steps"] == ["Step 1", "Step 2"]
         assert available[0]["priority"] == "high"
-        assert available[0]["_index"] == 0
+        assert available[0]["index"] == 0
 
 
 class TestGetBlockedFeatures:
@@ -1885,10 +1885,10 @@ class TestGetBlockedFeatures:
 
         assert len(blocked) == 2
         assert blocked[0]["description"] == "Blocked 1"
-        assert blocked[0]["_index"] == 1
+        assert blocked[0]["index"] == 1
         assert blocked[0]["blocked_reason"] == "API conflict"
         assert blocked[1]["description"] == "Blocked 2"
-        assert blocked[1]["_index"] == 3
+        assert blocked[1]["index"] == 3
 
     def test_returns_empty_when_no_blocked(self, tmp_path):
         """Verify returns empty list when no features are blocked."""
@@ -1978,10 +1978,10 @@ class TestBlockedFeatureIntegration:
 
         # Agent should work on Dashboard (index 3), not API endpoint (index 2)
         assert len(available) == 2
-        assert available[0]["_index"] == 3  # Dashboard
-        assert available[1]["_index"] == 4  # Reports
+        assert available[0]["index"] == 3  # Dashboard
+        assert available[1]["index"] == 4  # Reports
 
         # API endpoint should be in blocked list
         assert len(blocked) == 1
-        assert blocked[0]["_index"] == 2
+        assert blocked[0]["index"] == 2
         assert blocked[0]["blocked_reason"] == "Schema conflict"

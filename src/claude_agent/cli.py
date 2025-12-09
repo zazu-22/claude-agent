@@ -21,6 +21,7 @@ from claude_agent.config import (
 from claude_agent.detection import detect_stack, get_available_stacks
 from claude_agent.errors import ActionableError, ConfigParseError, print_error
 from claude_agent.progress import (
+    bulk_unblock_features,
     find_feature_list,
     find_spec_for_coding,
     find_spec_validation_report,
@@ -29,6 +30,13 @@ from claude_agent.progress import (
     print_progress_summary,
     unblock_feature,
 )
+
+
+def _truncate(text: str, max_len: int) -> str:
+    """Truncate text with ellipsis if it exceeds max_len."""
+    if len(text) > max_len:
+        return text[: max_len - 3] + "..."
+    return text
 
 
 @click.group(invoke_without_command=True)
@@ -454,14 +462,16 @@ def unblock(feature_index: Optional[int], project_dir: Path, list_blocked: bool,
         click.echo(f"\nBlocked features in {project_dir.name}:")
         click.echo("-" * 70)
         for item in blocked:
-            click.echo(f"  #{item['index']}: {item['description'][:50]}")
-            click.echo(f"       Reason: {item['blocked_reason'][:60]}")
+            desc = _truncate(item['description'], 50)
+            reason = _truncate(item['blocked_reason'], 60)
+            click.echo(f"  #{item['index']}: {desc}")
+            click.echo(f"       Reason: {reason}")
         click.echo("-" * 70)
-        click.echo(f"\nTo unblock: claude-agent unblock <index>")
+        click.echo("\nTo unblock: claude-agent unblock <index>")
         click.echo("To unblock all: claude-agent unblock --all")
         return
 
-    # Unblock all blocked features
+    # Unblock all blocked features (using bulk operation for efficiency)
     if unblock_all:
         blocked = get_blocked_features(project_dir)
 
@@ -470,14 +480,21 @@ def unblock(feature_index: Optional[int], project_dir: Path, list_blocked: bool,
             return
 
         click.echo(f"Unblocking {len(blocked)} feature(s)...")
-        success_count = 0
+
+        # Use bulk unblock for efficiency (single file read/write)
+        indices = [item["index"] for item in blocked]
+        success_count, errors = bulk_unblock_features(project_dir, indices)
+
+        # Report successes
         for item in blocked:
-            success, message = unblock_feature(project_dir, item["index"])
-            if success:
-                click.echo(f"  ✓ {message}")
-                success_count += 1
-            else:
-                click.echo(f"  ✗ Feature #{item['index']}: {message}", err=True)
+            idx = item["index"]
+            if not any(str(idx) in err for err in errors):
+                desc = _truncate(item["description"], 40)
+                click.echo(f"  ✓ Unblocked feature #{idx}: {desc}")
+
+        # Report errors
+        for err in errors:
+            click.echo(f"  ✗ {err}", err=True)
 
         click.echo(f"\nUnblocked {success_count}/{len(blocked)} features.")
         return
