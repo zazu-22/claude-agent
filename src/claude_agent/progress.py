@@ -522,24 +522,27 @@ class ValidationVerdict:
     error: Optional[str] = None  # Parse error if any
 
 
-def _find_spec_file(project_dir: Path, filename: str) -> Optional[Path]:
+def _find_spec_file(
+    project_dir: Path, filename: str, specs_dir: str = "specs"
+) -> Optional[Path]:
     """
     Generic file finder for spec workflow files.
 
     Search order:
-    1. specs/{filename} (preferred canonical location)
+    1. {specs_dir}/{filename} (preferred canonical location)
     2. {filename} (project root)
-    3. specs/*/{filename} (subdirectories, for backwards compat)
+    3. {specs_dir}/*/{filename} (subdirectories, for backwards compat)
 
     Args:
         project_dir: Project directory
         filename: Name of file to find
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         Path to file if found, None otherwise
     """
-    # Check specs/ subdirectory first (preferred location)
-    specs_path = project_dir / "specs" / filename
+    # Check specs subdirectory first (preferred location)
+    specs_path = project_dir / specs_dir / filename
     if specs_path.exists():
         return specs_path
 
@@ -548,11 +551,11 @@ def _find_spec_file(project_dir: Path, filename: str) -> Optional[Path]:
     if root_path.exists():
         return root_path
 
-    # Search recursively in specs/ subdirectories (backwards compat)
-    specs_dir = project_dir / "specs"
-    if specs_dir.is_dir():
+    # Search recursively in specs subdirectories (backwards compat)
+    specs_dir_path = project_dir / specs_dir
+    if specs_dir_path.is_dir():
         try:
-            for path in specs_dir.rglob(filename):
+            for path in specs_dir_path.rglob(filename):
                 return path
         except (PermissionError, OSError):
             # Can't access some subdirectories - continue with None
@@ -561,37 +564,41 @@ def _find_spec_file(project_dir: Path, filename: str) -> Optional[Path]:
     return None
 
 
-def find_spec_draft(project_dir: Path) -> Optional[Path]:
-    """Find spec-draft.md in project directory or specs/ subdirectory."""
-    return _find_spec_file(project_dir, "spec-draft.md")
+def find_spec_draft(project_dir: Path, specs_dir: str = "specs") -> Optional[Path]:
+    """Find spec-draft.md in project directory or specs subdirectory."""
+    return _find_spec_file(project_dir, "spec-draft.md", specs_dir)
 
 
-def find_spec_validated(project_dir: Path) -> Optional[Path]:
-    """Find spec-validated.md in project directory or specs/ subdirectory."""
-    return _find_spec_file(project_dir, "spec-validated.md")
+def find_spec_validated(project_dir: Path, specs_dir: str = "specs") -> Optional[Path]:
+    """Find spec-validated.md in project directory or specs subdirectory."""
+    return _find_spec_file(project_dir, "spec-validated.md", specs_dir)
 
 
-def find_spec_validation_report(project_dir: Path) -> Optional[Path]:
-    """Find spec-validation.md report in project directory or specs/ subdirectory."""
-    return _find_spec_file(project_dir, "spec-validation.md")
+def find_spec_validation_report(
+    project_dir: Path, specs_dir: str = "specs"
+) -> Optional[Path]:
+    """Find spec-validation.md report in project directory or specs subdirectory."""
+    return _find_spec_file(project_dir, "spec-validation.md", specs_dir)
 
 
-def find_feature_list(project_dir: Path) -> Optional[Path]:
-    """Find feature_list.json in project directory or specs/ subdirectory."""
-    return _find_spec_file(project_dir, "feature_list.json")
+def find_feature_list(project_dir: Path, specs_dir: str = "specs") -> Optional[Path]:
+    """Find feature_list.json in project directory or specs subdirectory."""
+    return _find_spec_file(project_dir, "feature_list.json", specs_dir)
 
 
 # Track whether deprecation warning has been shown for root app_spec.txt
 _root_app_spec_warning_shown = False
 
 
-def find_spec_for_coding(project_dir: Path) -> Optional[Path]:
+def find_spec_for_coding(
+    project_dir: Path, specs_dir: str = "specs"
+) -> Optional[Path]:
     """
     Find the spec file for coding/validator agents with priority-based search.
 
     This function searches for spec files in a specific priority order:
-    1. specs/spec-validated.md - Canonical spec workflow output
-    2. specs/app_spec.txt - External spec copied location
+    1. {specs_dir}/spec-validated.md - Canonical spec workflow output
+    2. {specs_dir}/app_spec.txt - External spec copied location
     3. app_spec.txt - Legacy fallback in project root
 
     The priority ensures that:
@@ -601,6 +608,7 @@ def find_spec_for_coding(project_dir: Path) -> Optional[Path]:
 
     Args:
         project_dir: Project directory to search in
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         Path to the spec file if found, None otherwise
@@ -611,13 +619,13 @@ def find_spec_for_coding(project_dir: Path) -> Optional[Path]:
     if not project_dir.exists():
         return None
 
-    # Priority 1: specs/spec-validated.md (canonical spec workflow output)
-    spec_validated = project_dir / "specs" / "spec-validated.md"
+    # Priority 1: {specs_dir}/spec-validated.md (canonical spec workflow output)
+    spec_validated = project_dir / specs_dir / "spec-validated.md"
     if spec_validated.exists():
         return spec_validated
 
-    # Priority 2: specs/app_spec.txt (external spec copied location)
-    specs_app_spec = project_dir / "specs" / "app_spec.txt"
+    # Priority 2: {specs_dir}/app_spec.txt (external spec copied location)
+    specs_app_spec = project_dir / specs_dir / "app_spec.txt"
     if specs_app_spec.exists():
         return specs_app_spec
 
@@ -629,8 +637,8 @@ def find_spec_for_coding(project_dir: Path) -> Optional[Path]:
             import sys
 
             print(
-                "Warning: app_spec.txt found in project root. "
-                "Consider moving to specs/app_spec.txt for consistency.",
+                f"Warning: app_spec.txt found in project root. "
+                f"Consider moving to {specs_dir}/app_spec.txt for consistency.",
                 file=sys.stderr,
             )
             _root_app_spec_warning_shown = True

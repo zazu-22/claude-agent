@@ -59,9 +59,37 @@ class DecisionRecord:
     affects_features: list[int] = field(default_factory=list)  # Feature indices
 
 
-def get_decisions_path(project_dir: Path) -> Path:
-    """Get path to decisions file."""
-    return project_dir / ARCH_DIR_NAME / DECISIONS_FILE
+def get_decisions_path(project_dir: Path, specs_dir: str = "specs") -> Path:
+    """Get canonical path to decisions file (for creating new files)."""
+    return project_dir / specs_dir / ARCH_DIR_NAME / DECISIONS_FILE
+
+
+def find_decisions_path(project_dir: Path, specs_dir: str = "specs") -> Optional[Path]:
+    """
+    Find existing decisions file, checking multiple locations.
+
+    Search order (for backwards compatibility):
+    1. {specs_dir}/architecture/decisions.yaml - Preferred canonical location
+    2. architecture/decisions.yaml - Legacy project root location
+
+    Args:
+        project_dir: Project directory
+        specs_dir: Name of specs directory (default: "specs")
+
+    Returns:
+        Path to decisions file if found, None otherwise
+    """
+    # Check canonical location first ({specs_dir}/architecture/)
+    canonical_path = project_dir / specs_dir / ARCH_DIR_NAME / DECISIONS_FILE
+    if canonical_path.exists():
+        return canonical_path
+
+    # Fall back to legacy location (architecture/ in project root)
+    legacy_path = project_dir / ARCH_DIR_NAME / DECISIONS_FILE
+    if legacy_path.exists():
+        return legacy_path
+
+    return None
 
 
 class DecisionLoadError(Exception):
@@ -70,12 +98,13 @@ class DecisionLoadError(Exception):
     pass
 
 
-def load_decisions(project_dir: Path) -> list[DecisionRecord]:
+def load_decisions(project_dir: Path, specs_dir: str = "specs") -> list[DecisionRecord]:
     """
     Load all decision records from the decisions file.
 
     Args:
         project_dir: Project directory path
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         List of DecisionRecord objects, empty list if file doesn't exist
@@ -83,9 +112,9 @@ def load_decisions(project_dir: Path) -> list[DecisionRecord]:
     Raises:
         DecisionLoadError: If YAML is malformed or required fields are missing
     """
-    decisions_path = get_decisions_path(project_dir)
+    decisions_path = find_decisions_path(project_dir, specs_dir)
 
-    if not decisions_path.exists():
+    if decisions_path is None:
         return []
 
     try:
@@ -138,17 +167,25 @@ def load_decisions(project_dir: Path) -> list[DecisionRecord]:
     return records
 
 
-def append_decision(project_dir: Path, record: DecisionRecord) -> None:
+def append_decision(
+    project_dir: Path, record: DecisionRecord, specs_dir: str = "specs"
+) -> None:
     """
     Append a new decision record to the decisions file.
 
     This is append-only - existing decisions are never modified.
+    If the file exists in a legacy location, appends there; otherwise
+    uses the canonical location.
 
     Args:
         project_dir: Project directory path
         record: DecisionRecord to append
+        specs_dir: Name of specs directory (default: "specs")
     """
-    decisions_path = get_decisions_path(project_dir)
+    # Use existing file location if found, otherwise canonical location
+    decisions_path = find_decisions_path(project_dir, specs_dir)
+    if decisions_path is None:
+        decisions_path = get_decisions_path(project_dir, specs_dir)
 
     # Ensure architecture directory exists
     decisions_path.parent.mkdir(parents=True, exist_ok=True)
@@ -218,6 +255,7 @@ def get_next_decision_id(project_dir: Path) -> str:
 def get_relevant_decisions(
     project_dir: Path,
     feature_index: int,
+    specs_dir: str = "specs",
 ) -> list[DecisionRecord]:
     """
     Get decisions relevant to a specific feature.
@@ -225,22 +263,27 @@ def get_relevant_decisions(
     Args:
         project_dir: Project directory path
         feature_index: Index of the feature in feature_list.json
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         List of DecisionRecords that affect this feature
     """
-    decisions = load_decisions(project_dir)
+    decisions = load_decisions(project_dir, specs_dir)
     return [d for d in decisions if feature_index in d.affects_features]
 
 
-def get_all_constraints(project_dir: Path) -> list[str]:
+def get_all_constraints(project_dir: Path, specs_dir: str = "specs") -> list[str]:
     """
     Get all constraints created by all decisions.
+
+    Args:
+        project_dir: Project directory path
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         Flat list of all constraint strings
     """
-    decisions = load_decisions(project_dir)
+    decisions = load_decisions(project_dir, specs_dir)
     constraints = []
     for d in decisions:
         constraints.extend(d.constraints_created)
@@ -291,6 +334,7 @@ def validate_feature_references(
 def validate_all_feature_references(
     project_dir: Path,
     feature_count: int,
+    specs_dir: str = "specs",
 ) -> list[str]:
     """
     Validate all decisions have valid feature references.
@@ -298,11 +342,12 @@ def validate_all_feature_references(
     Args:
         project_dir: Project directory path
         feature_count: Total number of features in feature_list.json
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         List of error messages (empty if all references are valid)
     """
-    decisions = load_decisions(project_dir)
+    decisions = load_decisions(project_dir, specs_dir)
     all_errors = []
     for decision in decisions:
         errors = validate_feature_references(project_dir, decision, feature_count)

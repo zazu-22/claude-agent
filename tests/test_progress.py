@@ -342,10 +342,10 @@ class TestFindSpecForCoding:
         # Function should exist and be callable
         assert callable(find_spec_for_coding)
 
-        # Check signature
+        # Check signature (now includes optional specs_dir parameter)
         sig = inspect.signature(find_spec_for_coding)
         params = list(sig.parameters.keys())
-        assert params == ["project_dir"]
+        assert params == ["project_dir", "specs_dir"]
 
         # Return type should be Optional[Path] (check via annotation)
         # Note: We can't easily verify Optional[Path] at runtime,

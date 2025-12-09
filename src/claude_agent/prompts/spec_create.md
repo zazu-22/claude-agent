@@ -53,7 +53,7 @@ Mark each as:
 ### OUTPUT
 
 1. Create `spec-draft.md` in one of these locations:
-   - If a `specs/` directory exists in the project, save to `specs/spec-draft.md`
+   - If a `{{specs_dir}}/` directory exists in the project, save to `{{specs_dir}}/spec-draft.md`
    - Otherwise, save to `spec-draft.md` in the project root
 2. Be specific and actionable - each requirement should be testable
 3. Print a summary of what you created
