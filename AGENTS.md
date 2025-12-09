@@ -287,6 +287,8 @@ claude-agent/
 │   ├── github-setup.yml   # GitHub setup automation
 │   └── CLAUDE.md          # Workflow documentation
 ├── tests/                 # Test directory (create as needed)
+├── docs/                  # Documentation
+│   └── MIGRATION.md       # Migration guide for drift mitigation
 ├── pyproject.toml         # Project configuration
 ├── README.md              # User documentation
 └── .claude-agent.yaml     # Optional config template
