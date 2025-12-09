@@ -5,4 +5,4 @@ A tool for running long-running autonomous coding sessions with
 persistent progress tracking across multiple context windows.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
