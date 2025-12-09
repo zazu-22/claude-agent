@@ -536,7 +536,13 @@ async def run_architect_session(
 
     Returns:
         (status, success) where success indicates if all architecture files were created
+        and contain valid YAML with required fields
     """
+    from claude_agent.architecture import (
+        validate_architecture_files,
+        cleanup_partial_architecture,
+    )
+
     # Start logging session
     session_id = None
     stats_tracker = None
@@ -579,8 +585,28 @@ async def run_architect_session(
         if stats_tracker:
             stats_tracker.save()
 
-    # Verify outputs
-    success = is_architecture_locked(project_dir)
+    # Verify outputs - check both existence and content validity
+    files_exist = is_architecture_locked(project_dir)
+    validation_errors = []
+
+    if files_exist:
+        # Validate YAML content and structure
+        valid, validation_errors = validate_architecture_files(project_dir)
+        if not valid:
+            # Log validation errors
+            if logger:
+                for error in validation_errors:
+                    logger.warning(f"Architecture validation error: {error}")
+            # Files exist but are invalid - clean up partial architecture
+            cleanup_partial_architecture(project_dir)
+            return status, False
+        success = True
+    else:
+        # Files don't all exist - clean up any partial architecture
+        cleaned = cleanup_partial_architecture(project_dir)
+        if cleaned and logger:
+            logger.warning("Cleaned up partial architecture directory")
+        success = False
 
     return status, success
 
@@ -751,8 +777,24 @@ async def run_autonomous_agent(config: Config) -> None:
                     ))
                     return
                 else:
-                    print("Warning: Architecture lock phase incomplete")
-                    print("Continuing without locked architecture (reduced drift protection)")
+                    # Prominent warning when architecture fails but isn't required
+                    print("\n" + "!" * 70)
+                    print("  WARNING: ARCHITECTURE LOCK PHASE FAILED")
+                    print("!" * 70)
+                    print()
+                    print("  The architect agent did not create valid architecture files.")
+                    print("  This means drift protection is REDUCED for this project.")
+                    print()
+                    print("  Implications:")
+                    print("  - No locked API contracts to verify against")
+                    print("  - No schema definitions to constrain data models")
+                    print("  - No decision records to prevent conflicting choices")
+                    print()
+                    print("  To require architecture (fail instead of warn):")
+                    print("    Set 'architecture.required: true' in .claude-agent.yaml")
+                    print()
+                    print("  Continuing to coding sessions without architecture lock...")
+                    print("!" * 70 + "\n")
 
     # Main loop
     iteration = 0

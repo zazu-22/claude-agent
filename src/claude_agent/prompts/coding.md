@@ -127,6 +127,8 @@ If the architecture/ directory exists, read and quote relevant sections:
 - Does this feature require changing a locked invariant? YES/NO
 - If YES: STOP and document why in claude-progress.txt. Do NOT proceed without explicit deviation approval.
 
+{{architecture_context}}
+
 ### Step B - REGRESSION VERIFICATION (explicit output required)
 Run these verifications and state results:
 

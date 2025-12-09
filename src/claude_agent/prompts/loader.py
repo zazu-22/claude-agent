@@ -7,6 +7,7 @@ Load and render prompt templates with variable substitution.
 
 import json
 from pathlib import Path
+from typing import Optional
 
 
 PROMPTS_DIR = Path(__file__).parent
@@ -54,12 +55,67 @@ def get_last_passed_feature(project_dir: Path) -> str:
         return "the most recently completed feature"
 
 
+def get_architecture_context(project_dir: Path) -> Optional[str]:
+    """
+    Get architectural context for the coding agent if architecture/ exists.
+
+    Loads decisions from architecture/decisions.yaml and formats them as
+    context for the coding agent prompt. This enables the coding agent to
+    honor architectural decisions made during the architect phase.
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        Formatted architecture context string, or None if no architecture exists
+    """
+    from claude_agent.decisions import load_decisions, DecisionLoadError
+
+    arch_dir = project_dir / "architecture"
+    if not arch_dir.exists():
+        return None
+
+    try:
+        decisions = load_decisions(project_dir)
+    except DecisionLoadError:
+        # Silently skip if decisions can't be loaded - let the agent read raw files
+        return None
+
+    if not decisions:
+        return None
+
+    # Format decisions into prompt context
+    lines = [
+        "## ARCHITECTURE DECISIONS (LOCKED)",
+        "",
+        "The following architectural decisions were made during the architecture phase.",
+        "You MUST honor these decisions. Do NOT deviate without explicit approval.",
+        "",
+    ]
+
+    for d in decisions:
+        lines.append(f"### {d.id}: {d.topic}")
+        lines.append(f"**Choice:** {d.choice}")
+        if d.rationale:
+            lines.append(f"**Rationale:** {d.rationale}")
+        if d.constraints_created:
+            lines.append("**Constraints:**")
+            for c in d.constraints_created:
+                lines.append(f"- {c}")
+        if d.affects_features:
+            lines.append(f"**Affects Features:** {d.affects_features}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def render_coding_prompt(template: str, project_dir: Path) -> str:
     """
     Render the coding agent prompt with template variables.
 
     Substitutes:
     - {{last_passed_feature}}: The most recently passed feature for regression testing
+    - {{architecture_context}}: Locked architectural decisions (if architecture/ exists)
 
     Args:
         template: The raw prompt template string
@@ -69,7 +125,17 @@ def render_coding_prompt(template: str, project_dir: Path) -> str:
         Rendered prompt string with variables substituted
     """
     last_feature = get_last_passed_feature(project_dir)
-    return template.replace("{{last_passed_feature}}", last_feature)
+    result = template.replace("{{last_passed_feature}}", last_feature)
+
+    # Inject architecture context if available
+    arch_context = get_architecture_context(project_dir)
+    if arch_context:
+        result = result.replace("{{architecture_context}}", arch_context)
+    else:
+        # Remove placeholder if no architecture exists
+        result = result.replace("{{architecture_context}}", "")
+
+    return result
 
 
 def load_prompt(name: str) -> str:
