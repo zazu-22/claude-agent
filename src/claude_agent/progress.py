@@ -828,7 +828,7 @@ def count_tests_by_type(project_dir: Path) -> dict:
         with open(feature_list_path) as f:
             features = json.load(f)
 
-        for f in features:
+        for i, f in enumerate(features):
             result["total"] += 1
             is_passing = f.get("passes", False)
             is_manual = f.get("requires_manual_testing", False)
@@ -836,6 +836,11 @@ def count_tests_by_type(project_dir: Path) -> dict:
 
             if is_blocked:
                 result["blocked"] += 1
+                # Warn if blocked=true but no blocked_reason provided
+                if "blocked_reason" not in f:
+                    logger.warning(
+                        f"Feature #{i} is blocked but missing 'blocked_reason' field"
+                    )
             elif is_passing:
                 result["passing"] += 1
             else:
@@ -1225,7 +1230,7 @@ def unblock_feature(
 def bulk_unblock_features(
     project_dir: Path,
     feature_indices: list[int],
-) -> tuple[int, list[str]]:
+) -> tuple[list[int], list[str]]:
     """
     Unblock multiple features in a single file read/write operation.
 
@@ -1237,35 +1242,36 @@ def bulk_unblock_features(
         feature_indices: List of feature indices to unblock
 
     Returns:
-        (success_count, error_messages) tuple where:
-        - success_count: Number of features successfully unblocked
+        (successful_indices, error_messages) tuple where:
+        - successful_indices: List of indices that were successfully unblocked
         - error_messages: List of error messages for failed operations
 
     Note:
         This function reads feature_list.json once, modifies it in memory,
         then writes it back. If the agent is running concurrently, there
-        is a potential race condition. Consider using file locking for
-        production deployments with concurrent access.
+        is a potential race condition. This tool assumes one agent per
+        project directory. For production deployments with concurrent
+        access, consider adding file locking.
     """
     feature_list_path = find_feature_list(project_dir)
     errors: list[str] = []
-    success_count = 0
+    successful_indices: list[int] = []
 
     if not feature_list_path:
-        return 0, ["feature_list.json does not exist"]
+        return [], ["feature_list.json does not exist"]
 
     if not feature_indices:
-        return 0, []
+        return [], []
 
     try:
         with open(feature_list_path) as f:
             features = json.load(f)
     except json.JSONDecodeError as e:
         logger.warning(f"Failed to parse feature_list.json: {e}")
-        return 0, [f"Failed to parse feature_list.json: {e}"]
+        return [], [f"Failed to parse feature_list.json: {e}"]
     except IOError as e:
         logger.warning(f"Failed to read feature_list.json: {e}")
-        return 0, [f"Failed to read feature_list.json: {e}"]
+        return [], [f"Failed to read feature_list.json: {e}"]
 
     max_index = len(features) - 1
 
@@ -1285,16 +1291,16 @@ def bulk_unblock_features(
         # Remove blocked fields
         feature.pop("blocked", None)
         feature.pop("blocked_reason", None)
-        success_count += 1
+        successful_indices.append(idx)
 
     # Write back if any changes were made
-    if success_count > 0:
+    if successful_indices:
         try:
             atomic_json_write(feature_list_path, features)
         except Exception as e:
-            return 0, [f"Failed to write feature_list.json: {e}"]
+            return [], [f"Failed to write feature_list.json: {e}"]
 
-    return success_count, errors
+    return successful_indices, errors
 
 
 def get_blocked_features(project_dir: Path) -> list[dict]:

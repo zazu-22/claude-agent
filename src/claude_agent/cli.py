@@ -483,20 +483,21 @@ def unblock(feature_index: Optional[int], project_dir: Path, list_blocked: bool,
 
         # Use bulk unblock for efficiency (single file read/write)
         indices = [item["index"] for item in blocked]
-        success_count, errors = bulk_unblock_features(project_dir, indices)
+        successful_indices, errors = bulk_unblock_features(project_dir, indices)
 
-        # Report successes
-        for item in blocked:
-            idx = item["index"]
-            if not any(str(idx) in err for err in errors):
-                desc = _truncate(item["description"], 40)
-                click.echo(f"  ✓ Unblocked feature #{idx}: {desc}")
+        # Build index->description lookup for reporting
+        desc_by_idx = {item["index"]: item["description"] for item in blocked}
+
+        # Report successes using the returned successful_indices list
+        for idx in successful_indices:
+            desc = _truncate(desc_by_idx.get(idx, ""), 40)
+            click.echo(f"  ✓ Unblocked feature #{idx}: {desc}")
 
         # Report errors
         for err in errors:
             click.echo(f"  ✗ {err}", err=True)
 
-        click.echo(f"\nUnblocked {success_count}/{len(blocked)} features.")
+        click.echo(f"\nUnblocked {len(successful_indices)}/{len(blocked)} features.")
         return
 
     # Unblock specific feature

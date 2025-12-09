@@ -138,9 +138,19 @@ cat architecture/decisions.yaml
 ```
 
 **If any file contains malformed YAML or cannot be parsed:**
-- Document the error in claude-progress.txt
-- Skip architecture verification for that file only
-- Proceed with caution, noting the incomplete verification
+1. Document the specific error in claude-progress.txt:
+   ```
+   ARCHITECTURE FILE ERROR:
+   - File: architecture/[filename].yaml
+   - Error: [parsing error message]
+   - Action: Skipping verification for this file
+   ```
+2. Skip architecture verification for that file only (continue with other files)
+3. **Continue implementation** but with these restrictions:
+   - Do NOT add/modify features that would normally touch that file's domain
+   - If the current feature REQUIRES that file's data, mark the feature as BLOCKED
+   - Example: If schemas.yaml is malformed and feature needs schema validation, BLOCK it
+4. Note in Step C constraints: "Incomplete verification: [filename].yaml unreadable"
 
 After reading, document your understanding:
 
