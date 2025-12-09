@@ -34,7 +34,6 @@ from claude_agent.metrics import (
     REJECTION_RATE_WARNING,
     generate_sparkline,
     get_dashboard_data,
-    load_metrics,
 )
 from claude_agent.progress import (
     find_feature_list,
@@ -568,7 +567,8 @@ def drift(project_dir: Path, output_json: bool):
     elif velocity_trend == "increasing":
         trend_color = GREEN
     else:
-        # Use empty string (default color) for stable/insufficient_data for visibility
+        # Neutral states (stable/insufficient_data) use default terminal color
+        # to avoid DIM which has poor visibility on some terminal themes
         trend_color = ""
 
     click.echo(f"  Velocity Trend:      {trend_color}{velocity_trend}{RESET} {velocity_sparkline}")
@@ -617,13 +617,13 @@ def drift(project_dir: Path, output_json: bool):
     click.echo(f"  Multi-Feature Rate:  {multi_color}{multi_rate:.1f}%{RESET}")
     click.echo(f"  Incomplete Eval:     {incomplete_color}{incomplete_rate:.1f}%{RESET}")
 
-    # Recent Sessions Summary
-    metrics = load_metrics(project_dir)
-    if metrics.sessions:
+    # Recent Sessions Summary (uses pre-loaded data from dashboard to avoid redundant load)
+    recent_sessions = dashboard["recent_sessions"]
+    if recent_sessions:
         click.echo(f"\n{BOLD}Recent Sessions (last {RECENT_SESSION_LIMIT}){RESET}")
         click.echo("-" * 30)
 
-        for session in metrics.sessions[-RECENT_SESSION_LIMIT:]:
+        for session in recent_sessions:
             flags = []
             if session.regressions_caught > 0:
                 flags.append(f"{RED}regr:{session.regressions_caught}{RESET}")

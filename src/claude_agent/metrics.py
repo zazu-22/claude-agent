@@ -612,6 +612,7 @@ class DashboardData(TypedDict):
     architecture_deviation_count: int  # Total architecture deviations
     health_status: str  # "healthy" | "warning" | "critical"
     indicators: DriftIndicators
+    recent_sessions: list[SessionMetrics]  # Last N sessions for display
 
 
 def get_session_date_range(metrics: DriftMetrics) -> tuple[str, str] | None:
@@ -760,6 +761,7 @@ def get_dashboard_data(project_dir: Path) -> DashboardData:
         "architecture_deviation_count": get_architecture_deviation_count(metrics),
         "health_status": health_status,
         "indicators": indicators,
+        "recent_sessions": metrics.sessions[-RECENT_SESSION_LIMIT:],
     }
 
 
@@ -792,6 +794,8 @@ def generate_sparkline(values: list[float], width: int = 8) -> str:
 
     normalized = []
     for v in values[-width:]:
+        # Map value to index 0-8 for blocks string (9 chars: space + 8 block levels)
+        # Formula: (value - min) / range * 8, clamped to valid index range
         idx = int((v - min_val) / (max_val - min_val) * 8)
         idx = max(0, min(8, idx))
         normalized.append(blocks[idx])

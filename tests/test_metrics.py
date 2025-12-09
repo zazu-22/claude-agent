@@ -1456,6 +1456,25 @@ class TestDriftCLI:
         assert output["architecture_deviation_count"] == 2
         assert "indicators" in output
 
+    def test_drift_respects_no_color_env(self, runner, tmp_path):
+        """Verify NO_COLOR=1 disables ANSI color codes."""
+        record_session_metrics(
+            tmp_path,
+            session_id=1,
+            features_attempted=5,
+            features_completed=3,
+        )
+
+        result = runner.invoke(
+            main, ["drift", str(tmp_path)], env={"NO_COLOR": "1"}
+        )
+        assert result.exit_code == 0
+        # ANSI escape codes start with \033[ - should not be present
+        assert "\033[" not in result.output
+        # Should still show the dashboard content
+        assert "Drift Detection Dashboard" in result.output
+        assert "HEALTHY" in result.output
+
 
 class TestThresholdConstants:
     """Tests to verify threshold constants are properly exported and used."""
