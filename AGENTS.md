@@ -249,6 +249,10 @@ The agent creates these files in the project directory:
 - `validation-history.json` - Validation attempt records
 - `drift-metrics.json` - Drift detection metrics tracking
 - `spec-review.md` - Optional spec review output
+- `architecture/` - Architecture lock files (created by Architect Agent):
+  - `contracts.yaml` - API endpoint definitions
+  - `schemas.yaml` - Data model definitions
+  - `decisions.yaml` - Architectural decision records
 
 ## Directory Structure
 
@@ -259,15 +263,19 @@ claude-agent/
 │   ├── __main__.py        # Entry point
 │   ├── cli.py             # Click CLI commands
 │   ├── agent.py           # Agent session logic
+│   ├── architecture.py    # Architecture lock file validation
 │   ├── client.py          # Claude SDK client creation
 │   ├── config.py          # Configuration loading
+│   ├── decisions.py       # Architectural decision records
 │   ├── detection.py       # Tech stack detection
+│   ├── metrics.py         # Drift detection metrics tracking
 │   ├── progress.py        # Progress tracking
 │   ├── security.py        # Security hooks
 │   ├── wizard.py          # Interactive spec wizard
 │   └── prompts/           # Agent prompts
 │       ├── __init__.py
 │       ├── loader.py      # Prompt loading utilities
+│       ├── architect.md   # Architecture lock agent prompt
 │       ├── coding.md      # Coding agent prompt
 │       ├── initializer.md # Initializer agent prompt
 │       ├── review.md      # Spec review prompt
@@ -305,33 +313,44 @@ All temporary files, debugging scripts, and test artifacts should be in `/temp`:
 
 ## Architecture
 
-### Two-Agent Pattern
+### Four-Agent Pattern
 The agent uses distinct personas for different phases:
 
 1. **Initializer Agent** (`prompts/initializer.md`)
    - Reads spec, creates `feature_list.json`
    - Sets up project structure
    - Runs once at project start
+   - Must complete forced evaluation sequence before generating features
 
-2. **Coding Agent** (`prompts/coding.md`)
+2. **Architect Agent** (`prompts/architect.md`)
+   - Establishes architectural constraints before coding begins
+   - Creates lock files: `contracts.yaml`, `schemas.yaml`, `decisions.yaml`
+   - Runs once after initialization, before first coding session
+   - Prevents architectural drift across sessions
+
+3. **Coding Agent** (`prompts/coding.md`)
    - Implements features from feature list
    - Tests through browser automation
    - Commits progress, updates notes
+   - Must verify architecture constraints before implementation
    - Runs repeatedly until all features pass
 
-3. **Validator Agent** (`prompts/validator.md`)
+4. **Validator Agent** (`prompts/validator.md`)
    - Reviews completed implementation
    - Tests through actual UI
    - Issues APPROVED/REJECTED/CONTINUE/NEEDS_VERIFICATION verdict
+   - Must provide evidence for each verdict
    - Runs when all automated tests pass
 
 ### Session Flow
 ```
 Start → Is feature_list.json present?
   No  → Run Initializer Agent → Create feature list
-  Yes → Check test status
-        All automated pass? → Run Validator
-        Otherwise → Run Coding Agent → Implement features
+  Yes → Is architecture/ locked?
+        No  → Run Architect Agent → Create lock files
+        Yes → Check test status
+              All automated pass? → Run Validator
+              Otherwise → Run Coding Agent → Implement features
 ```
 
 ### Configuration Priority
@@ -341,41 +360,284 @@ Start → Is feature_list.json present?
 
 ## Drift Mitigation
 
-The agent implements forced evaluation sequences to prevent drift from the specification.
+The agent implements a comprehensive drift mitigation system to prevent quality degradation in long-running coding sessions.
 
-### Coding Agent Evaluation Sequence
-Before implementing any feature, the coding agent MUST complete:
+### Problem Overview
 
-1. **Context Verification**: Quote feature_list.json, progress notes, and architectural constraints
-2. **Regression Verification**: Test previously passing features and report PASS/FAIL with evidence
-3. **Implementation Plan**: State what will be built, which files will be modified, and constraints honored
+Long-running agentic workflows face three distinct failure modes that compound across sessions:
 
-Only after completing these steps with explicit output can implementation proceed.
+| Failure Mode | Description | Manifestation |
+|--------------|-------------|---------------|
+| **Lossy Handoff Divergence** | Context passes between stateless sessions via artifacts; implicit intent is lost | Session N+1 interprets artifacts differently than Session N intended |
+| **Stochastic Cascade Drift** | LLM outputs are probabilistic samples; variance at step N compounds at step N+1 | "Refinement" passes branch into new trajectories |
+| **Passive Instruction Decay** | LLMs reason about what they should do, acknowledge instructions, then fail to execute | Agent identifies it should verify previous work, then skips to implementation |
 
-### Initializer Agent Evaluation Sequence
-Before generating feature_list.json, the initializer agent MUST complete:
+### Four-Layer Mitigation Strategy
 
-1. **Spec Decomposition**: Break down spec sections and list requirements
-2. **Feature Mapping**: Map each feature to specific spec text with traceability quotes
-3. **Coverage Check**: Verify all requirements are covered by features
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Layer 4: ENRICH                                             │
+│ Capture evaluation output as handoff artifacts              │
+│ Decision records, explicit assumptions, traceability        │
+├─────────────────────────────────────────────────────────────┤
+│ Layer 3: FORCE                                              │
+│ Mandatory evaluation checkpoints with explicit output       │
+│ Gated progression, accountability, visible reasoning        │
+├─────────────────────────────────────────────────────────────┤
+│ Layer 2: SAMPLE                                             │
+│ Best-of-N generation with evaluation criteria               │
+│ Exploit variance as search space, not fight it              │
+├─────────────────────────────────────────────────────────────┤
+│ Layer 1: CONSTRAIN                                          │
+│ Lock invariants before allowing generative sampling         │
+│ API contracts, schemas, architectural decisions             │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### Validator Agent Evaluation Sequence
-Before issuing any verdict, the validator agent MUST complete:
+### Architecture Lock Phase
 
-1. **Step A - Spec Alignment Check**: Quote spec requirement for each feature tested
-2. **Step B - Test Execution with Evidence**: Document steps, expected/actual results, PASS/FAIL
-3. **Step C - Aggregate Verdict**: Summarize results with reasoning before JSON verdict
+The Architecture Lock Phase runs between Initialization and first Coding session to establish hard constraints.
 
-Verdicts without Step B evidence are not trustworthy and indicate evaluation was skipped.
+**Purpose:** Lock architectural invariants before allowing generative implementation.
+
+**Lock Files Created in `architecture/` Directory:**
+
+| File | Purpose | Contents |
+|------|---------|----------|
+| `contracts.yaml` | API surface definitions | Endpoints, methods, request/response shapes |
+| `schemas.yaml` | Data model definitions | Entities, fields, types, constraints |
+| `decisions.yaml` | Architectural decisions | Technology choices, rationale, constraints |
+
+**Example `contracts.yaml`:**
+```yaml
+version: 1
+locked_at: "2024-01-15T10:00:00Z"
+contracts:
+  - name: "user_auth"
+    endpoints:
+      - path: "/api/auth/login"
+        method: "POST"
+        request_shape:
+          email: string
+          password: string
+        response_shape:
+          token: string
+          user: object
+```
+
+**Example `decisions.yaml`:**
+```yaml
+version: 1
+decisions:
+  - id: DR-001
+    topic: "Authentication strategy"
+    choice: "JWT with refresh tokens"
+    alternatives_considered:
+      - "Session cookies - rejected due to mobile app requirements"
+    rationale: "Spec requires stateless API for mobile clients"
+    constraints_created:
+      - "All auth must use JWT middleware"
+      - "Token refresh endpoint required"
+    affects_features: [3, 5, 12]
+```
+
+**Architect Agent Evaluation Sequence:**
+1. **Step 1 - Identify API Boundaries**: List each endpoint with path, method, shapes
+2. **Step 2 - Identify Data Models**: List each entity with fields, relationships
+3. **Step 3 - Identify Architectural Decisions**: Document technology choices with rationale
+4. **Step 4 - Generate Lock Files**: Write validated YAML files
+
+### Forced Evaluation Sequences
+
+Each agent must complete mandatory evaluation checkpoints with explicit output before proceeding.
+
+#### Coding Agent Evaluation Sequence
+
+Before implementing ANY feature, the coding agent MUST complete:
+
+**Step A - Context Verification** (explicit output required):
+- [ ] Quote specific feature from `feature_list.json` (index and full text)
+- [ ] Quote last session's status from `claude-progress.txt`
+- [ ] Identify architectural constraints from previous sessions
+- [ ] **If `architecture/` exists**: Verify relevant contracts, schemas, decisions
+- [ ] Answer: "Does this feature require changing a locked invariant? YES/NO"
+
+**Step B - Regression Verification** (explicit output required):
+- Test previously passing features
+- Report PASS/FAIL with evidence for each
+- Confirm no regressions introduced
+
+**Step C - Implementation Plan** (explicit output required):
+- State what will be built
+- List files to modify
+- Quote relevant architecture constraints that must be honored
+
+**CRITICAL:** Steps A-C are WORTHLESS unless actually performed. Skipping to implementation without evidence above is a FAILURE MODE that causes drift.
+
+#### Initializer Agent Evaluation Sequence
+
+Before generating `feature_list.json`, MUST complete:
+
+**Step 1 - Spec Decomposition**:
+- For each spec section: list requirements and ambiguities
+
+**Step 2 - Feature Mapping**:
+- For EACH feature: state spec section it traces to with quote
+- Justify feature granularity
+
+**Step 3 - Coverage Check**:
+- Count spec requirements covered vs total
+- Identify any uncovered requirements
+- Add features if needed
+
+**CRITICAL:** Features without spec traceability are DRIFT RISKS.
+
+#### Validator Agent Evaluation Sequence
+
+Before issuing ANY verdict, MUST complete:
+
+**Step A - Spec Alignment Check**:
+- For each feature tested: quote spec requirement
+- Define what "working" means
+- State verification method
+
+**Step B - Test Execution with Evidence**:
+- Document actual steps performed
+- State expected vs actual results
+- Provide screenshot evidence
+- Assign PASS/FAIL verdict per feature
+
+**Step C - Aggregate Verdict with Reasoning**:
+- Summarize: features tested, passed, failed
+- List failed features with specific reasons
+- State reasoning BEFORE JSON verdict
+
+**CRITICAL:** A verdict without Step B evidence is NOT TRUSTWORTHY.
+
+### Decision Record Protocol
+
+The Decision Record Protocol captures WHY decisions were made, not just WHAT was done.
+
+**When to Create Decision Records:**
+- Choosing between multiple valid implementation approaches
+- Adding a new dependency
+- Establishing a pattern that future features should follow
+- Deviating from an existing pattern (with justification)
+
+**Decision Record Fields:**
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | Yes | Format: "DR-YYYYMMDD-UUID" |
+| `topic` | Yes | What was being decided |
+| `choice` | Yes | What was chosen |
+| `timestamp` | No | ISO format datetime |
+| `session` | No | Session number that made decision |
+| `rationale` | No | Why this choice was made |
+| `alternatives_considered` | No | Other options evaluated |
+| `constraints_created` | No | What future sessions must honor |
+| `affects_features` | No | Feature indices affected |
+
+**Implementation:** Decision records are append-only. Use `decisions.py` functions:
+- `load_decisions()` - Load all decisions
+- `append_decision()` - Add new decision (never modifies existing)
+- `get_relevant_decisions(feature_index)` - Get decisions affecting a feature
+- `get_all_constraints()` - Get flat list of all constraints
 
 ### Metrics Tracking
-Drift metrics are automatically tracked in `drift-metrics.json`:
 
-- **Session metrics**: features attempted/completed, regressions caught, evaluation sections present
-- **Validation metrics**: verdict, features tested/failed, failure reasons
-- **Drift indicators**: regression rate, velocity trend, rejection rate
+Drift metrics are automatically tracked in `drift-metrics.json` and provide visibility into drift patterns.
+
+#### Session Metrics (per coding session)
+| Metric | Description |
+|--------|-------------|
+| `features_attempted` | Features agent tried to implement |
+| `features_completed` | Net change in passing features (can be negative) |
+| `features_regressed` | Features that went from pass to fail |
+| `regressions_caught` | Regressions detected by agent during verification |
+| `assumptions_stated` | Number of explicit assumptions documented |
+| `assumptions_violated` | Assumptions that proved incorrect |
+| `architecture_deviations` | Locked constraints violated |
+| `evaluation_sections_present` | Which eval sections appeared (context, regression, plan) |
+| `evaluation_completeness_score` | 0.0-1.0 score of evaluation quality |
+| `is_multi_feature` | Whether session worked on multiple features |
+
+#### Validation Metrics (per validation attempt)
+| Metric | Description |
+|--------|-------------|
+| `verdict` | "approved" or "rejected" |
+| `features_tested` | Number of features tested |
+| `features_failed` | Number of features that failed |
+| `failure_reasons` | List of failure descriptions |
+
+#### Drift Indicators (calculated aggregates)
+| Indicator | Calculation | Drift Signal |
+|-----------|-------------|--------------|
+| `regression_rate` | % sessions with regressions | High = drift occurring |
+| `velocity_trend` | Comparing avg features/session over time | "decreasing" = complexity/drift |
+| `rejection_rate` | % validation attempts rejected | Increasing = drift accumulating |
+| `multi_feature_rate` | % sessions with multi-feature work | High = deviation from architecture |
+| `incomplete_evaluation_rate` | % sessions with incomplete evals | High = skipped safeguards |
+
+**Velocity Trend Thresholds:**
+- Requires minimum 6 sessions for trend calculation
+- 10% change threshold to trigger "increasing"/"decreasing"
+- 0.5 feature/session minimum absolute change
 
 View metrics with: `claude-agent status --metrics`
+
+### Troubleshooting Drift Issues
+
+#### Common Drift Symptoms
+
+| Symptom | Likely Cause | Solution |
+|---------|--------------|----------|
+| Increasing validator rejections | Features diverging from spec | Review `decisions.yaml` for constraint violations |
+| Regressions detected each session | Interdependent features not tested together | Add regression verification to affected features |
+| Velocity decreasing over sessions | Accumulated technical debt or drift | Reset architecture lock, review feature dependencies |
+| Evaluation sections missing | Passive instruction decay | Agent may need prompt refresh or session restart |
+| Multi-feature sessions increasing | Scope creep or unclear feature boundaries | Re-evaluate feature granularity in `feature_list.json` |
+
+#### Diagnostic Commands
+
+```bash
+# View current drift metrics
+claude-agent status ./my-project --metrics
+
+# Check architecture lock status
+ls -la ./my-project/architecture/
+
+# View decision history
+cat ./my-project/architecture/decisions.yaml
+
+# Check validation history
+cat ./my-project/validation-history.json
+
+# Review regression patterns in progress notes
+grep -n "FAIL" ./my-project/claude-progress.txt
+```
+
+#### Recovery Actions
+
+**High Regression Rate:**
+1. Review recent decision records for constraint violations
+2. Check if architecture lock files are being honored
+3. Consider resetting specific features to "not_started"
+
+**Increasing Rejection Rate:**
+1. Compare rejected features against spec requirements
+2. Review validator evidence for patterns
+3. Check if spec has ambiguities causing interpretation drift
+
+**Decreasing Velocity:**
+1. Review session metrics for incomplete evaluations
+2. Check for multi-feature sessions (scope creep)
+3. Consider architecture review if constraints are blocking progress
+
+**Architecture Deviation Detected:**
+1. STOP implementation immediately
+2. Document why deviation is needed in `decisions.yaml`
+3. Update lock files if deviation is justified
+4. Propagate changes to affected features
 
 ## Agent Delegation & Tool Execution
 
@@ -437,6 +699,14 @@ This repository includes a reusable GitHub API automation system for bulk operat
 - **"No spec provided"**: Use `--spec` or `--goal` flags
 - **Validator fails to parse**: Check JSON format in validator response
 - **Session hangs**: First session can take 10-20+ minutes
+- **Architecture lock fails**: Check YAML syntax in `architecture/*.yaml` files
+- **High regression rate**: Review drift metrics and decision records
+
+### Drift-Related Debugging
+- **Missing evaluation sections**: Agent skipped forced evaluation; check metrics for `incomplete_evaluation_rate`
+- **Architecture deviations**: Coding agent violated constraints; review `decisions.yaml` for conflicts
+- **Validator rejection loop**: Features may be drifting from spec; check `validation-history.json`
+- **Velocity declining**: Technical debt accumulating; review session metrics
 
 ### Useful Commands
 ```bash
@@ -451,6 +721,16 @@ cat ./my-project/feature_list.json | head -50
 
 # Reset and start fresh
 claude-agent --reset -p ./my-project
+
+# View drift metrics
+claude-agent status ./my-project --metrics
+
+# Check architecture lock files
+ls -la ./my-project/architecture/
+cat ./my-project/architecture/decisions.yaml
+
+# Review validation history
+cat ./my-project/validation-history.json
 ```
 
 ## Contributing
