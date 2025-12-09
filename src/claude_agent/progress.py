@@ -834,6 +834,8 @@ def count_tests_by_type(project_dir: Path) -> dict:
             is_manual = f.get("requires_manual_testing", False)
             is_blocked = f.get("blocked", False)
 
+            # Count blocked features (note: blocked and passing are NOT mutually exclusive)
+            # A feature can be passing but blocked from further modification
             if is_blocked:
                 result["blocked"] += 1
                 # Warn if blocked=true but no blocked_reason provided
@@ -841,12 +843,16 @@ def count_tests_by_type(project_dir: Path) -> dict:
                     logger.warning(
                         f"Feature #{i} is blocked but missing 'blocked_reason' field"
                     )
-            elif is_passing:
+
+            # Count passing features (independent of blocked status)
+            if is_passing:
                 result["passing"] += 1
-            else:
-                # Available = not passing and not blocked
+
+            # Available = not passing AND not blocked (can be worked on)
+            if not is_passing and not is_blocked:
                 result["available"] += 1
 
+            # Manual/automated counts (independent of blocked/passing)
             if is_manual:
                 result["manual_total"] += 1
                 if is_passing:
@@ -1239,19 +1245,26 @@ def bulk_unblock_features(
 
     Args:
         project_dir: Project directory path
-        feature_indices: List of feature indices to unblock
+        feature_indices: List of feature indices to unblock (duplicates are ignored)
 
     Returns:
         (successful_indices, error_messages) tuple where:
         - successful_indices: List of indices that were successfully unblocked
         - error_messages: List of error messages for failed operations
 
-    Note:
-        This function reads feature_list.json once, modifies it in memory,
-        then writes it back. If the agent is running concurrently, there
-        is a potential race condition. This tool assumes one agent per
-        project directory. For production deployments with concurrent
-        access, consider adding file locking.
+    Race Condition Warning:
+        This function uses read-modify-write without file locking. If multiple
+        agents access the same project concurrently:
+
+        - Agent A reads feature_list.json at T0
+        - Agent B reads feature_list.json at T1
+        - Agent A writes changes at T2
+        - Agent B writes changes at T3 (overwrites A's changes)
+        - Result: Agent A's changes are lost (last-write-wins)
+
+        This tool assumes one agent per project directory. For production
+        deployments with concurrent access, consider adding file locking
+        via fcntl (Unix) or msvcrt (Windows).
     """
     feature_list_path = find_feature_list(project_dir)
     errors: list[str] = []
@@ -1262,6 +1275,9 @@ def bulk_unblock_features(
 
     if not feature_indices:
         return [], []
+
+    # Deduplicate indices to prevent double-counting
+    unique_indices = sorted(set(feature_indices))
 
     try:
         with open(feature_list_path) as f:
@@ -1275,7 +1291,7 @@ def bulk_unblock_features(
 
     max_index = len(features) - 1
 
-    for idx in feature_indices:
+    for idx in unique_indices:
         # Validate index
         if idx < 0 or idx > max_index:
             errors.append(f"Invalid feature index: {idx} (max: {max_index})")
