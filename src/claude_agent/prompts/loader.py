@@ -323,3 +323,13 @@ def get_spec_decompose_prompt(spec_content: str, feature_count: int) -> str:
             "feature_count": str(feature_count),
         },
     )
+
+
+def get_architect_prompt() -> str:
+    """
+    Load the architecture lock agent prompt.
+
+    Returns:
+        Prompt string for the architect agent
+    """
+    return load_prompt("architect")

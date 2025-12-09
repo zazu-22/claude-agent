@@ -119,6 +119,14 @@ class LoggingConfig:
 
 
 @dataclass
+class ArchitectureConfig:
+    """Architecture lock configuration."""
+
+    enabled: bool = True  # Run architecture phase
+    required: bool = False  # Fail if architecture lock fails
+
+
+@dataclass
 class Config:
     """Complete configuration for a claude-agent run."""
 
@@ -148,11 +156,15 @@ class Config:
     # Evaluation settings
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
 
+    # Architecture settings
+    architecture: ArchitectureConfig = field(default_factory=ArchitectureConfig)
+
     # Metrics settings
     metrics_file: str = "drift-metrics.json"
 
     # Runtime flags (not persisted to config file)
     verbose: bool = False
+    skip_architecture: bool = False  # CLI flag to skip architecture phase
 
     @property
     def spec_content(self) -> Optional[str]:
@@ -223,6 +235,7 @@ def merge_config(
     cli_config_path: Optional[Path] = None,
     cli_review: bool = False,
     cli_verbose: bool = False,
+    cli_skip_architecture: bool = False,
 ) -> Config:
     """
     Merge configuration from all sources.
@@ -237,6 +250,7 @@ def merge_config(
         cli_*: CLI argument values (None means not specified)
         cli_config_path: Explicit config file path
         cli_verbose: Enable verbose output
+        cli_skip_architecture: Skip architecture lock phase
 
     Returns:
         Merged Config object
@@ -372,6 +386,14 @@ def merge_config(
                 if "retention_days" in logging_config:
                     config.logging.retention_days = logging_config["retention_days"]
 
+        # Architecture settings
+        if "architecture" in file_config:
+            arch_config = file_config["architecture"]
+            if "enabled" in arch_config:
+                config.architecture.enabled = arch_config["enabled"]
+            if "required" in arch_config:
+                config.architecture.required = arch_config["required"]
+
     # Apply CLI overrides (highest priority)
     if cli_spec is not None:
         config.spec_file = cli_spec
@@ -396,6 +418,9 @@ def merge_config(
 
     if cli_verbose:
         config.verbose = cli_verbose
+
+    if cli_skip_architecture:
+        config.skip_architecture = cli_skip_architecture
 
     return config
 

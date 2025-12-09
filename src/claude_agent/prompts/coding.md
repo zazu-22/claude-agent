@@ -103,6 +103,30 @@ For each item, state the evidence you found:
 - [ ] Architectural constraints identified:
   Quote: "[key decisions from previous sessions that constrain this work]"
 
+### Step A.1 - ARCHITECTURE VERIFICATION (if architecture/ exists)
+**Only perform this step if the architecture/ directory exists.**
+
+First, check if architecture lock files exist:
+```bash
+ls architecture/ 2>/dev/null || echo "No architecture/ directory"
+```
+
+If the architecture/ directory exists, read and quote relevant sections:
+
+- [ ] contracts.yaml read:
+  Quote: "[relevant API contracts for this feature]"
+
+- [ ] schemas.yaml read:
+  Quote: "[relevant data models for this feature]"
+
+- [ ] decisions.yaml read:
+  Quote: "[relevant decisions that constrain this feature]"
+  Constraints I must honor: "[list specific constraints]"
+
+**ARCHITECTURE DEVIATION CHECK:**
+- Does this feature require changing a locked invariant? YES/NO
+- If YES: STOP and document why in claude-progress.txt. Do NOT proceed without explicit deviation approval.
+
 ### Step B - REGRESSION VERIFICATION (explicit output required)
 Run these verifications and state results:
 
@@ -117,7 +141,8 @@ Before writing code, state:
 - What I will build: [specific description]
 - Files I will modify: [list]
 - How this connects to existing code: [description]
-- Constraints I must honor: [list from Step A]
+- Constraints I must honor: [list from Step A and A.1]
+- Architecture contracts I will implement: [list from Step A.1, if applicable]
 
 ### Step D - EXECUTE
 ONLY NOW proceed to implementation (Step 4 below).

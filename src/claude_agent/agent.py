@@ -41,6 +41,7 @@ from claude_agent.progress import (
     save_validation_attempt,
 )
 from claude_agent.prompts.loader import (
+    get_architect_prompt,
     get_initializer_prompt,
     get_coding_prompt,
     get_review_prompt,
@@ -65,6 +66,21 @@ from claude_agent.metrics import (
     record_session_metrics,
     record_validation_metrics,
 )
+
+
+def is_architecture_locked(project_dir: Path) -> bool:
+    """
+    Check if architecture lock phase has been completed.
+
+    Returns True if architecture/ directory exists with all required files.
+    """
+    arch_dir = project_dir / "architecture"
+    required_files = ["contracts.yaml", "schemas.yaml", "decisions.yaml"]
+
+    if not arch_dir.exists():
+        return False
+
+    return all((arch_dir / f).exists() for f in required_files)
 
 
 def get_next_session_id(project_dir: Path) -> int:
@@ -503,6 +519,72 @@ async def run_validator_session(
     return result
 
 
+async def run_architect_session(
+    config: Config,
+    stack: str,
+    project_dir: Path,
+    logger: Optional[AgentLogger] = None,
+) -> tuple[str, bool]:
+    """
+    Run the architecture lock agent session.
+
+    Args:
+        config: Configuration object
+        stack: Detected tech stack
+        project_dir: Project directory path
+        logger: Optional AgentLogger for structured logging
+
+    Returns:
+        (status, success) where success indicates if all architecture files were created
+    """
+    # Start logging session
+    session_id = None
+    stats_tracker = None
+    if logger:
+        session_id = logger.start_session(
+            iteration=0,
+            model=config.agent.model,
+            stack=stack,
+            agent_type="architect",
+        )
+        stats_tracker = SessionStatsTracker(
+            project_dir=project_dir,
+            session_id=session_id,
+            agent_type="architect",
+        )
+
+    # Create client
+    client = create_client(
+        project_dir=project_dir,
+        model=config.agent.model,
+        max_turns=config.agent.max_turns,
+        stack=stack,
+    )
+
+    # Get prompt
+    prompt = get_architect_prompt()
+
+    # Run session
+    async with client:
+        status, response = await run_agent_session(
+            client, prompt, project_dir, logger, stats_tracker
+        )
+
+    # End logging session
+    if logger:
+        logger.end_session(
+            turns_used=stats_tracker.stats.turns_used if stats_tracker else 0,
+            status=status,
+        )
+        if stats_tracker:
+            stats_tracker.save()
+
+    # Verify outputs
+    success = is_architecture_locked(project_dir)
+
+    return status, success
+
+
 def _create_logging_config(config: Config) -> LoggingConfigClass:
     """Create a LoggingConfigClass from the config object's logging settings."""
     level_map = {
@@ -630,6 +712,42 @@ async def run_autonomous_agent(config: Config) -> None:
     # Get stack-specific commands
     init_command = get_stack_init_command(stack)
     dev_command = get_stack_dev_command(stack)
+
+    # Check if architecture phase needed (after initializer may have run)
+    architecture_exists = is_architecture_locked(project_dir)
+
+    if not architecture_exists and not config.skip_architecture and config.architecture.enabled:
+        # Only run architecture phase if feature_list.json exists (initializer completed)
+        if find_feature_list(project_dir):
+            print("\n" + "=" * 70)
+            print("  ARCHITECTURE LOCK PHASE")
+            print("  Establishing architectural invariants...")
+            print("=" * 70 + "\n")
+
+            status, success = await run_architect_session(
+                config=config,
+                stack=stack,
+                project_dir=project_dir,
+                logger=logger,
+            )
+
+            if success:
+                print("\n" + "=" * 70)
+                print("  ARCHITECTURE PHASE COMPLETE")
+                print("  Proceeding to coding sessions...")
+                print("=" * 70 + "\n")
+            else:
+                if config.architecture.required:
+                    print_error(ActionableError(
+                        message="Architecture lock phase failed",
+                        context="Required architecture files were not created.",
+                        example="claude-agent --skip-architecture",
+                        help_command="claude-agent --help",
+                    ))
+                    return
+                else:
+                    print("Warning: Architecture lock phase incomplete")
+                    print("Continuing without locked architecture (reduced drift protection)")
 
     # Main loop
     iteration = 0
