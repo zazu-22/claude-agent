@@ -27,6 +27,7 @@ from claude_agent.metrics import (
     ARCH_DEVIATION_WARNING,
     INCOMPLETE_EVAL_WARNING,
     MULTI_FEATURE_WARNING,
+    RECENT_SESSION_LIMIT,
     REGRESSION_RATE_CRITICAL,
     REGRESSION_RATE_WARNING,
     REJECTION_RATE_CRITICAL,
@@ -503,11 +504,11 @@ def drift(project_dir: Path, output_json: bool):
         "critical": RED,
     }
 
-    # Health status symbols
+    # Health status symbols (same for color and non-color modes)
     health_symbols = {
-        "healthy": "[OK]" if not use_color else "[OK]",
-        "warning": "[!]" if not use_color else "[!]",
-        "critical": "[X]" if not use_color else "[X]",
+        "healthy": "[OK]",
+        "warning": "[!]",
+        "critical": "[X]",
     }
 
     click.echo("")
@@ -619,10 +620,10 @@ def drift(project_dir: Path, output_json: bool):
     # Recent Sessions Summary
     metrics = load_metrics(project_dir)
     if metrics.sessions:
-        click.echo(f"\n{BOLD}Recent Sessions (last 5){RESET}")
+        click.echo(f"\n{BOLD}Recent Sessions (last {RECENT_SESSION_LIMIT}){RESET}")
         click.echo("-" * 30)
 
-        for session in metrics.sessions[-5:]:
+        for session in metrics.sessions[-RECENT_SESSION_LIMIT:]:
             flags = []
             if session.regressions_caught > 0:
                 flags.append(f"{RED}regr:{session.regressions_caught}{RESET}")

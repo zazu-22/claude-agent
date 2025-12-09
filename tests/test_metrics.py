@@ -16,6 +16,7 @@ from claude_agent.metrics import (
     INCOMPLETE_EVAL_WARNING,
     METRICS_FILENAME,
     MULTI_FEATURE_WARNING,
+    RECENT_SESSION_LIMIT,
     REGRESSION_RATE_CRITICAL,
     REGRESSION_RATE_WARNING,
     REJECTION_RATE_CRITICAL,
@@ -1059,6 +1060,36 @@ class TestGetSessionDateRange:
         date_range = get_session_date_range(metrics)
         assert date_range == ("2024-01-15", "2024-01-15")
 
+    def test_returns_none_for_malformed_timestamp(self):
+        """Malformed timestamps return None instead of crashing."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="invalid-timestamp",
+                    features_attempted=5,
+                    features_completed=3,
+                ),
+            ]
+        )
+        date_range = get_session_date_range(metrics)
+        assert date_range is None
+
+    def test_handles_timezone_offset_format(self):
+        """Handles timestamps with +00:00 timezone format."""
+        metrics = DriftMetrics(
+            sessions=[
+                SessionMetrics(
+                    session_id=1,
+                    timestamp="2024-01-15T10:00:00+00:00",
+                    features_attempted=5,
+                    features_completed=3,
+                ),
+            ]
+        )
+        date_range = get_session_date_range(metrics)
+        assert date_range == ("2024-01-15", "2024-01-15")
+
 
 class TestGetRegressionRateTrend:
     """Tests for get_regression_rate_trend function."""
@@ -1445,6 +1476,10 @@ class TestThresholdConstants:
         """Verify architecture deviation thresholds are accessible."""
         assert ARCH_DEVIATION_CRITICAL == 10
         assert ARCH_DEVIATION_WARNING == 5
+
+    def test_recent_session_limit_is_exported(self):
+        """Verify RECENT_SESSION_LIMIT constant is accessible."""
+        assert RECENT_SESSION_LIMIT == 5
 
     def test_health_status_uses_constants(self):
         """Verify calculate_health_status respects threshold constants."""

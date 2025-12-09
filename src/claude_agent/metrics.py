@@ -56,6 +56,9 @@ MULTI_FEATURE_WARNING = 50     # Percentage of sessions with multi-feature drift
 ARCH_DEVIATION_CRITICAL = 10   # Total deviations for critical status
 ARCH_DEVIATION_WARNING = 5     # Total deviations for warning status
 
+# Dashboard display settings
+RECENT_SESSION_LIMIT = 5       # Number of recent sessions to display in dashboard
+
 
 @dataclass
 class SessionMetrics:
@@ -620,18 +623,28 @@ def get_session_date_range(metrics: DriftMetrics) -> tuple[str, str] | None:
 
     Returns:
         Tuple of (first_date, last_date) in YYYY-MM-DD format, or None if no sessions
+        or if timestamps are malformed
     """
     if not metrics.sessions:
         return None
 
-    first_timestamp = metrics.sessions[0].timestamp
-    last_timestamp = metrics.sessions[-1].timestamp
+    try:
+        first_timestamp = metrics.sessions[0].timestamp
+        last_timestamp = metrics.sessions[-1].timestamp
 
-    # Extract just the date portion from ISO timestamps
-    first_date = first_timestamp[:10]
-    last_date = last_timestamp[:10]
+        # Parse and format to ensure valid ISO date format
+        # Handle both 'Z' suffix and '+00:00' timezone formats
+        first_date = datetime.fromisoformat(
+            first_timestamp.replace("Z", "+00:00")
+        ).strftime("%Y-%m-%d")
+        last_date = datetime.fromisoformat(
+            last_timestamp.replace("Z", "+00:00")
+        ).strftime("%Y-%m-%d")
 
-    return (first_date, last_date)
+        return (first_date, last_date)
+    except (ValueError, AttributeError) as e:
+        logger.warning(f"Invalid timestamp format in metrics: {e}")
+        return None
 
 
 def get_regression_rate_trend(metrics: DriftMetrics, last_n: int = 5) -> list[float]:
