@@ -384,7 +384,7 @@ Long-running agentic workflows face three distinct failure modes that compound a
 │ Mandatory evaluation checkpoints with explicit output       │
 │ Gated progression, accountability, visible reasoning        │
 ├─────────────────────────────────────────────────────────────┤
-│ Layer 2: SAMPLE                                             │
+│ Layer 2: SAMPLE (Future Enhancement)                        │
 │ Best-of-N generation with evaluation criteria               │
 │ Exploit variance as search space, not fight it              │
 ├─────────────────────────────────────────────────────────────┤
@@ -393,6 +393,12 @@ Long-running agentic workflows face three distinct failure modes that compound a
 │ API contracts, schemas, architectural decisions             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+**Layer Implementation Status:**
+- **Layer 1 (CONSTRAIN)**: Implemented via Architecture Lock Phase
+- **Layer 2 (SAMPLE)**: Planned for future release (best-of-N feature list generation)
+- **Layer 3 (FORCE)**: Implemented via forced evaluation sequences
+- **Layer 4 (ENRICH)**: Implemented via decision records and progress notes
 
 ### Architecture Lock Phase
 
@@ -414,15 +420,26 @@ version: 1
 locked_at: "2024-01-15T10:00:00Z"
 contracts:
   - name: "user_auth"
+    description: "User authentication endpoints"
     endpoints:
       - path: "/api/auth/login"
         method: "POST"
-        request_shape:
-          email: string
-          password: string
-        response_shape:
-          token: string
-          user: object
+        request:
+          - field: "email"
+            type: "string"
+            required: true
+          - field: "password"
+            type: "string"
+            required: true
+        response:
+          success:
+            - field: "token"
+              type: "string"
+            - field: "user"
+              type: "User"
+          errors:
+            - code: 401
+              message: "Invalid credentials"
 ```
 
 **Example `decisions.yaml`:**
@@ -580,8 +597,8 @@ Drift metrics are automatically tracked in `drift-metrics.json` and provide visi
 
 **Velocity Trend Thresholds:**
 - Requires minimum 6 sessions for trend calculation
-- 10% change threshold to trigger "increasing"/"decreasing"
-- 0.5 feature/session minimum absolute change
+- Uses the larger of: 10% relative change OR 0.5 feature/session absolute change
+- This prevents false positives on small absolute changes (e.g., 1.5 → 1.4)
 
 View metrics with: `claude-agent status --metrics`
 
