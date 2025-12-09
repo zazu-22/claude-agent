@@ -474,6 +474,30 @@ EVALUATION_SECTION_PATTERNS: dict[str, re.Pattern] = {
     ),
 }
 
+# Pattern to match fenced code blocks (``` ... ```)
+# Used to strip code blocks before pattern matching to prevent false positives
+CODE_BLOCK_PATTERN = re.compile(
+    r"```[^\n]*\n.*?```",
+    re.DOTALL,
+)
+
+
+def _strip_code_blocks(text: str) -> str:
+    """
+    Remove fenced code blocks from text to prevent false positive matches.
+
+    Code examples in agent output might contain evaluation section headers
+    as documentation/examples, which should not count as actual sections.
+
+    Args:
+        text: Input text potentially containing code blocks
+
+    Returns:
+        Text with all fenced code blocks removed
+    """
+    return CODE_BLOCK_PATTERN.sub("", text)
+
+
 # Section content extraction patterns (captures content after header until next section or end)
 # Use \Z for end-of-string in MULTILINE mode ($ matches end-of-line in that mode)
 SECTION_CONTENT_PATTERNS: dict[str, re.Pattern] = {
@@ -533,6 +557,9 @@ def extract_evaluation_sections(output: str, agent_type: str) -> dict[str, str]:
     for the specified agent type. Returns a dictionary mapping section
     names to their content.
 
+    Note: Code blocks are stripped before pattern matching to prevent
+    false positives from example headers in documentation/code.
+
     Args:
         output: Agent output text (markdown format)
         agent_type: Type of agent ("coding", "initializer", "validator")
@@ -544,13 +571,16 @@ def extract_evaluation_sections(output: str, agent_type: str) -> dict[str, str]:
     if agent_type not in AGENT_REQUIRED_SECTIONS:
         return {}
 
+    # Strip code blocks to prevent false positives from example headers
+    cleaned_output = _strip_code_blocks(output)
+
     required_sections = AGENT_REQUIRED_SECTIONS[agent_type]
     extracted = {}
 
     for section_name in required_sections:
         pattern = SECTION_CONTENT_PATTERNS.get(section_name)
         if pattern:
-            match = pattern.search(output)
+            match = pattern.search(cleaned_output)
             if match:
                 content = match.group(1).strip()
                 if content:
@@ -563,6 +593,9 @@ def _check_section_present(output: str, section_name: str) -> bool:
     """
     Check if a specific evaluation section header is present in output.
 
+    Note: Code blocks are stripped before pattern matching to prevent
+    false positives from example headers in documentation/code.
+
     Args:
         output: Agent output text
         section_name: Section identifier (e.g., "context", "regression")
@@ -570,9 +603,12 @@ def _check_section_present(output: str, section_name: str) -> bool:
     Returns:
         True if section header pattern is found
     """
+    # Strip code blocks to prevent false positives from example headers
+    cleaned_output = _strip_code_blocks(output)
+
     pattern = EVALUATION_SECTION_PATTERNS.get(section_name)
     if pattern:
-        return pattern.search(output) is not None
+        return pattern.search(cleaned_output) is not None
     return False
 
 
@@ -588,6 +624,25 @@ def evaluation_validation_hook(
     by checking for required evaluation sections in agent output. When sections
     are missing, it can trigger retry operations with emphasis on the missing
     content.
+
+    Lenient Mode Rollout Plan:
+    --------------------------
+    The default `strict_mode=False` is intentional for gradual rollout:
+
+    1. **Phase 1 (Current)**: Lenient mode - log and display missing sections
+       but allow sessions to proceed. This establishes baseline metrics.
+
+    2. **Phase 2**: Monitor validation failure rates via drift-metrics.json.
+       When failure rate stabilizes below 30%, consider enabling strict mode.
+
+    3. **Phase 3**: Enable strict mode (strict_mode=True) which triggers
+       retry action when sections are missing, forcing agents to complete
+       evaluation sequences before proceeding.
+
+    Metrics to track (in drift-metrics.json):
+    - validation_failure_rate: % of sessions missing required sections
+    - sections_most_often_missing: Which sections are commonly skipped
+    - completeness_score_distribution: Track improvement over time
 
     Args:
         output: Agent output text to validate

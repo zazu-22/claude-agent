@@ -477,10 +477,15 @@ def validate_session_output(
 
     # Log validation results
     if logger:
+        eval_data = result.evaluation_data or {}
+        sections_found = eval_data.get("sections_found", [])
+        sections_missing = eval_data.get("sections_missing", [])
+        total_sections = len(sections_found) + len(sections_missing)
+
         if result.is_valid:
             logger.info(
                 f"Evaluation validation passed for {agent_type} agent: "
-                f"{len(result.evaluation_data.get('sections_found', []))}/{len(result.evaluation_data.get('sections_found', []) + result.evaluation_data.get('sections_missing', []))} sections"
+                f"{len(sections_found)}/{total_sections} sections"
             )
         else:
             logger.warning(
@@ -1024,6 +1029,8 @@ async def run_autonomous_agent(config: Config) -> None:
                 )
 
             # Validate session output for required evaluation sections
+            # Note: Validation is logged and printed; metrics are recorded separately
+            # using parse_evaluation_sections() below for detailed tracking
             validation_result = validate_session_output(
                 response=response,
                 agent_type=agent_type,
@@ -1031,9 +1038,6 @@ async def run_autonomous_agent(config: Config) -> None:
                 logger=logger,
             )
             _print_validation_status(validation_result, agent_type)
-
-            # Extract evaluation data for handoff enrichment
-            eval_data = validation_result.evaluation_data or {}
 
             # End logging session and save stats
             logger.end_session(

@@ -592,9 +592,9 @@ class TestEdgeCases:
     """Edge case tests for robustness."""
 
     def test_headers_in_code_blocks_not_matched(self):
-        """Headers inside code blocks should ideally not trigger false positives."""
-        # This tests the current behavior - headers in code blocks ARE matched
-        # In the future, we might want to exclude code blocks
+        """Headers inside code blocks should NOT trigger false positives."""
+        # Code blocks are stripped before pattern matching to prevent
+        # agents from gaming the system with example headers
         output = """
         Here's what the agent should output:
 
@@ -607,10 +607,10 @@ class TestEdgeCases:
         """
         result = evaluation_validation_hook(output, "coding")
 
-        # Current behavior: code block headers ARE matched
-        # This is a known limitation - documenting the behavior
-        # The pattern matches regardless of code block context
-        assert "context" in result.evaluation_data["sections_found"]
+        # Code block headers should NOT be matched
+        # This prevents false positives from example/documentation headers
+        assert "context" not in result.evaluation_data["sections_found"]
+        assert result.is_valid is False
 
     def test_multiple_same_headers_handled(self):
         """Multiple instances of same header are handled."""
@@ -693,3 +693,155 @@ class TestEdgeCases:
         assert "context" in result.evaluation_data["sections_found"]
         assert "regression" in result.evaluation_data["sections_found"]
         assert "plan" in result.evaluation_data["sections_found"]
+
+    def test_section_at_end_of_document(self):
+        """Section at end of document extracts content correctly with \\Z anchor."""
+        # This tests that the \Z anchor in MULTILINE mode works correctly
+        # for sections that appear at the end of the document
+        output = """### Step A - CONTEXT VERIFICATION
+
+Context content here.
+
+### Step B - REGRESSION VERIFICATION
+
+Regression content here.
+
+### Step C - IMPLEMENTATION PLAN
+
+This is the last section with no trailing header.
+The content should be fully extracted."""
+        result = evaluation_validation_hook(output, "coding")
+
+        assert result.is_valid is True
+        section_content = result.evaluation_data.get("section_content", {})
+
+        # All sections should have content extracted
+        assert "context" in section_content
+        assert "Context content" in section_content["context"]
+
+        assert "regression" in section_content
+        assert "Regression content" in section_content["regression"]
+
+        # Last section should have full content even without trailing header
+        assert "plan" in section_content
+        assert "last section" in section_content["plan"]
+        assert "fully extracted" in section_content["plan"]
+
+    def test_single_section_at_end_of_document(self):
+        """Single section at end of document extracts correctly."""
+        output = """### Step C - IMPLEMENTATION PLAN
+
+This is the only section, and it's at the end.
+Content should be extracted completely."""
+        result = evaluation_validation_hook(output, "coding")
+
+        section_content = result.evaluation_data.get("section_content", {})
+        assert "plan" in section_content
+        assert "only section" in section_content["plan"]
+        assert "extracted completely" in section_content["plan"]
+
+    def test_mixed_real_and_code_block_headers(self):
+        """Real headers should be found even when code blocks contain similar headers."""
+        output = """
+### Step A - CONTEXT VERIFICATION
+
+Real context content here.
+
+Here's an example of what NOT to do:
+
+```markdown
+### Step B - REGRESSION VERIFICATION
+This is fake, in a code block
+```
+
+### Step B - REGRESSION VERIFICATION
+
+Real regression content here.
+
+### Step C - IMPLEMENTATION PLAN
+
+Real plan content.
+"""
+        result = evaluation_validation_hook(output, "coding")
+
+        # Should find all real sections, ignoring code block content
+        assert result.is_valid is True
+        section_content = result.evaluation_data.get("section_content", {})
+
+        assert "context" in section_content
+        assert "Real context content" in section_content["context"]
+
+        assert "regression" in section_content
+        assert "Real regression content" in section_content["regression"]
+
+        assert "plan" in section_content
+        assert "Real plan content" in section_content["plan"]
+
+
+class TestCodeBlockStripping:
+    """Test the code block stripping functionality."""
+
+    def test_strips_simple_code_block(self):
+        """Simple code blocks are stripped."""
+        from claude_agent.security import _strip_code_blocks
+
+        text = """Before
+
+```python
+code here
+```
+
+After"""
+        result = _strip_code_blocks(text)
+        assert "code here" not in result
+        assert "Before" in result
+        assert "After" in result
+
+    def test_strips_markdown_code_block(self):
+        """Markdown code blocks are stripped."""
+        from claude_agent.security import _strip_code_blocks
+
+        text = """
+```markdown
+### Header in code
+Content
+```
+"""
+        result = _strip_code_blocks(text)
+        assert "Header in code" not in result
+
+    def test_strips_multiple_code_blocks(self):
+        """Multiple code blocks are all stripped."""
+        from claude_agent.security import _strip_code_blocks
+
+        text = """
+```python
+block1
+```
+
+Middle text
+
+```javascript
+block2
+```
+"""
+        result = _strip_code_blocks(text)
+        assert "block1" not in result
+        assert "block2" not in result
+        assert "Middle text" in result
+
+    def test_preserves_text_outside_code_blocks(self):
+        """Text outside code blocks is preserved."""
+        from claude_agent.security import _strip_code_blocks
+
+        text = """Important header
+
+```
+ignore this
+```
+
+More important content"""
+        result = _strip_code_blocks(text)
+        assert "Important header" in result
+        assert "More important content" in result
+        assert "ignore this" not in result
