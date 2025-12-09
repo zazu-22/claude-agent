@@ -122,7 +122,17 @@ cat architecture/schemas.yaml
 cat architecture/decisions.yaml
 ```
 
+**If any file contains malformed YAML or cannot be parsed:**
+- Document the error in claude-progress.txt
+- Skip architecture verification for that file only
+- Proceed with caution, noting the incomplete verification
+
 After reading, document your understanding:
+
+**Relevance Criteria:**
+- **Contracts are relevant** if they define endpoints this feature will call, implement, or depend on
+- **Schemas are relevant** if this feature reads, writes, or transforms those data structures
+- **Decisions are relevant** if they constrain technology choices, patterns, or approaches for this feature
 
 - [ ] **contracts.yaml read:**
   - Relevant API contracts for this feature:
@@ -169,19 +179,24 @@ Compare your implementation plan (Step C) against the architecture lock files (S
 Answer each question explicitly:
 
 **1. Contract Deviation Check:**
-- Does my plan require adding/removing/changing any API endpoints in contracts.yaml?
-  Answer: YES/NO
-  If YES, list specific deviations: "[endpoint changes needed]"
+- Does my plan require MODIFYING or REMOVING existing endpoints in contracts.yaml?
+  Answer: YES/NO (Note: ADDING new endpoints to an existing contract is OK)
+  If YES, list specific modifications: "[endpoint and change needed]"
 
 **2. Schema Deviation Check:**
-- Does my plan require adding/removing/changing any fields in schemas.yaml?
-  Answer: YES/NO
-  If YES, list specific deviations: "[schema changes needed]"
+- Does my plan require MODIFYING or REMOVING existing fields in schemas.yaml?
+  Answer: YES/NO (Note: ADDING new fields to an existing schema is OK)
+  If YES, list specific modifications: "[field and change needed]"
 
 **3. Decision Constraint Check:**
 - Does my plan violate any constraints from decisions.yaml?
   Answer: YES/NO
   If YES, list specific violations: "[constraint and how it's violated]"
+
+**Understanding Additions vs Modifications:**
+- **ADDITIONS are OK**: Adding `/api/auth/refresh-token` to an existing `user_auth` contract is legitimate evolution
+- **MODIFICATIONS require HALT**: Changing `POST /api/users` to `PUT /api/users` breaks existing contracts
+- **REMOVALS require HALT**: Removing a documented endpoint or field breaks compatibility
 
 **HALT CONDITION - If ANY answer above is YES:**
 1. STOP - Do not proceed to Step D
@@ -189,15 +204,17 @@ Answer each question explicitly:
    ```
    ARCHITECTURE DEVIATION DETECTED:
    - Feature: [feature being implemented]
-   - Deviation type: [contract/schema/decision]
-   - Specific conflict: [what needs to change]
+   - Deviation type: [contract modification/schema modification/decision violation]
+   - Specific conflict: [what existing element needs to change]
    - Reasoning: [why the locked architecture seems insufficient]
    ```
-3. Mark this feature as BLOCKED in your session notes
-4. Proceed to the next feature instead
+3. Update feature_list.json - add `"blocked": true` and `"blocked_reason": "[deviation description]"` to this feature
+4. Mark this feature as BLOCKED in your session notes
+5. Proceed to the next feature instead
 
 **PROCEED CONDITION - If ALL answers are NO:**
-- State: "Architecture check passed - no deviations detected"
+- State: "Architecture check passed - no breaking changes detected"
+- If adding new endpoints/fields, note: "Adding [X] to [contract/schema] - compatible evolution"
 - Proceed to Step D
 
 ### Step D - EXECUTE
