@@ -71,6 +71,67 @@ def get_architecture_dir(project_dir: Path) -> Path:
     return project_dir / ARCH_DIR_NAME
 
 
+def _validate_yaml_list(
+    file_path: Path,
+    file_name: str,
+    list_key: str,
+    item_name: str = "item",
+) -> list[dict]:
+    """
+    Load and validate YAML file containing a list of dicts.
+
+    Common validation helper that:
+    1. Loads YAML and verifies root is a dict
+    2. Extracts the list field and verifies it's a list
+    3. Verifies each item in the list is a dict
+
+    Args:
+        file_path: Path to the YAML file
+        file_name: Human-readable name for error messages
+        list_key: The key containing the list (e.g., "contracts", "schemas")
+        item_name: Name for items in error messages (e.g., "contract", "schema")
+
+    Returns:
+        List of dicts from the YAML file
+
+    Raises:
+        ArchitectureValidationError: If validation fails
+    """
+    if not file_path.exists():
+        return []
+
+    try:
+        with open(file_path) as f:
+            data = yaml.safe_load(f) or {}
+    except yaml.YAMLError as e:
+        raise ArchitectureValidationError(
+            file_name,
+            f"Failed to parse YAML: {e}"
+        ) from e
+
+    if not isinstance(data, dict):
+        raise ArchitectureValidationError(
+            file_name,
+            f"Invalid format: expected dict, got {type(data).__name__}"
+        )
+
+    items_list = data.get(list_key, [])
+    if not isinstance(items_list, list):
+        raise ArchitectureValidationError(
+            file_name,
+            f"Invalid '{list_key}' field: expected list, got {type(items_list).__name__}"
+        )
+
+    for i, item in enumerate(items_list):
+        if not isinstance(item, dict):
+            raise ArchitectureValidationError(
+                file_name,
+                f"Invalid {item_name} at index {i}: expected dict, got {type(item).__name__}"
+            )
+
+    return items_list
+
+
 def get_contracts_path(project_dir: Path) -> Path:
     """Get path to contracts file."""
     return get_architecture_dir(project_dir) / CONTRACTS_FILE
@@ -95,40 +156,12 @@ def load_contracts(project_dir: Path) -> list[Contract]:
         ArchitectureValidationError: If YAML is malformed or required fields missing
     """
     contracts_path = get_contracts_path(project_dir)
-
-    if not contracts_path.exists():
-        return []
-
-    try:
-        with open(contracts_path) as f:
-            data = yaml.safe_load(f) or {}
-    except yaml.YAMLError as e:
-        raise ArchitectureValidationError(
-            "contracts.yaml",
-            f"Failed to parse YAML: {e}"
-        ) from e
-
-    if not isinstance(data, dict):
-        raise ArchitectureValidationError(
-            "contracts.yaml",
-            f"Invalid format: expected dict, got {type(data).__name__}"
-        )
-
-    contracts_list = data.get("contracts", [])
-    if not isinstance(contracts_list, list):
-        raise ArchitectureValidationError(
-            "contracts.yaml",
-            f"Invalid 'contracts' field: expected list, got {type(contracts_list).__name__}"
-        )
+    contracts_list = _validate_yaml_list(
+        contracts_path, "contracts.yaml", "contracts", "contract"
+    )
 
     contracts = []
     for i, c in enumerate(contracts_list):
-        if not isinstance(c, dict):
-            raise ArchitectureValidationError(
-                "contracts.yaml",
-                f"Invalid contract at index {i}: expected dict, got {type(c).__name__}"
-            )
-
         # Check required field: name
         if "name" not in c:
             raise ArchitectureValidationError(
@@ -192,40 +225,12 @@ def load_schemas(project_dir: Path) -> list[Schema]:
         ArchitectureValidationError: If YAML is malformed or required fields missing
     """
     schemas_path = get_schemas_path(project_dir)
-
-    if not schemas_path.exists():
-        return []
-
-    try:
-        with open(schemas_path) as f:
-            data = yaml.safe_load(f) or {}
-    except yaml.YAMLError as e:
-        raise ArchitectureValidationError(
-            "schemas.yaml",
-            f"Failed to parse YAML: {e}"
-        ) from e
-
-    if not isinstance(data, dict):
-        raise ArchitectureValidationError(
-            "schemas.yaml",
-            f"Invalid format: expected dict, got {type(data).__name__}"
-        )
-
-    schemas_list = data.get("schemas", [])
-    if not isinstance(schemas_list, list):
-        raise ArchitectureValidationError(
-            "schemas.yaml",
-            f"Invalid 'schemas' field: expected list, got {type(schemas_list).__name__}"
-        )
+    schemas_list = _validate_yaml_list(
+        schemas_path, "schemas.yaml", "schemas", "schema"
+    )
 
     schemas = []
     for i, s in enumerate(schemas_list):
-        if not isinstance(s, dict):
-            raise ArchitectureValidationError(
-                "schemas.yaml",
-                f"Invalid schema at index {i}: expected dict, got {type(s).__name__}"
-            )
-
         # Check required field: name
         if "name" not in s:
             raise ArchitectureValidationError(

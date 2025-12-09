@@ -6,10 +6,11 @@ Capture and query architectural decisions made during coding sessions.
 Implements append-only decision log as specified in drift-mitigation-design.md.
 """
 
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import yaml
 
@@ -158,18 +159,28 @@ def append_decision(project_dir: Path, record: DecisionRecord) -> None:
     if "decisions" not in data:
         data["decisions"] = []
 
-    # Append new decision
-    data["decisions"].append({
+    # Build decision dict, filtering out None values and empty lists for cleaner YAML
+    decision_dict: dict[str, Any] = {
         "id": record.id,
-        "timestamp": record.timestamp,
-        "session": record.session,
         "topic": record.topic,
         "choice": record.choice,
-        "alternatives_considered": record.alternatives_considered,
-        "rationale": record.rationale,
-        "constraints_created": record.constraints_created,
-        "affects_features": record.affects_features,
-    })
+    }
+
+    # Add optional fields only if they have values
+    if record.timestamp is not None:
+        decision_dict["timestamp"] = record.timestamp
+    if record.session is not None:
+        decision_dict["session"] = record.session
+    if record.rationale is not None:
+        decision_dict["rationale"] = record.rationale
+    if record.alternatives_considered:
+        decision_dict["alternatives_considered"] = record.alternatives_considered
+    if record.constraints_created:
+        decision_dict["constraints_created"] = record.constraints_created
+    if record.affects_features:
+        decision_dict["affects_features"] = record.affects_features
+
+    data["decisions"].append(decision_dict)
 
     # Write back
     with open(decisions_path, "w") as f:
@@ -178,31 +189,26 @@ def append_decision(project_dir: Path, record: DecisionRecord) -> None:
 
 def get_next_decision_id(project_dir: Path) -> str:
     """
-    Get the next available decision ID.
+    Generate a unique decision ID using timestamp and UUID.
 
-    Note: This function assumes single-agent execution. If concurrent agents
-    are supported in the future, a lock file or atomic ID allocation mechanism
-    would be needed to prevent duplicate IDs. Consider using UUIDs or timestamps
-    for uniqueness if concurrency becomes a requirement.
+    Uses format "DR-{YYYYMMDD}-{short_uuid}" which provides:
+    - Human-readable date prefix for chronological sorting
+    - UUID suffix guaranteeing uniqueness even with concurrent agents
+    - No race conditions or file locking needed
 
     Args:
-        project_dir: Project directory path
+        project_dir: Project directory path (unused but kept for API compatibility)
 
     Returns:
-        String like "DR-001", "DR-002", etc.
+        String like "DR-20250609-a1b2c3d4"
     """
-    decisions = load_decisions(project_dir)
+    # Generate timestamp prefix for readability (YYYYMMDD)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d")
 
-    if not decisions:
-        return "DR-001"
+    # Generate short UUID (first 8 chars) for uniqueness
+    short_uuid = uuid.uuid4().hex[:8]
 
-    # Extract numeric part from last ID
-    last_id = decisions[-1].id
-    try:
-        num = int(last_id.split("-")[1])
-        return f"DR-{num + 1:03d}"
-    except (IndexError, ValueError):
-        return f"DR-{len(decisions) + 1:03d}"
+    return f"DR-{timestamp}-{short_uuid}"
 
 
 def get_relevant_decisions(

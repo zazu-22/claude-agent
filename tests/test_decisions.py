@@ -357,14 +357,25 @@ decisions:
 
 
 class TestGetNextDecisionId:
-    """Test ID generation."""
+    """Test ID generation using UUID-based format."""
 
-    def test_first_id(self, tmp_path):
-        """First ID is DR-001."""
-        assert get_next_decision_id(tmp_path) == "DR-001"
+    def test_format(self, tmp_path):
+        """IDs follow the DR-{YYYYMMDD}-{hex8} format."""
+        import re
+        next_id = get_next_decision_id(tmp_path)
+        # Format: DR-YYYYMMDD-xxxxxxxx (8 hex chars)
+        assert re.match(r"^DR-\d{8}-[a-f0-9]{8}$", next_id)
 
-    def test_increments(self, tmp_path):
-        """IDs increment correctly."""
+    def test_uniqueness(self, tmp_path):
+        """Each call generates a unique ID."""
+        ids = {get_next_decision_id(tmp_path) for _ in range(100)}
+        # All 100 IDs should be unique
+        assert len(ids) == 100
+
+    def test_independent_of_existing_decisions(self, tmp_path):
+        """IDs are generated independently of existing decisions."""
+        import re
+        # Add some existing decisions
         record = DecisionRecord(
             id="DR-005", timestamp="", session=1,
             topic="", choice="", alternatives_considered=[],
@@ -372,44 +383,21 @@ class TestGetNextDecisionId:
         )
         append_decision(tmp_path, record)
 
-        assert get_next_decision_id(tmp_path) == "DR-006"
-
-    def test_increments_from_last(self, tmp_path):
-        """Gets next ID from last decision, not count."""
-        # Add two decisions with non-sequential IDs
-        record1 = DecisionRecord(
-            id="DR-001", timestamp="", session=1,
-            topic="", choice="", alternatives_considered=[],
-            rationale="", constraints_created=[],
-        )
-        append_decision(tmp_path, record1)
-
-        record2 = DecisionRecord(
-            id="DR-010", timestamp="", session=2,
-            topic="", choice="", alternatives_considered=[],
-            rationale="", constraints_created=[],
-        )
-        append_decision(tmp_path, record2)
-
-        # Should increment from last (DR-010), not count (DR-003)
-        assert get_next_decision_id(tmp_path) == "DR-011"
-
-    def test_handles_malformed_id(self, tmp_path):
-        """Handles malformed IDs gracefully."""
-        arch_dir = tmp_path / "architecture"
-        arch_dir.mkdir()
-        # Write decision with malformed ID
-        (arch_dir / "decisions.yaml").write_text("""
-version: 1
-decisions:
-  - id: MALFORMED
-    topic: Test
-    choice: A
-""")
-
-        # Should fall back to count-based ID
+        # New ID should still follow UUID format, not depend on existing
         next_id = get_next_decision_id(tmp_path)
-        assert next_id == "DR-002"
+        assert re.match(r"^DR-\d{8}-[a-f0-9]{8}$", next_id)
+        # Should NOT be sequential from existing
+        assert next_id != "DR-006"
+
+    def test_date_prefix(self, tmp_path):
+        """ID contains today's date in YYYYMMDD format."""
+        from datetime import datetime, timezone
+        next_id = get_next_decision_id(tmp_path)
+        # Extract date part
+        date_part = next_id.split("-")[1]
+        # Should be today's date
+        expected_date = datetime.now(timezone.utc).strftime("%Y%m%d")
+        assert date_part == expected_date
 
 
 class TestGetRelevantDecisions:
