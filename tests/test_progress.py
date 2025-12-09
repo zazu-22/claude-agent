@@ -2,6 +2,8 @@
 Tests for progress tracking utilities.
 """
 
+import json
+
 import pytest
 from pathlib import Path
 
@@ -1689,3 +1691,297 @@ Git Commits: abc1234, def5678
 
         assert result.exit_code == 0
         assert "Commits:   abc1234, def5678" in result.output
+
+
+# =============================================================================
+# Blocked Feature Handling Tests
+# =============================================================================
+
+
+class TestCountTestsByTypeWithBlocked:
+    """Test count_tests_by_type function with blocked features."""
+
+    def test_counts_blocked_features(self, tmp_path):
+        """Verify blocked features are counted correctly."""
+        from claude_agent.progress import count_tests_by_type
+
+        feature_list = [
+            {"description": "Feature 1", "passes": True},
+            {"description": "Feature 2", "passes": False},
+            {"description": "Feature 3", "passes": False, "blocked": True},
+            {"description": "Feature 4", "passes": False, "blocked": True, "blocked_reason": "Test"},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        counts = count_tests_by_type(tmp_path)
+
+        assert counts["total"] == 4
+        assert counts["passing"] == 1
+        assert counts["blocked"] == 2
+        assert counts["available"] == 1  # Only Feature 2 is available
+
+    def test_available_excludes_blocked_and_passing(self, tmp_path):
+        """Verify available count excludes both blocked and passing features."""
+        from claude_agent.progress import count_tests_by_type
+
+        feature_list = [
+            {"description": "Passing", "passes": True},
+            {"description": "Blocked", "passes": False, "blocked": True},
+            {"description": "Available 1", "passes": False},
+            {"description": "Available 2", "passes": False},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        counts = count_tests_by_type(tmp_path)
+
+        assert counts["available"] == 2
+        assert counts["passing"] == 1
+        assert counts["blocked"] == 1
+
+    def test_blocked_false_not_counted_as_blocked(self, tmp_path):
+        """Verify blocked=false is not counted as blocked."""
+        from claude_agent.progress import count_tests_by_type
+
+        feature_list = [
+            {"description": "Feature 1", "passes": False, "blocked": False},
+            {"description": "Feature 2", "passes": False},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        counts = count_tests_by_type(tmp_path)
+
+        assert counts["blocked"] == 0
+        assert counts["available"] == 2
+
+    def test_empty_feature_list(self, tmp_path):
+        """Verify empty feature list returns zero counts."""
+        from claude_agent.progress import count_tests_by_type
+
+        (tmp_path / "feature_list.json").write_text("[]")
+
+        counts = count_tests_by_type(tmp_path)
+
+        assert counts["total"] == 0
+        assert counts["blocked"] == 0
+        assert counts["available"] == 0
+
+
+class TestGetAvailableFeatures:
+    """Test get_available_features function."""
+
+    def test_returns_available_features(self, tmp_path):
+        """Verify returns only features that are not passing and not blocked."""
+        from claude_agent.progress import get_available_features
+
+        feature_list = [
+            {"description": "Passing", "passes": True},
+            {"description": "Blocked", "passes": False, "blocked": True},
+            {"description": "Available 1", "passes": False},
+            {"description": "Available 2", "passes": False},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        available = get_available_features(tmp_path)
+
+        assert len(available) == 2
+        assert available[0]["description"] == "Available 1"
+        assert available[0]["_index"] == 2
+        assert available[1]["description"] == "Available 2"
+        assert available[1]["_index"] == 3
+
+    def test_returns_empty_when_all_passing(self, tmp_path):
+        """Verify returns empty list when all features pass."""
+        from claude_agent.progress import get_available_features
+
+        feature_list = [
+            {"description": "Feature 1", "passes": True},
+            {"description": "Feature 2", "passes": True},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        available = get_available_features(tmp_path)
+
+        assert available == []
+
+    def test_returns_empty_when_all_blocked(self, tmp_path):
+        """Verify returns empty list when all remaining features are blocked."""
+        from claude_agent.progress import get_available_features
+
+        feature_list = [
+            {"description": "Passing", "passes": True},
+            {"description": "Blocked 1", "passes": False, "blocked": True},
+            {"description": "Blocked 2", "passes": False, "blocked": True},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        available = get_available_features(tmp_path)
+
+        assert available == []
+
+    def test_returns_empty_when_no_file(self, tmp_path):
+        """Verify returns empty list when feature_list.json doesn't exist."""
+        from claude_agent.progress import get_available_features
+
+        available = get_available_features(tmp_path)
+
+        assert available == []
+
+    def test_adds_index_to_features(self, tmp_path):
+        """Verify _index is correctly added to each feature."""
+        from claude_agent.progress import get_available_features
+
+        feature_list = [
+            {"description": "Blocked", "passes": False, "blocked": True},
+            {"description": "Passing", "passes": True},
+            {"description": "Available", "passes": False},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        available = get_available_features(tmp_path)
+
+        assert len(available) == 1
+        assert available[0]["_index"] == 2  # Index of "Available"
+        assert available[0]["description"] == "Available"
+
+    def test_preserves_feature_fields(self, tmp_path):
+        """Verify all original feature fields are preserved."""
+        from claude_agent.progress import get_available_features
+
+        feature_list = [
+            {
+                "description": "Feature with details",
+                "passes": False,
+                "test_steps": ["Step 1", "Step 2"],
+                "priority": "high",
+            },
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        available = get_available_features(tmp_path)
+
+        assert len(available) == 1
+        assert available[0]["description"] == "Feature with details"
+        assert available[0]["test_steps"] == ["Step 1", "Step 2"]
+        assert available[0]["priority"] == "high"
+        assert available[0]["_index"] == 0
+
+
+class TestGetBlockedFeatures:
+    """Test get_blocked_features function."""
+
+    def test_returns_blocked_features(self, tmp_path):
+        """Verify returns only blocked features."""
+        from claude_agent.progress import get_blocked_features
+
+        feature_list = [
+            {"description": "Passing", "passes": True},
+            {"description": "Blocked 1", "passes": False, "blocked": True, "blocked_reason": "API conflict"},
+            {"description": "Available", "passes": False},
+            {"description": "Blocked 2", "passes": False, "blocked": True},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        blocked = get_blocked_features(tmp_path)
+
+        assert len(blocked) == 2
+        assert blocked[0]["description"] == "Blocked 1"
+        assert blocked[0]["_index"] == 1
+        assert blocked[0]["blocked_reason"] == "API conflict"
+        assert blocked[1]["description"] == "Blocked 2"
+        assert blocked[1]["_index"] == 3
+
+    def test_returns_empty_when_no_blocked(self, tmp_path):
+        """Verify returns empty list when no features are blocked."""
+        from claude_agent.progress import get_blocked_features
+
+        feature_list = [
+            {"description": "Feature 1", "passes": True},
+            {"description": "Feature 2", "passes": False},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        blocked = get_blocked_features(tmp_path)
+
+        assert blocked == []
+
+    def test_returns_empty_when_no_file(self, tmp_path):
+        """Verify returns empty list when feature_list.json doesn't exist."""
+        from claude_agent.progress import get_blocked_features
+
+        blocked = get_blocked_features(tmp_path)
+
+        assert blocked == []
+
+    def test_handles_blocked_reason(self, tmp_path):
+        """Verify blocked_reason field is preserved."""
+        from claude_agent.progress import get_blocked_features
+
+        feature_list = [
+            {
+                "description": "Blocked feature",
+                "passes": False,
+                "blocked": True,
+                "blocked_reason": "Requires changing locked API contract",
+            },
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        blocked = get_blocked_features(tmp_path)
+
+        assert len(blocked) == 1
+        assert blocked[0]["blocked_reason"] == "Requires changing locked API contract"
+
+
+class TestBlockedFeatureIntegration:
+    """Integration tests for blocked feature handling."""
+
+    def test_available_plus_blocked_plus_passing_equals_total(self, tmp_path):
+        """Verify available + blocked + passing = total features."""
+        from claude_agent.progress import count_tests_by_type
+
+        feature_list = [
+            {"description": "Passing 1", "passes": True},
+            {"description": "Passing 2", "passes": True},
+            {"description": "Blocked 1", "passes": False, "blocked": True},
+            {"description": "Blocked 2", "passes": False, "blocked": True},
+            {"description": "Blocked 3", "passes": False, "blocked": True},
+            {"description": "Available 1", "passes": False},
+            {"description": "Available 2", "passes": False},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        counts = count_tests_by_type(tmp_path)
+
+        assert counts["total"] == 7
+        assert counts["passing"] == 2
+        assert counts["blocked"] == 3
+        assert counts["available"] == 2
+        # Verify the sum
+        assert counts["passing"] + counts["blocked"] + counts["available"] == counts["total"]
+
+    def test_workflow_skips_blocked_features(self, tmp_path):
+        """Verify get_available_features correctly filters for agent workflow."""
+        from claude_agent.progress import get_available_features, get_blocked_features
+
+        # Simulate a realistic feature list with mixed states
+        feature_list = [
+            {"description": "Setup project", "passes": True},
+            {"description": "User auth", "passes": True},
+            {"description": "API endpoint", "passes": False, "blocked": True, "blocked_reason": "Schema conflict"},
+            {"description": "Dashboard", "passes": False},
+            {"description": "Reports", "passes": False},
+        ]
+        (tmp_path / "feature_list.json").write_text(json.dumps(feature_list))
+
+        available = get_available_features(tmp_path)
+        blocked = get_blocked_features(tmp_path)
+
+        # Agent should work on Dashboard (index 3), not API endpoint (index 2)
+        assert len(available) == 2
+        assert available[0]["_index"] == 3  # Dashboard
+        assert available[1]["_index"] == 4  # Reports
+
+        # API endpoint should be in blocked list
+        assert len(blocked) == 1
+        assert blocked[0]["_index"] == 2
+        assert blocked[0]["blocked_reason"] == "Schema conflict"
