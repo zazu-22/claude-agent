@@ -797,20 +797,24 @@ def count_tests_by_type(project_dir: Path) -> dict:
         Dict with keys:
         - total: total number of tests
         - passing: tests with passes=true
+        - blocked: tests with blocked=true (architecture violations)
         - automated_total: tests that can be automated
         - automated_passing: automated tests that pass
         - manual_total: tests requiring manual verification
         - manual_passing: manual tests marked as passing
+        - available: tests that can be worked on (not passing, not blocked)
     """
     feature_list_path = find_feature_list(project_dir)
 
     result = {
         "total": 0,
         "passing": 0,
+        "blocked": 0,
         "automated_total": 0,
         "automated_passing": 0,
         "manual_total": 0,
         "manual_passing": 0,
+        "available": 0,
     }
 
     if not feature_list_path:
@@ -824,9 +828,15 @@ def count_tests_by_type(project_dir: Path) -> dict:
             result["total"] += 1
             is_passing = f.get("passes", False)
             is_manual = f.get("requires_manual_testing", False)
+            is_blocked = f.get("blocked", False)
 
-            if is_passing:
+            if is_blocked:
+                result["blocked"] += 1
+            elif is_passing:
                 result["passing"] += 1
+            else:
+                # Available = not passing and not blocked
+                result["available"] += 1
 
             if is_manual:
                 result["manual_total"] += 1
@@ -840,6 +850,91 @@ def count_tests_by_type(project_dir: Path) -> dict:
         return result
     except (json.JSONDecodeError, IOError):
         return result
+
+
+def get_available_features(project_dir: Path) -> list[dict]:
+    """
+    Get features available for implementation (not passing, not blocked).
+
+    This function filters feature_list.json to return only features that:
+    1. Do not have passes=true (not yet implemented)
+    2. Do not have blocked=true (not blocked by architecture constraints)
+
+    Use this function to find the next feature to work on.
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        List of feature dicts with their original indices added as '_index' key.
+        Empty list if no features available or file doesn't exist.
+
+    Example:
+        >>> features = get_available_features(project_dir)
+        >>> if features:
+        ...     next_feature = features[0]
+        ...     print(f"Work on Feature #{next_feature['_index']}: {next_feature['description']}")
+    """
+    feature_list_path = find_feature_list(project_dir)
+
+    if not feature_list_path:
+        return []
+
+    try:
+        with open(feature_list_path) as f:
+            features = json.load(f)
+
+        available = []
+        for i, feature in enumerate(features):
+            is_passing = feature.get("passes", False)
+            is_blocked = feature.get("blocked", False)
+
+            if not is_passing and not is_blocked:
+                # Add index for reference
+                feature_with_index = feature.copy()
+                feature_with_index["_index"] = i
+                available.append(feature_with_index)
+
+        return available
+    except (json.JSONDecodeError, IOError):
+        return []
+
+
+def get_blocked_features(project_dir: Path) -> list[dict]:
+    """
+    Get features that are blocked (cannot be implemented due to architecture constraints).
+
+    This function returns features where blocked=true, typically set when:
+    - A feature requires violating a locked architectural constraint
+    - Implementation cannot proceed without explicit deviation approval
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        List of blocked feature dicts with their original indices added as '_index' key
+        and 'blocked_reason' if available.
+        Empty list if no blocked features or file doesn't exist.
+    """
+    feature_list_path = find_feature_list(project_dir)
+
+    if not feature_list_path:
+        return []
+
+    try:
+        with open(feature_list_path) as f:
+            features = json.load(f)
+
+        blocked = []
+        for i, feature in enumerate(features):
+            if feature.get("blocked", False):
+                feature_with_index = feature.copy()
+                feature_with_index["_index"] = i
+                blocked.append(feature_with_index)
+
+        return blocked
+    except (json.JSONDecodeError, IOError):
+        return []
 
 
 def is_automated_work_complete(project_dir: Path) -> bool:

@@ -154,7 +154,18 @@ ONLY NOW proceed to implementation (Step 4 below).
 
 ### STEP 4: CHOOSE ONE FEATURE TO IMPLEMENT
 
-Look at feature_list.json and find the highest-priority feature with "passes": false.
+Look at feature_list.json and find the highest-priority feature that:
+1. Has `"passes": false` (not yet implemented)
+2. Does NOT have `"blocked": true` (not blocked by architecture constraints)
+
+**SKIP BLOCKED FEATURES:** If a feature has `"blocked": true`, do NOT attempt to implement it.
+Blocked features require architecture deviation approval before they can be worked on.
+Instead, choose the next available feature that is not blocked.
+
+```bash
+# Check for blocked features (informational)
+cat feature_list.json | grep -B5 '"blocked": true' || echo "No blocked features"
+```
 
 Focus on completing one feature perfectly and completing its testing steps in this session before moving on to other features.
 It's ok if you only complete one feature in this session, as there will be more sessions later that continue to make progress.
@@ -191,7 +202,7 @@ Use browser automation tools:
 
 ### STEP 7: UPDATE feature_list.json (CAREFULLY!)
 
-**YOU CAN MODIFY TWO FIELDS:**
+**YOU CAN MODIFY THREE FIELDS:**
 
 1. **"passes"** - After thorough verification, change:
 ```json
@@ -206,6 +217,24 @@ to:
 ```json
 "requires_manual_testing": true
 ```
+
+3. **"blocked"** - For features that CANNOT be implemented due to architecture constraints:
+```json
+"blocked": true,
+"blocked_reason": "Requires changing locked API contract in architecture/contracts.yaml"
+```
+
+**WHEN TO MARK blocked: true:**
+- Feature requires violating a locked architectural constraint (API contract, schema, decision)
+- Implementation cannot proceed without explicit deviation approval
+- Feature conflicts with an existing architectural decision
+
+**CRITICAL:** When you mark a feature as blocked:
+1. Set `"blocked": true`
+2. Add `"blocked_reason"` explaining WHY it's blocked (reference the specific constraint)
+3. Document the blocking issue in claude-progress.txt
+4. DO NOT attempt to implement the feature - move to the next available feature
+5. The feature will be skipped by future sessions until the block is resolved
 
 **WHEN TO MARK requires_manual_testing: true:**
 - File uploads from local filesystem (browser automation can't access user files)
@@ -230,6 +259,7 @@ approve the implementation while noting which tests need manual user verificatio
 
 **ONLY CHANGE "passes" FIELD AFTER VERIFICATION WITH SCREENSHOTS.**
 **ONLY CHANGE "requires_manual_testing" FOR TESTS THAT TRULY CANNOT BE AUTOMATED.**
+**ONLY CHANGE "blocked" FOR FEATURES THAT VIOLATE ARCHITECTURE CONSTRAINTS.**
 
 ### STEP 8: COMMIT YOUR PROGRESS
 
