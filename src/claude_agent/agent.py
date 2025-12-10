@@ -38,14 +38,19 @@ from claude_agent.metrics import (
     record_validation_metrics,
 )
 from claude_agent.progress import (
+    check_rework_completion,
+    clear_rework_file,
     count_passing_tests,
     count_tests_by_type,
+    create_rework_file,
     find_feature_list,
     find_spec_draft,
     find_spec_for_coding,
     find_spec_validated,
     find_spec_validation_report,
     get_rejection_count,
+    get_rework_context_for_prompt,
+    has_pending_rework,
     is_automated_work_complete,
     mark_tests_failed,
     parse_validation_verdict,
@@ -967,7 +972,15 @@ async def run_autonomous_agent(config: Config) -> None:
         counts = count_tests_by_type(project_dir)
         automated_complete = is_automated_work_complete(project_dir)
         all_tests_pass = total > 0 and passing == total
-        should_validate = (all_tests_pass or automated_complete) and not is_first_run
+        rework_pending = has_pending_rework(project_dir)
+
+        # Block validation if rework is pending from a previous rejection
+        # The coding agent must address rejected features first
+        should_validate = (
+            (all_tests_pass or automated_complete)
+            and not is_first_run
+            and not rework_pending
+        )
 
         if should_validate:
             # Show workflow decision
@@ -1034,6 +1047,11 @@ async def run_autonomous_agent(config: Config) -> None:
                 )
                 # Render {{last_passed_feature}} variable for regression testing
                 prompt = render_coding_prompt(raw_prompt, project_dir)
+
+                # Inject rework context if there's pending work from validator rejection
+                rework_context = get_rework_context_for_prompt(project_dir)
+                if rework_context:
+                    prompt = f"{rework_context}\n\n{prompt}"
 
             # Run session with logging
             async with client:
@@ -1117,6 +1135,16 @@ async def run_autonomous_agent(config: Config) -> None:
             automated_complete = is_automated_work_complete(project_dir)
             all_tests_pass = total > 0 and passing == total
 
+            # Check if rework from validator rejection has been completed
+            if rework_pending:
+                rework_complete, still_failing = check_rework_completion(project_dir)
+                if rework_complete:
+                    clear_rework_file(project_dir)
+                    print("\n  Rework complete - all rejected features now passing")
+                    rework_pending = False  # Update for this iteration
+                else:
+                    print(f"\n  Rework in progress - features still failing: {still_failing}")
+
             # Show workflow decision after coding
             print("\n" + "-" * 70)
             print("WORKFLOW CHECK:")
@@ -1128,7 +1156,8 @@ async def run_autonomous_agent(config: Config) -> None:
         # Trigger validation if:
         # 1. All tests pass (including any manual tests), OR
         # 2. All automated tests pass (manual tests may remain)
-        if all_tests_pass or automated_complete:
+        # 3. No pending rework from previous validator rejection
+        if (all_tests_pass or automated_complete) and not rework_pending:
             # Show trigger reason if we came from coding (not already shown)
             if not should_validate:
                 if all_tests_pass:
@@ -1270,6 +1299,15 @@ async def run_autonomous_agent(config: Config) -> None:
                     print(f"\nValidation rejected {len(indices)} feature(s)")
                     print(f"Marked {updated} test(s) as needing rework")
 
+                    # Create rework tracking file to block validation until fixed
+                    create_rework_file(
+                        project_dir=project_dir,
+                        validation_attempt=rejection_count + 1,
+                        rejected_tests=result.rejected_tests,
+                        summary=result.summary or "Validator rejected features",
+                    )
+                    print("Created rework-required.json for coding agent follow-up")
+
                 if result.error:
                     print(f"\nValidator error: {result.error}")
                     print("Treating as rejection - will retry validation on next pass")
@@ -1278,6 +1316,8 @@ async def run_autonomous_agent(config: Config) -> None:
 
             # After validation loop, decide what to do
             if result.verdict == "APPROVED":
+                # Clear any stale rework file on approval
+                clear_rework_file(project_dir)
                 break  # Exit main loop - we're done!
 
             if result.verdict == "NEEDS_VERIFICATION":
