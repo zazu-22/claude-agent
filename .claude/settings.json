@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/stm_validator.sh",
+            "command": "/Users/jason/code/_utilities/claude-agent/.claude/hooks/stm_validator.sh",
             "timeout": 5
           }
         ]
