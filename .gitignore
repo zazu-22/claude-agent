@@ -67,6 +67,7 @@ claude-progress.txt
 feature_list.json
 validation-history.json
 drift-metrics.json
+rework-required.json
 
 # Don't ignore reports directory
 !reports/

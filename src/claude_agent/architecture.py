@@ -9,6 +9,7 @@ Ensures files contain valid YAML with required fields before coding sessions pro
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import yaml
 
@@ -66,9 +67,49 @@ class Schema:
     description: str = ""
 
 
-def get_architecture_dir(project_dir: Path) -> Path:
-    """Get path to architecture directory."""
-    return project_dir / ARCH_DIR_NAME
+def get_architecture_dir(project_dir: Path, specs_dir: str = "specs") -> Path:
+    """
+    Get canonical path to architecture directory for creating new files.
+
+    The canonical location is {specs_dir}/architecture/ to keep architecture
+    files co-located with other spec workflow files.
+
+    Args:
+        project_dir: Project directory
+        specs_dir: Name of specs directory (default: "specs")
+
+    Returns:
+        Path to architecture directory (may not exist yet)
+    """
+    return project_dir / specs_dir / ARCH_DIR_NAME
+
+
+def find_architecture_dir(project_dir: Path, specs_dir: str = "specs") -> Optional[Path]:
+    """
+    Find existing architecture directory, checking multiple locations.
+
+    Search order (for backwards compatibility):
+    1. {specs_dir}/architecture/ - Preferred canonical location
+    2. architecture/ - Legacy project root location
+
+    Args:
+        project_dir: Project directory
+        specs_dir: Name of specs directory (default: "specs")
+
+    Returns:
+        Path to architecture directory if found, None otherwise
+    """
+    # Check specs subdirectory first (preferred location)
+    specs_arch_dir = project_dir / specs_dir / ARCH_DIR_NAME
+    if specs_arch_dir.is_dir():
+        return specs_arch_dir
+
+    # Fall back to project root (legacy location)
+    root_arch_dir = project_dir / ARCH_DIR_NAME
+    if root_arch_dir.is_dir():
+        return root_arch_dir
+
+    return None
 
 
 def _validate_yaml_list(
@@ -130,22 +171,41 @@ def _validate_yaml_list(
     return items_list
 
 
-def get_contracts_path(project_dir: Path) -> Path:
-    """Get path to contracts file."""
-    return get_architecture_dir(project_dir) / CONTRACTS_FILE
+def get_contracts_path(project_dir: Path, specs_dir: str = "specs") -> Path:
+    """Get canonical path to contracts file (for creating new files)."""
+    return get_architecture_dir(project_dir, specs_dir) / CONTRACTS_FILE
 
 
-def get_schemas_path(project_dir: Path) -> Path:
-    """Get path to schemas file."""
-    return get_architecture_dir(project_dir) / SCHEMAS_FILE
+def get_schemas_path(project_dir: Path, specs_dir: str = "specs") -> Path:
+    """Get canonical path to schemas file (for creating new files)."""
+    return get_architecture_dir(project_dir, specs_dir) / SCHEMAS_FILE
 
 
-def load_contracts(project_dir: Path) -> list[Contract]:
+def find_contracts_path(project_dir: Path, specs_dir: str = "specs") -> Optional[Path]:
+    """Find existing contracts file, checking multiple locations."""
+    arch_dir = find_architecture_dir(project_dir, specs_dir)
+    if arch_dir is None:
+        return None
+    contracts_path = arch_dir / CONTRACTS_FILE
+    return contracts_path if contracts_path.exists() else None
+
+
+def find_schemas_path(project_dir: Path, specs_dir: str = "specs") -> Optional[Path]:
+    """Find existing schemas file, checking multiple locations."""
+    arch_dir = find_architecture_dir(project_dir, specs_dir)
+    if arch_dir is None:
+        return None
+    schemas_path = arch_dir / SCHEMAS_FILE
+    return schemas_path if schemas_path.exists() else None
+
+
+def load_contracts(project_dir: Path, specs_dir: str = "specs") -> list[Contract]:
     """
     Load and validate contracts from contracts.yaml.
 
     Args:
         project_dir: Project directory path
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         List of Contract objects
@@ -153,7 +213,9 @@ def load_contracts(project_dir: Path) -> list[Contract]:
     Raises:
         ArchitectureValidationError: If YAML is malformed or required fields missing
     """
-    contracts_path = get_contracts_path(project_dir)
+    contracts_path = find_contracts_path(project_dir, specs_dir)
+    if contracts_path is None:
+        return []
     contracts_list = _validate_yaml_list(
         contracts_path, "contracts.yaml", "contracts", "contract"
     )
@@ -212,12 +274,13 @@ def load_contracts(project_dir: Path) -> list[Contract]:
     return contracts
 
 
-def load_schemas(project_dir: Path) -> list[Schema]:
+def load_schemas(project_dir: Path, specs_dir: str = "specs") -> list[Schema]:
     """
     Load and validate schemas from schemas.yaml.
 
     Args:
         project_dir: Project directory path
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         List of Schema objects
@@ -225,7 +288,9 @@ def load_schemas(project_dir: Path) -> list[Schema]:
     Raises:
         ArchitectureValidationError: If YAML is malformed or required fields missing
     """
-    schemas_path = get_schemas_path(project_dir)
+    schemas_path = find_schemas_path(project_dir, specs_dir)
+    if schemas_path is None:
+        return []
     schemas_list = _validate_yaml_list(
         schemas_path, "schemas.yaml", "schemas", "schema"
     )
@@ -285,7 +350,9 @@ def load_schemas(project_dir: Path) -> list[Schema]:
     return schemas
 
 
-def validate_architecture_files(project_dir: Path) -> tuple[bool, list[str]]:
+def validate_architecture_files(
+    project_dir: Path, specs_dir: str = "specs"
+) -> tuple[bool, list[str]]:
     """
     Validate all architecture files exist and contain valid YAML with required fields.
 
@@ -296,6 +363,7 @@ def validate_architecture_files(project_dir: Path) -> tuple[bool, list[str]]:
 
     Args:
         project_dir: Project directory path
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         (success, errors) tuple where:
@@ -303,10 +371,10 @@ def validate_architecture_files(project_dir: Path) -> tuple[bool, list[str]]:
         - errors: List of error messages (empty if success)
     """
     errors = []
-    arch_dir = get_architecture_dir(project_dir)
+    arch_dir = find_architecture_dir(project_dir, specs_dir)
 
     # Check directory exists
-    if not arch_dir.exists():
+    if arch_dir is None:
         return False, ["Architecture directory does not exist"]
 
     # Check all required files exist
@@ -319,66 +387,77 @@ def validate_architecture_files(project_dir: Path) -> tuple[bool, list[str]]:
 
     # Validate contracts.yaml
     try:
-        load_contracts(project_dir)
+        load_contracts(project_dir, specs_dir)
     except ArchitectureValidationError as e:
         errors.append(str(e))
 
     # Validate schemas.yaml
     try:
-        load_schemas(project_dir)
+        load_schemas(project_dir, specs_dir)
     except ArchitectureValidationError as e:
         errors.append(str(e))
 
     # Validate decisions.yaml
     try:
-        load_decisions(project_dir)
+        load_decisions(project_dir, specs_dir)
     except DecisionLoadError as e:
         errors.append(f"decisions.yaml: {e}")
 
     return len(errors) == 0, errors
 
 
-def cleanup_partial_architecture(project_dir: Path) -> bool:
+def cleanup_partial_architecture(project_dir: Path, specs_dir: str = "specs") -> bool:
     """
     Clean up partial architecture directory if present.
 
     If the architecture phase fails partway through, this removes the incomplete
-    architecture/ directory to avoid confusing the coding agent.
+    architecture/ directory to avoid confusing the coding agent. Checks both
+    canonical ({specs_dir}/architecture/) and legacy (architecture/) locations.
 
     Args:
         project_dir: Project directory path
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         True if cleanup was performed, False if no cleanup needed
     """
 
-    arch_dir = get_architecture_dir(project_dir)
-
-    if not arch_dir.exists():
-        return False
-
-    # Safety check: verify it's actually a directory (not a symlink to a directory)
-    if not arch_dir.is_dir() or arch_dir.is_symlink():
-        return False
-
-    # Safety check: verify arch_dir is actually within project_dir
-    # This prevents path traversal attacks via symlinks or malicious paths
-    try:
-        resolved_arch = arch_dir.resolve()
-        resolved_project = project_dir.resolve()
-        if not resolved_arch.is_relative_to(resolved_project):
+    def _cleanup_dir(arch_dir: Path) -> bool:
+        """Helper to clean up a specific architecture directory."""
+        if not arch_dir.exists():
             return False
-    except (ValueError, OSError):
-        # resolve() can raise OSError on broken symlinks, ValueError on relative paths
-        return False
 
-    # Check if all required files exist
-    all_exist = all((arch_dir / f).exists() for f in REQUIRED_FILES)
+        # Safety check: verify it's actually a directory (not a symlink to a directory)
+        if not arch_dir.is_dir() or arch_dir.is_symlink():
+            return False
 
-    if all_exist:
-        # Architecture is complete - don't clean up
-        return False
+        # Safety check: verify arch_dir is actually within project_dir
+        # This prevents path traversal attacks via symlinks or malicious paths
+        try:
+            resolved_arch = arch_dir.resolve()
+            resolved_project = project_dir.resolve()
+            if not resolved_arch.is_relative_to(resolved_project):
+                return False
+        except (ValueError, OSError):
+            # resolve() can raise OSError on broken symlinks, ValueError on relative paths
+            return False
 
-    # Partial architecture exists - clean it up
-    shutil.rmtree(arch_dir)
-    return True
+        # Check if all required files exist
+        all_exist = all((arch_dir / f).exists() for f in REQUIRED_FILES)
+
+        if all_exist:
+            # Architecture is complete - don't clean up
+            return False
+
+        # Partial architecture exists - clean it up
+        shutil.rmtree(arch_dir)
+        return True
+
+    # Check canonical location first ({specs_dir}/architecture/)
+    canonical_dir = project_dir / specs_dir / ARCH_DIR_NAME
+    if _cleanup_dir(canonical_dir):
+        return True
+
+    # Check legacy location (architecture/ in project root)
+    legacy_dir = project_dir / ARCH_DIR_NAME
+    return _cleanup_dir(legacy_dir)

@@ -294,8 +294,8 @@ class TestAppendDecision:
             constraints_created=[],
         )
 
-        # Directory doesn't exist yet
-        arch_dir = tmp_path / "architecture"
+        # Directory doesn't exist yet (uses canonical specs/architecture location)
+        arch_dir = tmp_path / "specs" / "architecture"
         assert not arch_dir.exists()
 
         append_decision(tmp_path, record)

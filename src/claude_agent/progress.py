@@ -522,24 +522,27 @@ class ValidationVerdict:
     error: Optional[str] = None  # Parse error if any
 
 
-def _find_spec_file(project_dir: Path, filename: str) -> Optional[Path]:
+def _find_spec_file(
+    project_dir: Path, filename: str, specs_dir: str = "specs"
+) -> Optional[Path]:
     """
     Generic file finder for spec workflow files.
 
     Search order:
-    1. specs/{filename} (preferred canonical location)
+    1. {specs_dir}/{filename} (preferred canonical location)
     2. {filename} (project root)
-    3. specs/*/{filename} (subdirectories, for backwards compat)
+    3. {specs_dir}/*/{filename} (subdirectories, for backwards compat)
 
     Args:
         project_dir: Project directory
         filename: Name of file to find
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         Path to file if found, None otherwise
     """
-    # Check specs/ subdirectory first (preferred location)
-    specs_path = project_dir / "specs" / filename
+    # Check specs subdirectory first (preferred location)
+    specs_path = project_dir / specs_dir / filename
     if specs_path.exists():
         return specs_path
 
@@ -548,11 +551,11 @@ def _find_spec_file(project_dir: Path, filename: str) -> Optional[Path]:
     if root_path.exists():
         return root_path
 
-    # Search recursively in specs/ subdirectories (backwards compat)
-    specs_dir = project_dir / "specs"
-    if specs_dir.is_dir():
+    # Search recursively in specs subdirectories (backwards compat)
+    specs_dir_path = project_dir / specs_dir
+    if specs_dir_path.is_dir():
         try:
-            for path in specs_dir.rglob(filename):
+            for path in specs_dir_path.rglob(filename):
                 return path
         except (PermissionError, OSError):
             # Can't access some subdirectories - continue with None
@@ -561,37 +564,41 @@ def _find_spec_file(project_dir: Path, filename: str) -> Optional[Path]:
     return None
 
 
-def find_spec_draft(project_dir: Path) -> Optional[Path]:
-    """Find spec-draft.md in project directory or specs/ subdirectory."""
-    return _find_spec_file(project_dir, "spec-draft.md")
+def find_spec_draft(project_dir: Path, specs_dir: str = "specs") -> Optional[Path]:
+    """Find spec-draft.md in project directory or specs subdirectory."""
+    return _find_spec_file(project_dir, "spec-draft.md", specs_dir)
 
 
-def find_spec_validated(project_dir: Path) -> Optional[Path]:
-    """Find spec-validated.md in project directory or specs/ subdirectory."""
-    return _find_spec_file(project_dir, "spec-validated.md")
+def find_spec_validated(project_dir: Path, specs_dir: str = "specs") -> Optional[Path]:
+    """Find spec-validated.md in project directory or specs subdirectory."""
+    return _find_spec_file(project_dir, "spec-validated.md", specs_dir)
 
 
-def find_spec_validation_report(project_dir: Path) -> Optional[Path]:
-    """Find spec-validation.md report in project directory or specs/ subdirectory."""
-    return _find_spec_file(project_dir, "spec-validation.md")
+def find_spec_validation_report(
+    project_dir: Path, specs_dir: str = "specs"
+) -> Optional[Path]:
+    """Find spec-validation.md report in project directory or specs subdirectory."""
+    return _find_spec_file(project_dir, "spec-validation.md", specs_dir)
 
 
-def find_feature_list(project_dir: Path) -> Optional[Path]:
-    """Find feature_list.json in project directory or specs/ subdirectory."""
-    return _find_spec_file(project_dir, "feature_list.json")
+def find_feature_list(project_dir: Path, specs_dir: str = "specs") -> Optional[Path]:
+    """Find feature_list.json in project directory or specs subdirectory."""
+    return _find_spec_file(project_dir, "feature_list.json", specs_dir)
 
 
 # Track whether deprecation warning has been shown for root app_spec.txt
 _root_app_spec_warning_shown = False
 
 
-def find_spec_for_coding(project_dir: Path) -> Optional[Path]:
+def find_spec_for_coding(
+    project_dir: Path, specs_dir: str = "specs"
+) -> Optional[Path]:
     """
     Find the spec file for coding/validator agents with priority-based search.
 
     This function searches for spec files in a specific priority order:
-    1. specs/spec-validated.md - Canonical spec workflow output
-    2. specs/app_spec.txt - External spec copied location
+    1. {specs_dir}/spec-validated.md - Canonical spec workflow output
+    2. {specs_dir}/app_spec.txt - External spec copied location
     3. app_spec.txt - Legacy fallback in project root
 
     The priority ensures that:
@@ -601,6 +608,7 @@ def find_spec_for_coding(project_dir: Path) -> Optional[Path]:
 
     Args:
         project_dir: Project directory to search in
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         Path to the spec file if found, None otherwise
@@ -611,13 +619,13 @@ def find_spec_for_coding(project_dir: Path) -> Optional[Path]:
     if not project_dir.exists():
         return None
 
-    # Priority 1: specs/spec-validated.md (canonical spec workflow output)
-    spec_validated = project_dir / "specs" / "spec-validated.md"
+    # Priority 1: {specs_dir}/spec-validated.md (canonical spec workflow output)
+    spec_validated = project_dir / specs_dir / "spec-validated.md"
     if spec_validated.exists():
         return spec_validated
 
-    # Priority 2: specs/app_spec.txt (external spec copied location)
-    specs_app_spec = project_dir / "specs" / "app_spec.txt"
+    # Priority 2: {specs_dir}/app_spec.txt (external spec copied location)
+    specs_app_spec = project_dir / specs_dir / "app_spec.txt"
     if specs_app_spec.exists():
         return specs_app_spec
 
@@ -629,8 +637,8 @@ def find_spec_for_coding(project_dir: Path) -> Optional[Path]:
             import sys
 
             print(
-                "Warning: app_spec.txt found in project root. "
-                "Consider moving to specs/app_spec.txt for consistency.",
+                f"Warning: app_spec.txt found in project root. "
+                f"Consider moving to {specs_dir}/app_spec.txt for consistency.",
                 file=sys.stderr,
             )
             _root_app_spec_warning_shown = True
@@ -1481,3 +1489,249 @@ def get_spec_phase(project_dir: Path) -> str:
         return "created"
     else:
         return "none"
+
+
+# =============================================================================
+# Rework Tracking (Validator Rejection Follow-up)
+# =============================================================================
+
+REWORK_FILENAME = "rework-required.json"
+
+
+@dataclass
+class ReworkFeature:
+    """A feature that needs rework after validator rejection."""
+
+    test_index: int
+    description: str
+    reason: str
+
+
+@dataclass
+class ReworkTracking:
+    """Tracks features that need rework after validator rejection."""
+
+    created_at: str
+    validation_attempt: int
+    validator_summary: str
+    features_to_fix: list[ReworkFeature]
+
+
+def create_rework_file(
+    project_dir: Path,
+    validation_attempt: int,
+    rejected_tests: list[dict],
+    summary: str,
+) -> Path:
+    """
+    Create rework-required.json after validator rejection.
+
+    This file blocks validation from re-triggering until the coding agent
+    has addressed the rejected features and cleared the file.
+
+    Args:
+        project_dir: Project directory path
+        validation_attempt: Which validation attempt triggered this rejection
+        rejected_tests: List of dicts with test_index, reason, and optionally description
+        summary: Validator's summary of what needs to be fixed
+
+    Returns:
+        Path to the created rework file
+    """
+    # Load feature list to get descriptions for rejected features
+    feature_descriptions = {}
+    feature_list_path = find_feature_list(project_dir)
+    if feature_list_path:
+        try:
+            with open(feature_list_path) as f:
+                features = json.load(f)
+            for test in rejected_tests:
+                idx = test.get("test_index")
+                if idx is not None and 0 <= idx < len(features):
+                    feature_descriptions[idx] = features[idx].get("description", "")
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    # Build the rework data structure
+    features_to_fix = []
+    for test in rejected_tests:
+        idx = test.get("test_index")
+        if idx is not None:
+            features_to_fix.append({
+                "test_index": idx,
+                "description": feature_descriptions.get(idx, test.get("description", "")),
+                "reason": test.get("reason", "Rejected by validator"),
+            })
+
+    rework_data = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "validation_attempt": validation_attempt,
+        "validator_summary": summary,
+        "features_to_fix": features_to_fix,
+    }
+
+    rework_path = project_dir / REWORK_FILENAME
+    atomic_json_write(rework_path, rework_data)
+    logger.info(f"Created rework file: {rework_path}")
+
+    return rework_path
+
+
+def load_rework_file(project_dir: Path) -> Optional[ReworkTracking]:
+    """
+    Load rework-required.json if it exists.
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        ReworkTracking object if file exists and is valid, None otherwise
+    """
+    rework_path = project_dir / REWORK_FILENAME
+
+    if not rework_path.exists():
+        return None
+
+    try:
+        with open(rework_path) as f:
+            data = json.load(f)
+
+        features = [
+            ReworkFeature(
+                test_index=f["test_index"],
+                description=f.get("description", ""),
+                reason=f.get("reason", ""),
+            )
+            for f in data.get("features_to_fix", [])
+        ]
+
+        return ReworkTracking(
+            created_at=data.get("created_at", ""),
+            validation_attempt=data.get("validation_attempt", 0),
+            validator_summary=data.get("validator_summary", ""),
+            features_to_fix=features,
+        )
+    except (json.JSONDecodeError, IOError, KeyError) as e:
+        logger.warning(f"Failed to load rework file: {e}")
+        return None
+
+
+def has_pending_rework(project_dir: Path) -> bool:
+    """
+    Check if there's pending rework from a validator rejection.
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        True if rework-required.json exists, False otherwise
+    """
+    return (project_dir / REWORK_FILENAME).exists()
+
+
+def clear_rework_file(project_dir: Path) -> bool:
+    """
+    Delete rework-required.json after coding agent addresses the issues.
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        True if file was deleted, False if it didn't exist
+    """
+    rework_path = project_dir / REWORK_FILENAME
+
+    if rework_path.exists():
+        rework_path.unlink()
+        logger.info(f"Cleared rework file: {rework_path}")
+        return True
+
+    return False
+
+
+def check_rework_completion(project_dir: Path) -> tuple[bool, list[int]]:
+    """
+    Check if all features in rework file are now passing.
+
+    This is called after a coding session to determine if the rework
+    file should be cleared (all fixed) or updated (partial progress).
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        Tuple of (all_fixed, still_failing_indices):
+        - all_fixed: True if all rework features are now passing
+        - still_failing_indices: List of feature indices still failing
+    """
+    rework = load_rework_file(project_dir)
+    if not rework:
+        return True, []
+
+    # Load feature list to check current pass status
+    feature_list_path = find_feature_list(project_dir)
+    if not feature_list_path:
+        return False, [f.test_index for f in rework.features_to_fix]
+
+    try:
+        with open(feature_list_path) as f:
+            features = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return False, [f.test_index for f in rework.features_to_fix]
+
+    still_failing = []
+    for rework_feature in rework.features_to_fix:
+        idx = rework_feature.test_index
+        if 0 <= idx < len(features):
+            if not features[idx].get("passes", False):
+                still_failing.append(idx)
+
+    return len(still_failing) == 0, still_failing
+
+
+def get_rework_context_for_prompt(project_dir: Path) -> Optional[str]:
+    """
+    Generate context string for coding agent prompt when rework is pending.
+
+    This provides the coding agent with specific instructions about what
+    the validator rejected and what needs to be fixed.
+
+    Args:
+        project_dir: Project directory path
+
+    Returns:
+        Formatted string for prompt injection, or None if no rework pending
+    """
+    rework = load_rework_file(project_dir)
+    if not rework:
+        return None
+
+    lines = [
+        "=" * 70,
+        "REWORK MODE - VALIDATOR REJECTION FOLLOW-UP",
+        "=" * 70,
+        "",
+        f"Validation attempt #{rework.validation_attempt} was REJECTED.",
+        "",
+        "Validator summary:",
+        f"  {rework.validator_summary}",
+        "",
+        "Features that need to be fixed:",
+    ]
+
+    for feature in rework.features_to_fix:
+        lines.append(f"  - Feature #{feature.test_index}: {feature.description}")
+        lines.append(f"    Rejection reason: {feature.reason}")
+        lines.append("")
+
+    lines.extend([
+        "YOUR TASK:",
+        "1. Address ONLY the rejected features listed above",
+        "2. Do not work on other features",
+        "3. Mark the features as passing when fixed",
+        "4. The rework file will be cleared automatically when all are passing",
+        "",
+        "=" * 70,
+    ])
+
+    return "\n".join(lines)

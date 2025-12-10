@@ -4,7 +4,9 @@
       "Bash(npx:*)",
       "Bash(uv run pytest:*)",
       "Bash(stm show:*)",
-      "Bash(claudekit list:*)"
+      "Bash(claudekit list:*)",
+      "Bash(echo:*)",
+      "Bash(date:*)"
     ],
     "deny": [],
     "ask": []
@@ -16,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/stm_validator.sh",
+            "command": "/Users/jason/code/_utilities/claude-agent/.claude/hooks/stm_validator.sh",
             "timeout": 5
           }
         ]
@@ -24,3 +26,4 @@
     ]
   }
 }
+

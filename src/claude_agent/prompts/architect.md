@@ -8,11 +8,11 @@ Your decisions will be LOCKED and all future coding sessions must honor them.
 - Feature list (feature_list.json)
 
 ### OUTPUT (MANDATORY)
-You MUST create exactly three files in the architecture/ directory:
+You MUST create exactly three files in the {{specs_dir}}/architecture/ directory:
 
-1. architecture/contracts.yaml
-2. architecture/schemas.yaml
-3. architecture/decisions.yaml
+1. {{specs_dir}}/architecture/contracts.yaml
+2. {{specs_dir}}/architecture/schemas.yaml
+3. {{specs_dir}}/architecture/decisions.yaml
 
 ### EVALUATION SEQUENCE (MANDATORY)
 
@@ -49,7 +49,7 @@ CRITICAL: Steps 1-3 are WORTHLESS unless you actually performed them.
 
 ### OUTPUT FILE FORMATS
 
-#### architecture/contracts.yaml
+#### {{specs_dir}}/architecture/contracts.yaml
 ```yaml
 version: 1
 locked_at: "2024-01-15T10:00:00Z"
@@ -77,7 +77,7 @@ contracts:
               message: "Invalid credentials"
 ```
 
-#### architecture/schemas.yaml
+#### {{specs_dir}}/architecture/schemas.yaml
 ```yaml
 version: 1
 locked_at: "2024-01-15T10:00:00Z"
@@ -100,7 +100,7 @@ schemas:
         field: "author_id"
 ```
 
-#### architecture/decisions.yaml
+#### {{specs_dir}}/architecture/decisions.yaml
 ```yaml
 version: 1
 locked_at: "2024-01-15T10:00:00Z"
@@ -126,16 +126,16 @@ decisions:
 2. **Complete ALL evaluation steps** - Do not skip to file generation
 3. **Be specific** - Quote actual spec requirements in your decisions
 4. **Think about future sessions** - What constraints will prevent conflicting choices?
-5. **Create the architecture/ directory** - All lock files go there
+5. **Create the {{specs_dir}}/architecture/ directory** - All lock files go there
 6. **Lock files are immutable** - They define what future coding sessions must honor
 
 ### ENDING THIS SESSION
 
 After creating all three lock files:
-1. Verify all files exist in architecture/
+1. Verify all files exist in {{specs_dir}}/architecture/
 2. Summarize the architectural decisions made
 3. List the constraints that future sessions must honor
-4. Commit the architecture/ directory
+4. Commit the {{specs_dir}}/architecture/ directory
 
 The architecture lock phase is complete. Future coding sessions will verify against these files.
 

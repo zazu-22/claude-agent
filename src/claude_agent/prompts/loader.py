@@ -205,6 +205,7 @@ def get_initializer_prompt(
 def get_coding_prompt(
     init_command: str = "npm install",
     dev_command: str = "npm run dev",
+    specs_dir: str = "specs",
 ) -> str:
     """
     Load and render the coding agent prompt.
@@ -212,6 +213,7 @@ def get_coding_prompt(
     Args:
         init_command: Command to install dependencies
         dev_command: Command to start development server
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         Rendered prompt string
@@ -222,6 +224,7 @@ def get_coding_prompt(
         {
             "init_command": init_command,
             "dev_command": dev_command,
+            "specs_dir": specs_dir,
         },
     )
 
@@ -248,6 +251,7 @@ def get_review_prompt(spec_content: str) -> str:
 def get_validator_prompt(
     init_command: str = "npm install",
     dev_command: str = "npm run dev",
+    specs_dir: str = "specs",
 ) -> str:
     """
     Load and render the validator agent prompt.
@@ -255,6 +259,7 @@ def get_validator_prompt(
     Args:
         init_command: Command to install dependencies
         dev_command: Command to start development server
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         Rendered prompt string
@@ -265,6 +270,7 @@ def get_validator_prompt(
         {
             "init_command": init_command,
             "dev_command": dev_command,
+            "specs_dir": specs_dir,
         },
     )
 
@@ -329,13 +335,14 @@ def write_spec_to_project(
 # =============================================================================
 
 
-def get_spec_create_prompt(goal: str, context: str = "") -> str:
+def get_spec_create_prompt(goal: str, context: str = "", specs_dir: str = "specs") -> str:
     """
     Load and render the spec creation prompt.
 
     Args:
         goal: The user's goal or rough idea
         context: Optional additional context
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         Rendered prompt string
@@ -347,16 +354,18 @@ def get_spec_create_prompt(goal: str, context: str = "") -> str:
         {
             "goal": goal,
             "context": context_block,
+            "specs_dir": specs_dir,
         },
     )
 
 
-def get_spec_validate_prompt(spec_content: str) -> str:
+def get_spec_validate_prompt(spec_content: str, specs_dir: str = "specs") -> str:
     """
     Load and render the spec validation prompt.
 
     Args:
         spec_content: The specification content to validate
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         Rendered prompt string
@@ -366,17 +375,21 @@ def get_spec_validate_prompt(spec_content: str) -> str:
         template,
         {
             "spec_content": spec_content,
+            "specs_dir": specs_dir,
         },
     )
 
 
-def get_spec_decompose_prompt(spec_content: str, feature_count: int) -> str:
+def get_spec_decompose_prompt(
+    spec_content: str, feature_count: int, specs_dir: str = "specs"
+) -> str:
     """
     Load and render the spec decomposition prompt.
 
     Args:
         spec_content: The specification content to decompose
         feature_count: Target number of features to generate
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
         Rendered prompt string
@@ -387,15 +400,25 @@ def get_spec_decompose_prompt(spec_content: str, feature_count: int) -> str:
         {
             "spec_content": spec_content,
             "feature_count": str(feature_count),
+            "specs_dir": specs_dir,
         },
     )
 
 
-def get_architect_prompt() -> str:
+def get_architect_prompt(specs_dir: str = "specs") -> str:
     """
-    Load the architecture lock agent prompt.
+    Load and render the architecture lock agent prompt.
+
+    Args:
+        specs_dir: Name of specs directory (default: "specs")
 
     Returns:
-        Prompt string for the architect agent
+        Rendered prompt string for the architect agent
     """
-    return load_prompt("architect")
+    template = load_prompt("architect")
+    return render_template(
+        template,
+        {
+            "specs_dir": specs_dir,
+        },
+    )

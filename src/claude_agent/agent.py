@@ -38,14 +38,19 @@ from claude_agent.metrics import (
     record_validation_metrics,
 )
 from claude_agent.progress import (
+    check_rework_completion,
+    clear_rework_file,
     count_passing_tests,
     count_tests_by_type,
+    create_rework_file,
     find_feature_list,
     find_spec_draft,
     find_spec_for_coding,
     find_spec_validated,
     find_spec_validation_report,
     get_rejection_count,
+    get_rework_context_for_prompt,
+    has_pending_rework,
     is_automated_work_complete,
     mark_tests_failed,
     parse_validation_verdict,
@@ -75,19 +80,28 @@ from claude_agent.security import (
 )
 
 
-def is_architecture_locked(project_dir: Path) -> bool:
+def is_architecture_locked(project_dir: Path, specs_dir: str = "specs") -> bool:
     """
     Check if architecture lock phase has been completed.
 
-    Returns True if architecture/ directory exists with all required files.
-    """
-    arch_dir = project_dir / "architecture"
-    required_files = ["contracts.yaml", "schemas.yaml", "decisions.yaml"]
+    Checks both canonical ({specs_dir}/architecture/) and legacy (architecture/)
+    locations for the required architecture files.
 
-    if not arch_dir.exists():
+    Args:
+        project_dir: Project directory path
+        specs_dir: Name of specs directory (default: "specs")
+
+    Returns:
+        True if architecture directory exists with all required files
+    """
+    from claude_agent.architecture import find_architecture_dir, REQUIRED_FILES
+
+    arch_dir = find_architecture_dir(project_dir, specs_dir)
+
+    if arch_dir is None:
         return False
 
-    return all((arch_dir / f).exists() for f in required_files)
+    return all((arch_dir / f).exists() for f in REQUIRED_FILES)
 
 
 def get_next_session_id(project_dir: Path) -> int:
@@ -568,6 +582,7 @@ async def run_validator_session(
     prompt = get_validator_prompt(
         init_command=init_command,
         dev_command=dev_command,
+        specs_dir=config.workflow.specs_dir,
     )
 
     # Run session with logging
@@ -670,7 +685,7 @@ async def run_architect_session(
         )
 
         # Get prompt
-        prompt = get_architect_prompt()
+        prompt = get_architect_prompt(specs_dir=config.workflow.specs_dir)
 
         # Run session
         async with client:
@@ -690,11 +705,12 @@ async def run_architect_session(
                 stats_tracker.save()
 
         # Verify outputs - check both existence and content validity
-        files_exist = is_architecture_locked(project_dir)
+        specs_dir = config.workflow.specs_dir
+        files_exist = is_architecture_locked(project_dir, specs_dir)
 
         if files_exist:
             # Validate YAML content and structure
-            valid, validation_errors = validate_architecture_files(project_dir)
+            valid, validation_errors = validate_architecture_files(project_dir, specs_dir)
             last_validation_errors = validation_errors
 
             if valid:
@@ -717,7 +733,7 @@ async def run_architect_session(
                 print(f"{'=' * 60}\n")
 
                 # Clean up invalid files before retry
-                cleanup_partial_architecture(project_dir)
+                cleanup_partial_architecture(project_dir, specs_dir)
         else:
             # Files don't all exist - clean up any partial architecture
             print(
@@ -727,7 +743,7 @@ async def run_architect_session(
                 logger.warning(
                     f"Architecture attempt {attempt}: Required files not created"
                 )
-            cleaned = cleanup_partial_architecture(project_dir)
+            cleaned = cleanup_partial_architecture(project_dir, specs_dir)
             if cleaned and logger:
                 logger.warning("Cleaned up partial architecture directory")
 
@@ -802,7 +818,8 @@ async def run_autonomous_agent(config: Config) -> None:
     project_dir.mkdir(parents=True, exist_ok=True)
 
     # Check if this is a fresh start or continuation
-    tests_file = find_feature_list(project_dir)
+    specs_dir = config.workflow.specs_dir
+    tests_file = find_feature_list(project_dir, specs_dir)
     is_first_run = tests_file is None
 
     if is_first_run:
@@ -811,7 +828,7 @@ async def run_autonomous_agent(config: Config) -> None:
 
         # Check for existing spec file (e.g., from aborted review or spec workflow)
         if not spec_content:
-            existing_spec = find_spec_for_coding(project_dir)
+            existing_spec = find_spec_for_coding(project_dir, specs_dir)
             if existing_spec:
                 print(f"Found existing spec: {existing_spec}")
                 spec_content = existing_spec.read_text()
@@ -874,7 +891,7 @@ async def run_autonomous_agent(config: Config) -> None:
     dev_command = get_stack_dev_command(stack)
 
     # Check if architecture phase needed (after initializer may have run)
-    architecture_exists = is_architecture_locked(project_dir)
+    architecture_exists = is_architecture_locked(project_dir, specs_dir)
     should_run_architecture = (
         config.architecture.enabled
         and not config.skip_architecture
@@ -883,7 +900,7 @@ async def run_autonomous_agent(config: Config) -> None:
 
     if should_run_architecture:
         # Only run architecture phase if feature_list.json exists (initializer completed)
-        if find_feature_list(project_dir):
+        if find_feature_list(project_dir, specs_dir):
             print("\n" + "=" * 70)
             print("  ARCHITECTURE LOCK PHASE")
             print("  Establishing architectural invariants...")
@@ -955,7 +972,15 @@ async def run_autonomous_agent(config: Config) -> None:
         counts = count_tests_by_type(project_dir)
         automated_complete = is_automated_work_complete(project_dir)
         all_tests_pass = total > 0 and passing == total
-        should_validate = (all_tests_pass or automated_complete) and not is_first_run
+        rework_pending = has_pending_rework(project_dir)
+
+        # Block validation if rework is pending from a previous rejection
+        # The coding agent must address rejected features first
+        should_validate = (
+            (all_tests_pass or automated_complete)
+            and not is_first_run
+            and not rework_pending
+        )
 
         if should_validate:
             # Show workflow decision
@@ -1018,9 +1043,15 @@ async def run_autonomous_agent(config: Config) -> None:
                 raw_prompt = get_coding_prompt(
                     init_command=init_command,
                     dev_command=dev_command,
+                    specs_dir=specs_dir,
                 )
                 # Render {{last_passed_feature}} variable for regression testing
                 prompt = render_coding_prompt(raw_prompt, project_dir)
+
+                # Inject rework context if there's pending work from validator rejection
+                rework_context = get_rework_context_for_prompt(project_dir)
+                if rework_context:
+                    prompt = f"{rework_context}\n\n{prompt}"
 
             # Run session with logging
             async with client:
@@ -1104,6 +1135,16 @@ async def run_autonomous_agent(config: Config) -> None:
             automated_complete = is_automated_work_complete(project_dir)
             all_tests_pass = total > 0 and passing == total
 
+            # Check if rework from validator rejection has been completed
+            if rework_pending:
+                rework_complete, still_failing = check_rework_completion(project_dir)
+                if rework_complete:
+                    clear_rework_file(project_dir)
+                    print("\n  Rework complete - all rejected features now passing")
+                    rework_pending = False  # Update for this iteration
+                else:
+                    print(f"\n  Rework in progress - features still failing: {still_failing}")
+
             # Show workflow decision after coding
             print("\n" + "-" * 70)
             print("WORKFLOW CHECK:")
@@ -1115,7 +1156,8 @@ async def run_autonomous_agent(config: Config) -> None:
         # Trigger validation if:
         # 1. All tests pass (including any manual tests), OR
         # 2. All automated tests pass (manual tests may remain)
-        if all_tests_pass or automated_complete:
+        # 3. No pending rework from previous validator rejection
+        if (all_tests_pass or automated_complete) and not rework_pending:
             # Show trigger reason if we came from coding (not already shown)
             if not should_validate:
                 if all_tests_pass:
@@ -1257,6 +1299,15 @@ async def run_autonomous_agent(config: Config) -> None:
                     print(f"\nValidation rejected {len(indices)} feature(s)")
                     print(f"Marked {updated} test(s) as needing rework")
 
+                    # Create rework tracking file to block validation until fixed
+                    create_rework_file(
+                        project_dir=project_dir,
+                        validation_attempt=rejection_count + 1,
+                        rejected_tests=result.rejected_tests,
+                        summary=result.summary or "Validator rejected features",
+                    )
+                    print("Created rework-required.json for coding agent follow-up")
+
                 if result.error:
                     print(f"\nValidator error: {result.error}")
                     print("Treating as rejection - will retry validation on next pass")
@@ -1265,6 +1316,8 @@ async def run_autonomous_agent(config: Config) -> None:
 
             # After validation loop, decide what to do
             if result.verdict == "APPROVED":
+                # Clear any stale rework file on approval
+                clear_rework_file(project_dir)
                 break  # Exit main loop - we're done!
 
             if result.verdict == "NEEDS_VERIFICATION":
@@ -1383,7 +1436,7 @@ async def run_spec_create_session(
     )
 
     # Get prompt
-    prompt = get_spec_create_prompt(goal, context)
+    prompt = get_spec_create_prompt(goal, context, specs_dir=config.workflow.specs_dir)
 
     # Run session with logging
     async with client:
@@ -1399,7 +1452,8 @@ async def run_spec_create_session(
     stats_tracker.save()
 
     # Find spec-draft.md in project root or specs/ subdirectory
-    spec_path = find_spec_draft(project_dir)
+    specs_dir = config.workflow.specs_dir
+    spec_path = find_spec_draft(project_dir, specs_dir)
 
     # Record step
     if spec_path is not None:
@@ -1493,7 +1547,7 @@ async def run_spec_validate_session(
         stack=stack,
     )
 
-    prompt = get_spec_validate_prompt(spec_content)
+    prompt = get_spec_validate_prompt(spec_content, specs_dir=config.workflow.specs_dir)
 
     async with client:
         status, response = await run_agent_session(
@@ -1511,8 +1565,9 @@ async def run_spec_validate_session(
     verdict = parse_validation_verdict(project_dir)
 
     # Also check if spec-validated.md was created (for the output_file field)
-    validated_path = find_spec_validated(project_dir)
-    validation_report_path = find_spec_validation_report(project_dir)
+    specs_dir = config.workflow.specs_dir
+    validated_path = find_spec_validated(project_dir, specs_dir)
+    validation_report_path = find_spec_validation_report(project_dir, specs_dir)
 
     # Determine passed status from parsed verdict
     passed = verdict.passed
@@ -1620,7 +1675,7 @@ async def run_spec_decompose_session(
         stack=stack,
     )
 
-    prompt = get_spec_decompose_prompt(spec_content, feature_count)
+    prompt = get_spec_decompose_prompt(spec_content, feature_count, specs_dir=config.workflow.specs_dir)
 
     async with client:
         status, _ = await run_agent_session(
@@ -1635,7 +1690,8 @@ async def run_spec_decompose_session(
     stats_tracker.save()
 
     # Find feature_list.json (may be in specs/ or project root)
-    feature_list_path = find_feature_list(project_dir)
+    specs_dir = config.workflow.specs_dir
+    feature_list_path = find_feature_list(project_dir, specs_dir)
 
     record_spec_step(
         project_dir,
@@ -1693,6 +1749,9 @@ async def run_spec_workflow(config: Config, goal: Optional[str]) -> bool:
     print("  SPEC WORKFLOW - AUTO MODE")
     print("=" * 70)
 
+    # Get specs directory from config for file lookups
+    specs_dir = config.workflow.specs_dir
+
     if goal:
         print(f"\nGoal: {goal[:100]}{'...' if len(goal) > 100 else ''}")
     if phase != "none":
@@ -1728,7 +1787,7 @@ async def run_spec_workflow(config: Config, goal: Optional[str]) -> bool:
             return False
     else:
         print("\nStep 1/3: Creating specification... [SKIPPED - already exists]")
-        spec_path = find_spec_draft(project_dir)
+        spec_path = find_spec_draft(project_dir, specs_dir)
         if spec_path is None:
             print_error(
                 ActionableError(
@@ -1761,7 +1820,7 @@ async def run_spec_workflow(config: Config, goal: Optional[str]) -> bool:
         print("\nStep 2/3: Validating specification... [SKIPPED - already validated]")
 
     # Find the validated spec (may be in root or specs/)
-    validated_path = find_spec_validated(project_dir)
+    validated_path = find_spec_validated(project_dir, specs_dir)
     if validated_path is None:
         print_error(
             ActionableError(
@@ -1794,7 +1853,7 @@ async def run_spec_workflow(config: Config, goal: Optional[str]) -> bool:
             return False
     else:
         print("\nStep 3/3: Decomposing into features... [SKIPPED - already decomposed]")
-        feature_path = find_feature_list(project_dir)
+        feature_path = find_feature_list(project_dir, specs_dir)
         if not feature_path:
             print_error(
                 ActionableError(

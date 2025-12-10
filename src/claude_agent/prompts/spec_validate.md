@@ -13,8 +13,8 @@ Analyze this specification thoroughly and create two output files.
 
 ## OUTPUT 1: spec-validation.md
 
-**IMPORTANT: Save to `specs/spec-validation.md`** (create the `specs/` directory if needed).
-Do NOT create subdirectories within `specs/` - save directly to `specs/spec-validation.md`.
+**IMPORTANT: Save to `{{specs_dir}}/spec-validation.md`** (create the `{{specs_dir}}/` directory if needed).
+Do NOT create subdirectories within `{{specs_dir}}/` - save directly to `{{specs_dir}}/spec-validation.md`.
 
 Create a validation report that MUST start with this exact format:
 
@@ -83,8 +83,8 @@ For each issue, include:
 
 ## OUTPUT 2: spec-validated.md (only if PASS)
 
-**IMPORTANT: Save to `specs/spec-validated.md`** (same directory as validation report).
-Do NOT create subdirectories within `specs/`.
+**IMPORTANT: Save to `{{specs_dir}}/spec-validated.md`** (same directory as validation report).
+Do NOT create subdirectories within `{{specs_dir}}/`.
 
 If the spec passes validation (0 blocking issues):
 1. Copy the original spec

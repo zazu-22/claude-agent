@@ -15,14 +15,14 @@ pwd
 ls -la
 
 # 3. Read the project specification to understand what you're building
-if [ -f specs/spec-validated.md ]; then
-  cat specs/spec-validated.md
-elif [ -f specs/app_spec.txt ]; then
-  cat specs/app_spec.txt
+if [ -f {{specs_dir}}/spec-validated.md ]; then
+  cat {{specs_dir}}/spec-validated.md
+elif [ -f {{specs_dir}}/app_spec.txt ]; then
+  cat {{specs_dir}}/app_spec.txt
 elif [ -f app_spec.txt ]; then
   cat app_spec.txt
 else
-  echo "ERROR: No spec file found! Check specs/spec-validated.md, specs/app_spec.txt, or app_spec.txt"
+  echo "ERROR: No spec file found! Check {{specs_dir}}/spec-validated.md, {{specs_dir}}/app_spec.txt, or app_spec.txt"
 fi
 
 # 4. Read the feature list to see all work
@@ -57,7 +57,7 @@ or authentication features via browser automation.
 **CHECK FOR UNBLOCKABLE FEATURES:**
 If any features have `"blocked": true`, check if architecture files have been updated:
 1. Read the `blocked_reason` for each blocked feature
-2. Check if `architecture/` files now support the blocked feature
+2. Check if `{{specs_dir}}/architecture/` files now support the blocked feature
 3. If the conflict is resolved, note in claude-progress.txt:
    ```
    UNBLOCK CANDIDATE: Feature #X may be unblockable
@@ -118,30 +118,30 @@ For each item, state the evidence you found:
 - [ ] Architectural constraints identified:
   Quote: "[key decisions from previous sessions that constrain this work]"
 
-### Step A.1 - ARCHITECTURE VERIFICATION (if architecture/ exists)
-**Only perform this step if the architecture/ directory exists.**
+### Step A.1 - ARCHITECTURE VERIFICATION (if {{specs_dir}}/architecture/ exists)
+**Only perform this step if the {{specs_dir}}/architecture/ directory exists.**
 
 First, check if architecture lock files exist:
 ```bash
-ls architecture/ 2>/dev/null || echo "No architecture/ directory"
+ls {{specs_dir}}/architecture/ 2>/dev/null || echo "No {{specs_dir}}/architecture/ directory"
 ```
 
-**If no architecture/ directory exists:** Skip to Step B. This is expected for projects that haven't gone through the architecture lock phase.
+**If no {{specs_dir}}/architecture/ directory exists:** Skip to Step B. This is expected for projects that haven't gone through the architecture lock phase.
 
-**If the architecture/ directory exists, you MUST read and quote relevant sections from all three lock files:**
+**If the {{specs_dir}}/architecture/ directory exists, you MUST read and quote relevant sections from all three lock files:**
 
 ```bash
 # Read all architecture lock files
-cat architecture/contracts.yaml
-cat architecture/schemas.yaml
-cat architecture/decisions.yaml
+cat {{specs_dir}}/architecture/contracts.yaml
+cat {{specs_dir}}/architecture/schemas.yaml
+cat {{specs_dir}}/architecture/decisions.yaml
 ```
 
 **If any file contains malformed YAML or cannot be parsed:**
 1. Document the specific error in claude-progress.txt:
    ```
    ARCHITECTURE FILE ERROR:
-   - File: architecture/[filename].yaml
+   - File: {{specs_dir}}/architecture/[filename].yaml
    - Error: [parsing error message]
    - Action: Skipping verification for this file
    ```
@@ -197,8 +197,8 @@ Before writing code, state:
 - Constraints I must honor: [list from Step A and A.1]
 - Architecture contracts I will implement: [list from Step A.1, if applicable]
 
-### Step C.1 - ARCHITECTURE DEVIATION CHECK (if architecture/ exists)
-**Only perform this step if the architecture/ directory exists.**
+### Step C.1 - ARCHITECTURE DEVIATION CHECK (if {{specs_dir}}/architecture/ exists)
+**Only perform this step if the {{specs_dir}}/architecture/ directory exists.**
 
 Compare your implementation plan (Step C) against the architecture lock files (Step A.1).
 Answer each question explicitly:
@@ -245,9 +245,9 @@ Answer each question explicitly:
 ### Step D - EXECUTE
 ONLY NOW proceed to implementation (Step 4 below).
 
-**CRITICAL: Steps A-C (and A.1/C.1 if architecture/ exists) are WORTHLESS unless you actually performed them.**
+**CRITICAL: Steps A-C (and A.1/C.1 if {{specs_dir}}/architecture/ exists) are WORTHLESS unless you actually performed them.**
 **Evidence quotes above MUST be actual content from files, not placeholders.**
-**If architecture/ exists and you skipped A.1 or C.1, you WILL cause architecture drift.**
+**If {{specs_dir}}/architecture/ exists and you skipped A.1 or C.1, you WILL cause architecture drift.**
 
 ### STEP 4: CHOOSE ONE FEATURE TO IMPLEMENT
 
@@ -318,7 +318,7 @@ to:
 3. **"blocked"** - For features that CANNOT be implemented due to architecture constraints:
 ```json
 "blocked": true,
-"blocked_reason": "Requires changing locked API contract in architecture/contracts.yaml"
+"blocked_reason": "Requires changing locked API contract in {{specs_dir}}/architecture/contracts.yaml"
 ```
 
 **WHEN TO MARK blocked: true:**

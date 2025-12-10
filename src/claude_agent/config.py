@@ -50,6 +50,7 @@ class WorkflowConfig:
     default: str = "full"  # "full" | "spec-only" | "code-only"
     auto_spec_enabled: bool = False
     skip_if_feature_list_exists: bool = True
+    specs_dir: str = "specs"  # Directory for spec files and architecture
 
 
 @dataclass
@@ -314,6 +315,8 @@ def merge_config(
             workflow_config = file_config["workflow"]
             if "default" in workflow_config:
                 config.workflow.default = workflow_config["default"]
+            if "specs_dir" in workflow_config:
+                config.workflow.specs_dir = workflow_config["specs_dir"]
             # Handle nested auto_spec section
             if "auto_spec" in workflow_config:
                 auto_spec = workflow_config["auto_spec"]
@@ -466,6 +469,7 @@ validator:
 # Workflow settings
 workflow:
   default: full  # "full" | "spec-only" | "code-only"
+  specs_dir: specs  # Directory for spec files and architecture
   auto_spec:
     enabled: false
     skip_if_feature_list_exists: true

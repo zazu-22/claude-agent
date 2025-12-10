@@ -1271,5 +1271,103 @@ def stats(
     click.echo("-" * 70)
 
 
+# =============================================================================
+# Doctor Command
+# =============================================================================
+
+
+@main.command()
+@click.option(
+    "--project-dir",
+    "-p",
+    type=click.Path(path_type=Path),
+    default=".",
+    help="Project directory to check (default: current directory)",
+)
+@click.option(
+    "--json",
+    "output_json",
+    is_flag=True,
+    help="Output machine-readable JSON",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show detailed diagnostic information",
+)
+@click.option(
+    "--fix",
+    is_flag=True,
+    help="Attempt automatic remediation of detected issues",
+)
+def doctor(project_dir: Path, output_json: bool, verbose: bool, fix: bool):
+    """Check environment health and prerequisites.
+
+    Validates that all required tools and dependencies are installed
+    and properly configured before running coding sessions.
+
+    \b
+    Examples:
+      claude-agent doctor                  # Check current directory
+      claude-agent doctor -p ./my-project  # Check specific project
+      claude-agent doctor --json           # Machine-readable output
+      claude-agent doctor --verbose        # Show detailed diagnostics
+      claude-agent doctor --fix            # Attempt automatic fixes
+
+    \b
+    Exit codes:
+      0 - All checks passed (healthy)
+      1 - One or more checks failed (errors present)
+    """
+    from claude_agent.doctor import (
+        attempt_fixes,
+        format_fix_results,
+        format_report,
+        format_report_json,
+        run_doctor_checks,
+    )
+
+    # Resolve project directory
+    project_dir = Path(project_dir).resolve()
+
+    # Run checks
+    report = run_doctor_checks(project_dir=project_dir, verbose=verbose)
+
+    # Handle --fix flag
+    if fix and not report.is_healthy:
+        fix_results = attempt_fixes(report, project_dir)
+
+        # Re-run checks after fixes
+        report = run_doctor_checks(project_dir=project_dir, verbose=verbose)
+
+        if output_json:
+            # Include fix results in JSON output
+            output = format_report_json(report)
+            output["fix_results"] = [
+                {
+                    "name": r.name,
+                    "success": r.success,
+                    "message": r.message,
+                    "fix_type": r.fix_type,
+                }
+                for r in fix_results
+            ]
+            click.echo(json.dumps(output, indent=2))
+        else:
+            click.echo(format_report(report, verbose=verbose))
+            click.echo(format_fix_results(fix_results))
+
+        sys.exit(0 if report.is_healthy else 1)
+
+    # Normal output
+    if output_json:
+        click.echo(json.dumps(format_report_json(report), indent=2))
+    else:
+        click.echo(format_report(report, verbose=verbose))
+
+    sys.exit(0 if report.is_healthy else 1)
+
+
 if __name__ == "__main__":
     main()
