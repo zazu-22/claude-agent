@@ -145,6 +145,7 @@ claude-agent [OPTIONS]
 claude-agent init [DIR]    # Create .claude-agent.yaml template
 claude-agent status [DIR]  # Show project progress
 claude-agent status [DIR] --metrics  # Show drift metrics
+claude-agent doctor        # Check environment health
 
 # Spec workflow commands
 claude-agent spec create   # Generate spec from goal
@@ -153,6 +154,119 @@ claude-agent spec decompose # Break spec into features
 claude-agent spec auto     # Run full workflow (create → validate → decompose)
 claude-agent spec status   # Show spec workflow status
 ```
+
+## Health Check
+
+Before starting a coding session, verify your environment is properly configured:
+
+```bash
+claude-agent doctor
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `-p, --project-dir PATH` | Project directory to check (default: current directory) |
+| `--json` | Output machine-readable JSON |
+| `-v, --verbose` | Show detailed diagnostic information |
+| `--fix` | Attempt automatic remediation of detected issues |
+
+### Example Output
+
+**Healthy environment:**
+
+```
+Claude Agent Environment Check
+==============================
+
+Authentication:
+  [✓] Claude Code CLI installed (2.0.62)
+
+Required Tools:
+  [✓] Git available (2.52.0)
+  [✓] Python available (3.13.6)
+  [✓] uv available (0.8.8)
+  [✓] puppeteer-mcp-server available (22.18.0)
+
+Project (/path/to/project):
+  [✓] Directory exists and writable
+  [✓] .claude-agent.yaml found and valid
+
+Stack detected: python
+
+Summary: All checks passed!
+Run 'claude-agent' to start your coding session.
+```
+
+**Environment with issues:**
+
+```
+Claude Agent Environment Check
+==============================
+
+Authentication:
+  [✗] Claude Code CLI not installed
+      Run: Install Claude Code CLI from https://claude.ai/code
+
+Required Tools:
+  [✓] Git available (2.52.0)
+  [✓] Node.js available (20.10.0)
+  [✓] npm available (10.2.3)
+  [✗] puppeteer-mcp-server not found
+      Run: npm install -g puppeteer-mcp-server
+
+Project (/path/to/project):
+  [✓] Directory exists and writable
+  [!] Unknown configuration keys: typo_key
+
+Summary: 2 error(s), 1 warning(s)
+Run 'claude-agent doctor --fix' to attempt automatic fixes.
+```
+
+### JSON Output
+
+Use `--json` for machine-readable output:
+
+```bash
+claude-agent doctor --json
+```
+
+```json
+{
+  "project_dir": "/path/to/project",
+  "stack": "python",
+  "summary": {
+    "errors": 0,
+    "warnings": 0,
+    "passed": 7
+  },
+  "is_healthy": true,
+  "checks": [
+    {
+      "name": "Claude Code CLI",
+      "category": "authentication",
+      "status": "pass",
+      "message": "Claude Code CLI installed",
+      "version": "2.0.62"
+    }
+  ]
+}
+```
+
+### Auto-Fix
+
+Use `--fix` to automatically remediate certain issues:
+
+```bash
+claude-agent doctor --fix
+```
+
+The auto-fix feature can:
+- Create missing project directories
+- Install puppeteer-mcp-server (with user confirmation)
+
+It cannot automatically install system tools like Claude Code CLI, Git, Node.js, or Python.
 
 ## Configuration File
 
