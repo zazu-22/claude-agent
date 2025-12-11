@@ -408,3 +408,226 @@ def clear_workflow_state(project_dir: Path | str) -> bool:
     except OSError:
         # Permission error or other issue
         return False
+
+
+# =============================================================================
+# State Migration Functions
+# =============================================================================
+
+# Files to migrate from project directory to XDG state directory
+# These are operational files that should not pollute the project dir
+FILES_TO_MIGRATE = [
+    "validation-history.json",
+    "drift-metrics.json",
+]
+
+# Files that must REMAIN in the project directory
+# These are project-bound artifacts, not operational state
+FILES_TO_KEEP = [
+    "feature_list.json",
+    "app_spec.txt",
+    "claude-progress.txt",
+]
+
+# Directories that must remain in project
+DIRS_TO_KEEP = [
+    "architecture",
+]
+
+# Migration marker file name
+MIGRATION_MARKER = ".migrated"
+
+
+def _is_migration_done(project_dir: Path | str) -> bool:
+    """Check if migration has already been completed for a project.
+
+    Args:
+        project_dir: Path to the project directory
+
+    Returns:
+        True if migration marker exists in workflow directory
+    """
+    workflow_dir = get_workflow_dir(project_dir)
+    marker_file = workflow_dir / MIGRATION_MARKER
+    return marker_file.exists()
+
+
+def _mark_migration_done(project_dir: Path | str) -> None:
+    """Create migration marker file.
+
+    Args:
+        project_dir: Path to the project directory
+    """
+    workflow_dir = get_workflow_dir(project_dir)
+    workflow_dir.mkdir(parents=True, exist_ok=True)
+    marker_file = workflow_dir / MIGRATION_MARKER
+    marker_file.write_text(f"Migrated at {datetime.now().isoformat()}\n")
+
+
+def _migrate_file(
+    source: Path,
+    dest_dir: Path,
+    preserve_original: bool = True
+) -> tuple[bool, str]:
+    """Migrate a single file to destination directory.
+
+    Args:
+        source: Source file path
+        dest_dir: Destination directory
+        preserve_original: If True, copy instead of move (for safety)
+
+    Returns:
+        Tuple of (success, message)
+    """
+    if not source.exists():
+        return True, f"Skipped {source.name} (not found)"
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / source.name
+
+    try:
+        # Read and write to ensure content is preserved
+        content = source.read_bytes()
+        dest.write_bytes(content)
+
+        if not preserve_original:
+            source.unlink()
+
+        return True, f"Migrated {source.name}"
+    except OSError as e:
+        return False, f"Failed to migrate {source.name}: {e}"
+
+
+def _migrate_logs_directory(
+    source_dir: Path,
+    dest_dir: Path,
+    preserve_original: bool = True
+) -> tuple[bool, list[str]]:
+    """Migrate log files from source to destination directory.
+
+    Args:
+        source_dir: Source logs directory (e.g., .claude-agent/logs/)
+        dest_dir: Destination logs directory (XDG logs dir)
+        preserve_original: If True, copy instead of move
+
+    Returns:
+        Tuple of (all_success, list of messages)
+    """
+    messages = []
+
+    if not source_dir.exists() or not source_dir.is_dir():
+        return True, [f"Skipped logs migration (directory not found)"]
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    all_success = True
+
+    for source_file in source_dir.iterdir():
+        if source_file.is_file():
+            success, msg = _migrate_file(source_file, dest_dir, preserve_original)
+            messages.append(msg)
+            if not success:
+                all_success = False
+
+    return all_success, messages
+
+
+def migrate_project_state(project_dir: Path | str) -> tuple[bool, list[str]]:
+    """Migrate existing state files from project directory to XDG.
+
+    This function:
+    1. Checks if migration has already been done (idempotent)
+    2. Migrates validation-history.json to XDG workflow directory
+    3. Migrates drift-metrics.json to XDG workflow directory
+    4. Migrates .claude-agent/logs/ to XDG logs directory
+    5. Creates migration marker file
+
+    Files are COPIED (not moved) for safety. Original files are preserved
+    until the user manually removes them after verifying migration succeeded.
+
+    Project-bound files (feature_list.json, architecture/, app_spec.txt,
+    claude-progress.txt) are NOT migrated and remain in the project directory.
+
+    Args:
+        project_dir: Path to the project directory
+
+    Returns:
+        Tuple of (success, list of migration messages)
+    """
+    project_path = Path(project_dir).resolve()
+    messages: list[str] = []
+
+    # Check if already migrated
+    if _is_migration_done(project_path):
+        return True, ["Migration already completed for this project"]
+
+    # Ensure XDG directories exist
+    ensure_state_dirs(project_path)
+
+    workflow_dir = get_workflow_dir(project_path)
+    logs_dir = get_logs_dir()
+    all_success = True
+
+    # Migrate individual files to workflow directory
+    for filename in FILES_TO_MIGRATE:
+        source = project_path / filename
+        success, msg = _migrate_file(source, workflow_dir, preserve_original=True)
+        messages.append(msg)
+        if not success:
+            all_success = False
+
+    # Migrate logs from .claude-agent/logs/ to XDG logs directory
+    old_logs_dir = project_path / ".claude-agent" / "logs"
+    if old_logs_dir.exists():
+        success, log_messages = _migrate_logs_directory(
+            old_logs_dir, logs_dir, preserve_original=True
+        )
+        messages.extend(log_messages)
+        if not success:
+            all_success = False
+    else:
+        messages.append("Skipped logs migration (.claude-agent/logs/ not found)")
+
+    # Mark migration as complete
+    if all_success:
+        _mark_migration_done(project_path)
+        messages.append("Migration completed successfully")
+    else:
+        messages.append("Migration completed with errors")
+
+    return all_success, messages
+
+
+def get_migration_status(project_dir: Path | str) -> dict:
+    """Get migration status for a project.
+
+    Args:
+        project_dir: Path to the project directory
+
+    Returns:
+        Dictionary with migration status information
+    """
+    project_path = Path(project_dir).resolve()
+    workflow_dir = get_workflow_dir(project_path)
+    logs_dir = get_logs_dir()
+
+    status = {
+        "migrated": _is_migration_done(project_path),
+        "workflow_dir": str(workflow_dir),
+        "logs_dir": str(logs_dir),
+        "files_in_xdg": [],
+        "files_in_project": [],
+    }
+
+    # Check what's in XDG
+    if workflow_dir.exists():
+        status["files_in_xdg"] = [
+            f.name for f in workflow_dir.iterdir()
+            if f.is_file() and f.name != MIGRATION_MARKER
+        ]
+
+    # Check what's still in project
+    for filename in FILES_TO_MIGRATE:
+        if (project_path / filename).exists():
+            status["files_in_project"].append(filename)
+
+    return status

@@ -14,15 +14,21 @@ from unittest.mock import patch
 import pytest
 
 from claude_agent.state import (
+    DIRS_TO_KEEP,
+    FILES_TO_KEEP,
+    FILES_TO_MIGRATE,
+    MIGRATION_MARKER,
     VALID_PHASES,
     WorkflowState,
     clear_workflow_state,
     ensure_state_dirs,
     get_logs_dir,
+    get_migration_status,
     get_project_hash,
     get_state_dir,
     get_workflow_dir,
     load_workflow_state,
+    migrate_project_state,
     save_workflow_state,
 )
 
@@ -635,3 +641,169 @@ class TestLastErrorIntegration:
             assert reconstructed.message == error.message
             assert reconstructed.recovery_hint == error.recovery_hint
             assert reconstructed.context["path"] == "/missing/file.txt"
+
+
+class TestStateMigration:
+    """Tests for state migration functions."""
+
+    def test_migrate_moves_files_correctly(self, tmp_path):
+        """Test migration moves files correctly."""
+        from claude_agent.state import (
+            FILES_TO_MIGRATE,
+            migrate_project_state,
+        )
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        # Create test files to migrate
+        for filename in FILES_TO_MIGRATE:
+            (project_dir / filename).write_text(f'{{"file": "{filename}"}}')
+
+        with patch("claude_agent.state.get_state_dir", return_value=tmp_path / "state"):
+            success, messages = migrate_project_state(project_dir)
+
+        assert success is True
+        assert any("Migration completed successfully" in msg for msg in messages)
+
+        # Check files were copied to XDG
+        from claude_agent.state import get_workflow_dir
+        with patch("claude_agent.state.get_state_dir", return_value=tmp_path / "state"):
+            workflow_dir = get_workflow_dir(project_dir)
+
+        for filename in FILES_TO_MIGRATE:
+            assert (workflow_dir / filename).exists()
+            # Verify content preserved
+            content = (workflow_dir / filename).read_text()
+            assert f'"file": "{filename}"' in content
+
+    def test_migration_is_idempotent(self, tmp_path):
+        """Test migration is idempotent (safe to run twice)."""
+        from claude_agent.state import migrate_project_state
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        # Create test file
+        (project_dir / "validation-history.json").write_text('{"test": true}')
+
+        with patch("claude_agent.state.get_state_dir", return_value=tmp_path / "state"):
+            # Run migration twice
+            success1, messages1 = migrate_project_state(project_dir)
+            success2, messages2 = migrate_project_state(project_dir)
+
+        assert success1 is True
+        assert success2 is True
+        # Second run should report already migrated
+        assert any("already completed" in msg for msg in messages2)
+
+    def test_migration_preserves_file_contents(self, tmp_path):
+        """Test migration preserves file contents."""
+        from claude_agent.state import migrate_project_state, get_workflow_dir
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        # Create file with specific content
+        test_content = '{"key": "value", "nested": {"inner": 123}}'
+        (project_dir / "validation-history.json").write_text(test_content)
+
+        with patch("claude_agent.state.get_state_dir", return_value=tmp_path / "state"):
+            migrate_project_state(project_dir)
+            workflow_dir = get_workflow_dir(project_dir)
+
+        # Verify content is identical
+        migrated_content = (workflow_dir / "validation-history.json").read_text()
+        assert migrated_content == test_content
+
+    def test_migration_handles_missing_files_gracefully(self, tmp_path):
+        """Test migration handles missing files gracefully."""
+        from claude_agent.state import migrate_project_state
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        # Don't create any files
+
+        with patch("claude_agent.state.get_state_dir", return_value=tmp_path / "state"):
+            success, messages = migrate_project_state(project_dir)
+
+        assert success is True
+        # Should report skipped files
+        assert any("Skipped" in msg for msg in messages)
+
+    def test_migration_preserves_original_files(self, tmp_path):
+        """Test original files are preserved after migration."""
+        from claude_agent.state import migrate_project_state
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        # Create test file
+        test_file = project_dir / "validation-history.json"
+        test_file.write_text('{"original": true}')
+
+        with patch("claude_agent.state.get_state_dir", return_value=tmp_path / "state"):
+            migrate_project_state(project_dir)
+
+        # Original should still exist (preserved until verified)
+        assert test_file.exists()
+        assert '{"original": true}' == test_file.read_text()
+
+    def test_migrate_logs_directory(self, tmp_path):
+        """Test logs directory migration."""
+        from claude_agent.state import migrate_project_state, get_logs_dir
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        # Create old logs directory
+        old_logs = project_dir / ".claude-agent" / "logs"
+        old_logs.mkdir(parents=True)
+        (old_logs / "session-001.log").write_text("Log content 1")
+        (old_logs / "session-002.log").write_text("Log content 2")
+
+        with patch("claude_agent.state.get_state_dir", return_value=tmp_path / "state"):
+            success, messages = migrate_project_state(project_dir)
+            logs_dir = get_logs_dir()
+
+        assert success is True
+        # Check logs were migrated
+        assert (logs_dir / "session-001.log").exists()
+        assert (logs_dir / "session-002.log").exists()
+        assert (logs_dir / "session-001.log").read_text() == "Log content 1"
+
+    def test_get_migration_status(self, tmp_path):
+        """Test get_migration_status function."""
+        from claude_agent.state import migrate_project_state, get_migration_status
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        # Create test file
+        (project_dir / "validation-history.json").write_text('{}')
+
+        with patch("claude_agent.state.get_state_dir", return_value=tmp_path / "state"):
+            # Before migration
+            status_before = get_migration_status(project_dir)
+            assert status_before["migrated"] is False
+            assert "validation-history.json" in status_before["files_in_project"]
+
+            # After migration
+            migrate_project_state(project_dir)
+            status_after = get_migration_status(project_dir)
+            assert status_after["migrated"] is True
+            assert "validation-history.json" in status_after["files_in_xdg"]
+
+    def test_files_to_keep_list(self):
+        """Test FILES_TO_KEEP contains expected files."""
+        from claude_agent.state import FILES_TO_KEEP
+
+        assert "feature_list.json" in FILES_TO_KEEP
+        assert "app_spec.txt" in FILES_TO_KEEP
+        assert "claude-progress.txt" in FILES_TO_KEEP
+
+    def test_dirs_to_keep_list(self):
+        """Test DIRS_TO_KEEP contains expected directories."""
+        from claude_agent.state import DIRS_TO_KEEP
+
+        assert "architecture" in DIRS_TO_KEEP
