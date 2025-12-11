@@ -412,15 +412,34 @@ class AgentLogger:
         )
 
     def log_security_block(
-        self, command: str, reason: str, stack: str
+        self,
+        command: str,
+        reason: str,
+        stack: str,
+        error_type: Optional[str] = None,
+        error_category: Optional[str] = None,
     ) -> None:
-        """Log a security block event."""
-        self.log_event(
-            EventType.SECURITY_BLOCK,
-            command=truncate_string(command, self.config.max_summary_length),
-            reason=reason,
-            stack=stack,
-        )
+        """Log a security block event.
+
+        Args:
+            command: The command that was blocked
+            reason: Why it was blocked
+            stack: Tech stack (for allowlist context)
+            error_type: StructuredError type (e.g., "manual") - optional for backward compatibility
+            error_category: StructuredError category (e.g., "security") - optional for backward compatibility
+        """
+        data = {
+            "command": truncate_string(command, self.config.max_summary_length),
+            "reason": reason,
+            "stack": stack,
+        }
+        # Include structured error info if provided (DR-018)
+        if error_type:
+            data["error_type"] = error_type
+        if error_category:
+            data["error_category"] = error_category
+
+        self.log_event(EventType.SECURITY_BLOCK, **data)
 
     def log_security_allow(self, command: str, stack: str) -> None:
         """Log a security allow event (verbose mode only)."""

@@ -6,7 +6,7 @@
 # goal: "Build a REST API with authentication"
 
 # Number of features to generate (default: 50)
-features: 50
+features: 200
 
 # Tech stack - auto-detected if not specified
 # Options: node, python
@@ -28,7 +28,7 @@ security:
 
 # Validator settings (runs after all features pass)
 validator:
-  model: claude-opus-4-5-20251101  # Recommended: use Opus for final validation
+  model: claude-opus-4-5-20251101 # Recommended: use Opus for final validation
   enabled: true
-  max_rejections: 3  # Stop after this many validation failures
-  max_turns: 75  # Lower than coding agent to force quicker verdict
+  max_rejections: 3 # Stop after this many validation failures
+  max_turns: 100 # Lower than coding agent to force quicker verdict

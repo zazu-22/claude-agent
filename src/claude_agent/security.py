@@ -12,11 +12,15 @@ import os
 import re
 import shlex
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Union
 
 from claude_agent.detection import (
     get_stack_commands,
     get_stack_pkill_targets,
+)
+from claude_agent.structured_errors import (
+    StructuredError,
+    error_security_block,
 )
 
 
@@ -321,12 +325,23 @@ async def validator_stop_hook(input_data, tool_use_id=None, context=None):
     }
 
 
-async def bash_security_hook(input_data, tool_use_id=None, context=None):
+async def bash_security_hook(
+    input_data, tool_use_id=None, context=None
+) -> Union[dict, StructuredError]:
     """
     Pre-tool-use hook that validates bash commands using an allowlist.
 
     Only commands in the configured allowlist are permitted.
     Logs all security decisions when a logger is configured.
+
+    Returns:
+        Empty dict {} if command is allowed.
+        StructuredError with type=MANUAL, category=SECURITY if command is blocked.
+
+    Note:
+        Per DR-018, blocked commands return StructuredError instead of plain dict.
+        The StructuredError includes recovery_hint with config path for adding
+        allowed commands.
     """
     if input_data.get("tool_name") != "Bash":
         return {}
@@ -341,26 +356,34 @@ async def bash_security_hook(input_data, tool_use_id=None, context=None):
 
     if not commands:
         reason = f"Could not parse command for security validation: {command}"
-        # Log security block
+        # Create StructuredError and log with type/category info (DR-018)
+        structured_error = error_security_block(command, reason)
         if logger:
-            logger.log_security_block(command, reason, config.stack)
-        return {
-            "decision": "block",
-            "reason": reason,
-        }
+            logger.log_security_block(
+                command,
+                reason,
+                config.stack,
+                error_type=structured_error.type.value,
+                error_category=structured_error.category.value,
+            )
+        return structured_error
 
     segments = split_command_segments(command)
 
     for cmd in commands:
         if cmd not in config.commands:
             reason = f"Command '{cmd}' is not in the allowed commands list for {config.stack} stack"
-            # Log security block
+            # Create StructuredError and log with type/category info (DR-018)
+            structured_error = error_security_block(command, reason)
             if logger:
-                logger.log_security_block(command, reason, config.stack)
-            return {
-                "decision": "block",
-                "reason": reason,
-            }
+                logger.log_security_block(
+                    command,
+                    reason,
+                    config.stack,
+                    error_type=structured_error.type.value,
+                    error_category=structured_error.category.value,
+                )
+            return structured_error
 
         # Additional validation for sensitive commands
         if cmd in COMMANDS_NEEDING_EXTRA_VALIDATION:
@@ -371,24 +394,45 @@ async def bash_security_hook(input_data, tool_use_id=None, context=None):
             if cmd == "pkill":
                 allowed, reason = validate_pkill_command(cmd_segment)
                 if not allowed:
-                    # Log security block
+                    # Create StructuredError and log with type/category info (DR-018)
+                    structured_error = error_security_block(command, reason)
                     if logger:
-                        logger.log_security_block(command, reason, config.stack)
-                    return {"decision": "block", "reason": reason}
+                        logger.log_security_block(
+                            command,
+                            reason,
+                            config.stack,
+                            error_type=structured_error.type.value,
+                            error_category=structured_error.category.value,
+                        )
+                    return structured_error
             elif cmd == "chmod":
                 allowed, reason = validate_chmod_command(cmd_segment)
                 if not allowed:
-                    # Log security block
+                    # Create StructuredError and log with type/category info (DR-018)
+                    structured_error = error_security_block(command, reason)
                     if logger:
-                        logger.log_security_block(command, reason, config.stack)
-                    return {"decision": "block", "reason": reason}
+                        logger.log_security_block(
+                            command,
+                            reason,
+                            config.stack,
+                            error_type=structured_error.type.value,
+                            error_category=structured_error.category.value,
+                        )
+                    return structured_error
             elif cmd in ("init.sh", "setup.sh"):
                 allowed, reason = validate_init_script(cmd_segment)
                 if not allowed:
-                    # Log security block
+                    # Create StructuredError and log with type/category info (DR-018)
+                    structured_error = error_security_block(command, reason)
                     if logger:
-                        logger.log_security_block(command, reason, config.stack)
-                    return {"decision": "block", "reason": reason}
+                        logger.log_security_block(
+                            command,
+                            reason,
+                            config.stack,
+                            error_type=structured_error.type.value,
+                            error_category=structured_error.category.value,
+                        )
+                    return structured_error
 
     # Log security allow (only in verbose mode - handled by logger)
     if logger:

@@ -1,8 +1,10 @@
 """
-Tests for Security Evaluation Validation Hook.
+Tests for Security Hooks Module.
 
-Tests the evaluation_validation_hook and related functions that validate
-agent output for required evaluation sections (drift mitigation).
+Tests include:
+- evaluation_validation_hook and related functions for drift mitigation
+- bash_security_hook for command allowlist validation
+- StructuredError integration for blocked commands (DR-018)
 """
 
 import pytest
@@ -15,6 +17,14 @@ from claude_agent.security import (
     evaluation_validation_hook,
     _check_section_present,
     _build_retry_emphasis,
+    bash_security_hook,
+    configure_security,
+    get_security_config,
+)
+from claude_agent.structured_errors import (
+    StructuredError,
+    ErrorType,
+    ErrorCategory,
 )
 
 
@@ -845,3 +855,210 @@ More important content"""
         assert "Important header" in result
         assert "More important content" in result
         assert "ignore this" not in result
+
+
+# =============================================================================
+# Tests for bash_security_hook with StructuredError integration (DR-018)
+# =============================================================================
+
+
+class TestBashSecurityHookStructuredError:
+    """Test bash_security_hook returns StructuredError for blocked commands.
+
+    Per DR-018: bash_security_hook() MUST return StructuredError for blocked commands
+    with type=MANUAL, category=SECURITY, and recovery_hint including config path.
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup_security_config(self):
+        """Configure security for tests with known allowlist."""
+        configure_security(stack="python")
+
+    @pytest.mark.asyncio
+    async def test_allowed_command_returns_empty_dict(self):
+        """Allowed commands return empty dict (not blocked)."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls -la"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_blocked_command_returns_structured_error(self):
+        """Blocked commands return StructuredError instead of dict (DR-018)."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "rm -rf /"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert isinstance(result, StructuredError)
+
+    @pytest.mark.asyncio
+    async def test_blocked_command_error_type_is_manual(self):
+        """Blocked command StructuredError has type=MANUAL (DR-018)."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "curl http://example.com"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert isinstance(result, StructuredError)
+        assert result.type == ErrorType.MANUAL
+
+    @pytest.mark.asyncio
+    async def test_blocked_command_error_category_is_security(self):
+        """Blocked command StructuredError has category=SECURITY (DR-018)."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "wget http://example.com"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert isinstance(result, StructuredError)
+        assert result.category == ErrorCategory.SECURITY
+
+    @pytest.mark.asyncio
+    async def test_blocked_command_has_config_path_hint(self):
+        """Blocked command StructuredError has recovery_hint with config path (DR-018)."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "docker run test"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert isinstance(result, StructuredError)
+        assert result.recovery_hint is not None
+        assert ".claude-agent.yaml" in result.recovery_hint
+        assert "extra_commands" in result.recovery_hint
+
+    @pytest.mark.asyncio
+    async def test_blocked_command_includes_command_in_context(self):
+        """Blocked command StructuredError includes command in context."""
+        command = "forbidden_command --arg"
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert isinstance(result, StructuredError)
+        assert result.context.get("command") == command
+
+    @pytest.mark.asyncio
+    async def test_blocked_command_includes_reason_in_context(self):
+        """Blocked command StructuredError includes reason in context."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "badcmd"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert isinstance(result, StructuredError)
+        assert "reason" in result.context
+        assert "badcmd" in result.context["reason"]
+
+    @pytest.mark.asyncio
+    async def test_non_bash_tool_returns_empty_dict(self):
+        """Non-Bash tools return empty dict (no security check)."""
+        input_data = {
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/etc/passwd"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_empty_command_returns_empty_dict(self):
+        """Empty command returns empty dict."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": ""},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_unparseable_command_returns_structured_error(self):
+        """Unparseable command returns StructuredError."""
+        # Malformed command that cannot be parsed
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "echo 'unclosed quote"},
+        }
+        result = await bash_security_hook(input_data)
+
+        # Should return StructuredError for parse failure
+        assert isinstance(result, StructuredError)
+        assert result.category == ErrorCategory.SECURITY
+
+    @pytest.mark.asyncio
+    async def test_pkill_blocked_for_non_dev_process(self):
+        """pkill for non-dev processes returns StructuredError."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "pkill -9 systemd"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert isinstance(result, StructuredError)
+        assert result.type == ErrorType.MANUAL
+        assert result.category == ErrorCategory.SECURITY
+
+    @pytest.mark.asyncio
+    async def test_chmod_blocked_for_non_plus_x(self):
+        """chmod with modes other than +x returns StructuredError."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "chmod 777 script.sh"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert isinstance(result, StructuredError)
+        assert result.type == ErrorType.MANUAL
+        assert result.category == ErrorCategory.SECURITY
+
+    @pytest.mark.asyncio
+    async def test_structured_error_is_retryable_false(self):
+        """Blocked command StructuredError is not retryable."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "badcmd"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert isinstance(result, StructuredError)
+        assert result.is_retryable() is False
+
+    @pytest.mark.asyncio
+    async def test_structured_error_requires_human_true(self):
+        """Blocked command StructuredError requires human intervention."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "badcmd"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert isinstance(result, StructuredError)
+        assert result.requires_human() is True
+
+    @pytest.mark.asyncio
+    async def test_structured_error_can_convert_to_actionable(self):
+        """Blocked command StructuredError can convert to ActionableError."""
+        input_data = {
+            "tool_name": "Bash",
+            "tool_input": {"command": "badcmd"},
+        }
+        result = await bash_security_hook(input_data)
+
+        assert isinstance(result, StructuredError)
+
+        # Should be able to convert to ActionableError for CLI display
+        actionable = result.to_actionable_error()
+        assert actionable is not None
+        assert actionable.message is not None
+        assert "blocked" in actionable.message.lower()
