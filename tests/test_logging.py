@@ -716,3 +716,785 @@ class TestEnvironmentInfo:
 
         # Verify OS is lowercase
         assert env["os"] == platform.system().lower()
+
+
+# ==============================================================================
+# MILESTONE 5: ENHANCED LOGGING TESTS
+# ==============================================================================
+
+
+class TestGateLogLevel:
+    """Tests for GATE log level in level hierarchy (Feature #112, DR-015)."""
+
+    def test_gate_exists_in_log_level_enum(self):
+        """GATE should exist as a LogLevel enum value."""
+        assert hasattr(LogLevel, "GATE")
+        assert LogLevel.GATE.value == "gate"
+
+    def test_gate_is_between_info_and_warning(self):
+        """GATE should be positioned between INFO and WARNING in hierarchy."""
+        from claude_agent.logging import LOG_LEVEL_ORDER
+
+        info_idx = LOG_LEVEL_ORDER.index(LogLevel.INFO)
+        gate_idx = LOG_LEVEL_ORDER.index(LogLevel.GATE)
+        warning_idx = LOG_LEVEL_ORDER.index(LogLevel.WARNING)
+
+        # DR-015: Level hierarchy: DEBUG < INFO < GATE < WARNING < ERROR
+        assert info_idx < gate_idx < warning_idx
+
+    def test_log_level_order_is_complete(self):
+        """LOG_LEVEL_ORDER should include all 5 levels in correct order."""
+        from claude_agent.logging import LOG_LEVEL_ORDER
+
+        assert len(LOG_LEVEL_ORDER) == 5
+        assert LOG_LEVEL_ORDER == [
+            LogLevel.DEBUG,
+            LogLevel.INFO,
+            LogLevel.GATE,
+            LogLevel.WARNING,
+            LogLevel.ERROR,
+        ]
+
+    def test_gate_level_filtering(self, tmp_path):
+        """Events below GATE level should be filtered when config.level=GATE."""
+        config = LoggingConfig(level=LogLevel.GATE)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        # INFO level should be filtered out
+        logger.log_event(EventType.LOG_MESSAGE, level=LogLevel.INFO, message="info msg")
+        # GATE level should be included
+        logger.log_event(EventType.PHASE_ENTER, phase="coding")
+        # WARNING level should be included
+        logger.log_event(EventType.LOG_MESSAGE, level=LogLevel.WARNING, message="warn msg")
+
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        content = log_file.read_text()
+
+        # INFO should be filtered out
+        assert "info msg" not in content
+        # GATE and above should be included
+        assert "phase_enter" in content
+        assert "warn msg" in content
+
+    def test_gate_serializes_to_json(self):
+        """GATE level should serialize correctly to JSON."""
+        entry = LogEntry(
+            ts=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
+            level=LogLevel.GATE,
+            event=EventType.PHASE_ENTER,
+            session_id="abc123",
+            data={"phase": "coding"},
+        )
+        json_str = entry.to_json()
+        parsed = json.loads(json_str)
+        assert parsed["level"] == "gate"
+
+    def test_gate_deserializes_from_json(self):
+        """GATE level should deserialize correctly from JSON."""
+        json_str = json.dumps({
+            "ts": "2024-01-15T10:30:00+00:00",
+            "level": "gate",
+            "event": "phase_enter",
+            "session_id": "abc123",
+            "phase": "coding",
+        })
+        entry = LogEntry.from_json(json_str)
+        assert entry.level == LogLevel.GATE
+
+
+class TestNewEventTypes:
+    """Tests for new event types PHASE_ENTER, PHASE_EXIT, ERROR_CLASSIFIED, HOOK_FIRED (Feature #113)."""
+
+    def test_phase_enter_exists(self):
+        """PHASE_ENTER should exist as EventType enum value."""
+        assert hasattr(EventType, "PHASE_ENTER")
+        assert EventType.PHASE_ENTER.value == "phase_enter"
+
+    def test_phase_exit_exists(self):
+        """PHASE_EXIT should exist as EventType enum value."""
+        assert hasattr(EventType, "PHASE_EXIT")
+        assert EventType.PHASE_EXIT.value == "phase_exit"
+
+    def test_error_classified_exists(self):
+        """ERROR_CLASSIFIED should exist as EventType enum value."""
+        assert hasattr(EventType, "ERROR_CLASSIFIED")
+        assert EventType.ERROR_CLASSIFIED.value == "error_classified"
+
+    def test_hook_fired_exists(self):
+        """HOOK_FIRED should exist as EventType enum value."""
+        assert hasattr(EventType, "HOOK_FIRED")
+        assert EventType.HOOK_FIRED.value == "hook_fired"
+
+    def test_phase_enter_serializes_to_json(self):
+        """PHASE_ENTER event should serialize correctly."""
+        entry = LogEntry(
+            ts=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
+            level=LogLevel.GATE,
+            event=EventType.PHASE_ENTER,
+            session_id="abc123",
+            data={"phase": "validating"},
+        )
+        json_str = entry.to_json()
+        parsed = json.loads(json_str)
+        assert parsed["event"] == "phase_enter"
+
+    def test_phase_exit_serializes_to_json(self):
+        """PHASE_EXIT event should serialize correctly."""
+        entry = LogEntry(
+            ts=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
+            level=LogLevel.GATE,
+            event=EventType.PHASE_EXIT,
+            session_id="abc123",
+            data={"phase": "coding", "duration_seconds": 120.5},
+        )
+        json_str = entry.to_json()
+        parsed = json.loads(json_str)
+        assert parsed["event"] == "phase_exit"
+        assert parsed["duration_seconds"] == 120.5
+
+    def test_error_classified_serializes_to_json(self):
+        """ERROR_CLASSIFIED event should serialize correctly."""
+        entry = LogEntry(
+            ts=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
+            level=LogLevel.ERROR,
+            event=EventType.ERROR_CLASSIFIED,
+            session_id="abc123",
+            data={"error_type": "manual", "error_category": "security"},
+        )
+        json_str = entry.to_json()
+        parsed = json.loads(json_str)
+        assert parsed["event"] == "error_classified"
+        assert parsed["error_type"] == "manual"
+
+    def test_hook_fired_serializes_to_json(self):
+        """HOOK_FIRED event should serialize correctly."""
+        entry = LogEntry(
+            ts=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
+            level=LogLevel.INFO,
+            event=EventType.HOOK_FIRED,
+            session_id="abc123",
+            data={"hook_name": "session-start", "result": "success"},
+        )
+        json_str = entry.to_json()
+        parsed = json.loads(json_str)
+        assert parsed["event"] == "hook_fired"
+        assert parsed["hook_name"] == "session-start"
+
+    def test_new_events_deserialize_from_json(self):
+        """All new event types should deserialize correctly from JSON."""
+        events = [
+            ("phase_enter", EventType.PHASE_ENTER),
+            ("phase_exit", EventType.PHASE_EXIT),
+            ("error_classified", EventType.ERROR_CLASSIFIED),
+            ("hook_fired", EventType.HOOK_FIRED),
+        ]
+        for event_str, expected_type in events:
+            json_str = json.dumps({
+                "ts": "2024-01-15T10:30:00+00:00",
+                "level": "info",
+                "event": event_str,
+                "session_id": "abc123",
+            })
+            entry = LogEntry.from_json(json_str)
+            assert entry.event == expected_type, f"Failed for {event_str}"
+
+    def test_default_log_levels_for_new_events(self):
+        """New events should have correct default log levels (DR-015)."""
+        from claude_agent.logging import EVENT_LEVELS
+
+        # PHASE_ENTER and PHASE_EXIT use GATE level
+        assert EVENT_LEVELS[EventType.PHASE_ENTER] == LogLevel.GATE
+        assert EVENT_LEVELS[EventType.PHASE_EXIT] == LogLevel.GATE
+        # ERROR_CLASSIFIED uses ERROR level
+        assert EVENT_LEVELS[EventType.ERROR_CLASSIFIED] == LogLevel.ERROR
+        # HOOK_FIRED uses INFO level
+        assert EVENT_LEVELS[EventType.HOOK_FIRED] == LogLevel.INFO
+
+
+class TestPhaseEnterExitMethods:
+    """Tests for phase_enter and phase_exit methods (Feature #114, DR-016)."""
+
+    def test_phase_enter_logs_phase_enter_event(self, tmp_path):
+        """phase_enter should log a PHASE_ENTER event."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        logger.phase_enter("coding")
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        phase_entry = next((e for e in entries if e["event"] == "phase_enter"), None)
+        assert phase_entry is not None
+        assert phase_entry["phase"] == "coding"
+        assert phase_entry["level"] == "gate"
+
+    def test_phase_enter_sets_current_phase(self, tmp_path):
+        """phase_enter should set current_phase instance variable."""
+        logger = AgentLogger(tmp_path)
+        logger.session_id = "test123"
+
+        assert logger.current_phase == ""
+        logger.phase_enter("validating")
+        assert logger.current_phase == "validating"
+
+    def test_phase_exit_logs_phase_exit_event(self, tmp_path):
+        """phase_exit should log a PHASE_EXIT event."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        logger.phase_enter("coding")
+        logger.phase_exit("coding")
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        exit_entry = next((e for e in entries if e["event"] == "phase_exit"), None)
+        assert exit_entry is not None
+        assert exit_entry["phase"] == "coding"
+        assert exit_entry["level"] == "gate"
+
+    def test_phase_exit_calculates_duration(self, tmp_path):
+        """phase_exit should calculate duration if entry time available."""
+        import time
+
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        logger.phase_enter("coding")
+        time.sleep(0.1)  # Small delay
+        logger.phase_exit("coding")
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        exit_entry = next((e for e in entries if e["event"] == "phase_exit"), None)
+        assert exit_entry is not None
+        assert "duration_seconds" in exit_entry
+        assert exit_entry["duration_seconds"] >= 0.1
+
+    def test_phase_exit_clears_current_phase(self, tmp_path):
+        """phase_exit should clear current_phase after logging."""
+        logger = AgentLogger(tmp_path)
+        logger.session_id = "test123"
+
+        logger.phase_enter("coding")
+        assert logger.current_phase == "coding"
+        logger.phase_exit("coding")
+        assert logger.current_phase == ""
+
+    def test_phase_enter_includes_context_kwargs(self, tmp_path):
+        """phase_enter should include context kwargs in event data."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        logger.phase_enter("coding", iteration=5, model="claude-opus")
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        phase_entry = next((e for e in entries if e["event"] == "phase_enter"), None)
+        assert phase_entry is not None
+        assert phase_entry["iteration"] == 5
+        assert phase_entry["model"] == "claude-opus"
+
+    def test_phase_exit_includes_context_kwargs(self, tmp_path):
+        """phase_exit should include context kwargs in event data."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        logger.phase_enter("validating")
+        logger.phase_exit("validating", verdict="approved", features_tested=10)
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        exit_entry = next((e for e in entries if e["event"] == "phase_exit"), None)
+        assert exit_entry is not None
+        assert exit_entry["verdict"] == "approved"
+        assert exit_entry["features_tested"] == 10
+
+
+class TestLogErrorClassified:
+    """Tests for log_error_classified method (Feature #115)."""
+
+    def test_logs_error_classified_event(self, tmp_path):
+        """log_error_classified should log ERROR_CLASSIFIED event."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        # Create a mock StructuredError-like object
+        class MockError:
+            type = type("MockType", (), {"value": "manual"})()
+            category = type("MockCategory", (), {"value": "security"})()
+            message = "Command blocked"
+            recovery_hint = "Add to allowlist"
+            context = {"command": "rm -rf /"}
+
+        logger.log_error_classified(MockError())
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        error_entry = next((e for e in entries if e["event"] == "error_classified"), None)
+        assert error_entry is not None
+        assert error_entry["level"] == "error"
+
+    def test_includes_error_type_and_category(self, tmp_path):
+        """log_error_classified should include error type and category."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        class MockError:
+            type = type("MockType", (), {"value": "retry"})()
+            category = type("MockCategory", (), {"value": "network"})()
+            message = "Connection failed"
+            recovery_hint = "Check internet"
+            context = {}
+
+        logger.log_error_classified(MockError())
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        error_entry = next((e for e in entries if e["event"] == "error_classified"), None)
+        assert error_entry is not None
+        assert error_entry["error_type"] == "retry"
+        assert error_entry["error_category"] == "network"
+
+    def test_includes_recovery_hint(self, tmp_path):
+        """log_error_classified should include recovery_hint."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        class MockError:
+            type = type("MockType", (), {"value": "manual"})()
+            category = type("MockCategory", (), {"value": "config"})()
+            message = "Invalid config"
+            recovery_hint = "Check .claude-agent.yaml"
+            context = {}
+
+        logger.log_error_classified(MockError())
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        error_entry = next((e for e in entries if e["event"] == "error_classified"), None)
+        assert error_entry is not None
+        assert error_entry["recovery_hint"] == "Check .claude-agent.yaml"
+
+
+class TestLogHookFired:
+    """Tests for log_hook_fired method (Feature #116)."""
+
+    def test_logs_hook_fired_event(self, tmp_path):
+        """log_hook_fired should log HOOK_FIRED event."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        logger.log_hook_fired("session-start", "success")
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        hook_entry = next((e for e in entries if e["event"] == "hook_fired"), None)
+        assert hook_entry is not None
+        assert hook_entry["level"] == "info"
+
+    def test_includes_hook_name(self, tmp_path):
+        """log_hook_fired should include hook name."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        logger.log_hook_fired("session-stop", "{}")
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        hook_entry = next((e for e in entries if e["event"] == "hook_fired"), None)
+        assert hook_entry is not None
+        assert hook_entry["hook_name"] == "session-stop"
+
+    def test_includes_result(self, tmp_path):
+        """log_hook_fired should include result."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        logger.log_hook_fired("session-start", '{"additionalContext": "test"}')
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        hook_entry = next((e for e in entries if e["event"] == "hook_fired"), None)
+        assert hook_entry is not None
+        assert "additionalContext" in hook_entry["result"]
+
+
+class TestPhaseFieldInLogEntry:
+    """Tests for phase field in LogEntry (Feature #117, DR-016)."""
+
+    def test_phase_field_serializes_to_json(self):
+        """LogEntry phase field should serialize to JSON."""
+        entry = LogEntry(
+            ts=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
+            level=LogLevel.INFO,
+            event=EventType.TOOL_CALL,
+            session_id="abc123",
+            data={"tool_name": "Bash"},
+            phase="coding",
+        )
+        json_str = entry.to_json()
+        parsed = json.loads(json_str)
+        assert parsed["phase"] == "coding"
+
+    def test_phase_field_deserializes_from_json(self):
+        """LogEntry should deserialize phase field from JSON."""
+        json_str = json.dumps({
+            "ts": "2024-01-15T10:30:00+00:00",
+            "level": "info",
+            "event": "tool_call",
+            "session_id": "abc123",
+            "phase": "validating",
+        })
+        entry = LogEntry.from_json(json_str)
+        assert entry.phase == "validating"
+
+    def test_phase_field_defaults_to_empty_string(self):
+        """LogEntry phase field should default to empty string (DR-016)."""
+        entry = LogEntry(
+            ts=datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc),
+            level=LogLevel.INFO,
+            event=EventType.TOOL_CALL,
+            session_id="abc123",
+        )
+        assert entry.phase == ""
+
+    def test_phase_field_backward_compatible(self):
+        """LogEntry should handle missing phase in old logs (DR-019)."""
+        # Old log format without phase field
+        json_str = json.dumps({
+            "ts": "2024-01-15T10:30:00+00:00",
+            "level": "info",
+            "event": "session_start",
+            "session_id": "abc123",
+            "model": "claude-opus",
+        })
+        entry = LogEntry.from_json(json_str)
+        assert entry.phase == ""  # Should default to empty string
+
+    def test_log_event_includes_current_phase(self, tmp_path):
+        """log_event should include current_phase in entries."""
+        config = LoggingConfig(level=LogLevel.DEBUG)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        # Set current phase
+        logger.current_phase = "coding"
+        logger.log_event(EventType.TOOL_CALL, tool_name="Bash")
+        logger._flush_buffer()
+
+        log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
+        entries = [json.loads(line) for line in log_file.read_text().strip().split("\n")]
+
+        tool_entry = next((e for e in entries if e["event"] == "tool_call"), None)
+        assert tool_entry is not None
+        assert tool_entry["phase"] == "coding"
+
+
+class TestPhaseFilterInLogReader:
+    """Tests for phase filter in LogReader.read_entries() (Feature #118, DR-017)."""
+
+    def test_filtering_returns_only_matching_phase_entries(self, tmp_path):
+        """Phase filter should return only entries with matching phase."""
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": "coding"},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": "validating"},
+            {"ts": "2024-01-15T10:02:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": "coding"},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        reader = LogReader(tmp_path)
+        filtered = reader.read_entries(phase="coding")
+
+        assert len(filtered) == 2
+        assert all(e.phase == "coding" for e in filtered)
+
+    def test_none_phase_returns_all_entries(self, tmp_path):
+        """None phase should return all entries."""
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": "coding"},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": "validating"},
+            {"ts": "2024-01-15T10:02:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": ""},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        reader = LogReader(tmp_path)
+        filtered = reader.read_entries(phase=None, limit=100)
+
+        assert len(filtered) == 3
+
+    def test_phase_filter_combines_with_other_filters(self, tmp_path):
+        """Phase filter should combine with other filters (DR-017 AND logic)."""
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "warning", "event": "security_block", "session_id": "abc", "phase": "coding"},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": "coding"},
+            {"ts": "2024-01-15T10:02:00+00:00", "level": "warning", "event": "security_block", "session_id": "xyz", "phase": "coding"},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        reader = LogReader(tmp_path)
+        # Filter by phase AND session_id
+        filtered = reader.read_entries(phase="coding", session_id="abc")
+
+        assert len(filtered) == 2
+        assert all(e.phase == "coding" and e.session_id == "abc" for e in filtered)
+
+
+class TestErrorsOnlyFilterInLogReader:
+    """Tests for errors_only filter in LogReader.read_entries() (Feature #119)."""
+
+    def test_true_returns_only_error_events(self, tmp_path):
+        """errors_only=True should return only ERROR and ERROR_CLASSIFIED events."""
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "error", "event": "error", "session_id": "abc", "phase": ""},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": ""},
+            {"ts": "2024-01-15T10:02:00+00:00", "level": "error", "event": "error_classified", "session_id": "abc", "phase": ""},
+            {"ts": "2024-01-15T10:03:00+00:00", "level": "warning", "event": "security_block", "session_id": "abc", "phase": ""},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        reader = LogReader(tmp_path)
+        filtered = reader.read_entries(errors_only=True)
+
+        assert len(filtered) == 2
+        assert all(e.level == LogLevel.ERROR or e.event == EventType.ERROR_CLASSIFIED for e in filtered)
+
+    def test_false_returns_all_events(self, tmp_path):
+        """errors_only=False should return all events."""
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "error", "event": "error", "session_id": "abc", "phase": ""},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": ""},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        reader = LogReader(tmp_path)
+        filtered = reader.read_entries(errors_only=False)
+
+        assert len(filtered) == 2
+
+    def test_errors_only_combines_with_other_filters(self, tmp_path):
+        """errors_only should combine with other filters (DR-017 AND logic)."""
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "error", "event": "error", "session_id": "abc", "phase": "coding"},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "error", "event": "error", "session_id": "abc", "phase": "validating"},
+            {"ts": "2024-01-15T10:02:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": "coding"},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        reader = LogReader(tmp_path)
+        # Filter by errors_only AND phase
+        filtered = reader.read_entries(errors_only=True, phase="coding")
+
+        assert len(filtered) == 1
+        assert filtered[0].phase == "coding"
+        assert filtered[0].level == LogLevel.ERROR
+
+
+class TestWorkflowIdFilter:
+    """Tests for workflow_id filter in LogReader.read_entries()."""
+
+    def test_workflow_id_filters_by_session(self, tmp_path):
+        """workflow_id should filter by session_id (alias)."""
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "info", "event": "tool_call", "session_id": "workflow-abc", "phase": ""},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "info", "event": "tool_call", "session_id": "workflow-xyz", "phase": ""},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        reader = LogReader(tmp_path)
+        filtered = reader.read_entries(workflow_id="workflow-abc")
+
+        assert len(filtered) == 1
+        assert filtered[0].session_id == "workflow-abc"
+
+
+class TestCLILogOptionsIntegration:
+    """Integration tests for new CLI log options (Feature #120)."""
+
+    def test_phase_option_filters_correctly(self, tmp_path):
+        """--phase option should filter log entries by phase."""
+        from click.testing import CliRunner
+        from claude_agent.cli import logs
+
+        # Create log file with entries
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": "coding"},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": "validating"},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        runner = CliRunner()
+        result = runner.invoke(logs, [str(tmp_path), "--phase", "coding", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert len(output) == 1
+        assert output[0]["phase"] == "coding"
+
+    def test_level_gate_works(self, tmp_path):
+        """--level gate option should filter to GATE level and above."""
+        from click.testing import CliRunner
+        from claude_agent.cli import logs
+
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "info", "event": "session_start", "session_id": "abc", "phase": ""},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "gate", "event": "phase_enter", "session_id": "abc", "phase": "coding"},
+            {"ts": "2024-01-15T10:02:00+00:00", "level": "warning", "event": "security_block", "session_id": "abc", "phase": ""},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        runner = CliRunner()
+        result = runner.invoke(logs, [str(tmp_path), "--level", "gate", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        # Should include GATE and WARNING, exclude INFO
+        assert len(output) == 2
+        assert all(e["level"] in ["gate", "warning", "error"] for e in output)
+
+    def test_errors_shorthand_works(self, tmp_path):
+        """--errors shorthand should filter to error events."""
+        from click.testing import CliRunner
+        from claude_agent.cli import logs
+
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "error", "event": "error", "session_id": "abc", "phase": ""},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": ""},
+            {"ts": "2024-01-15T10:02:00+00:00", "level": "error", "event": "error_classified", "session_id": "abc", "phase": ""},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        runner = CliRunner()
+        result = runner.invoke(logs, [str(tmp_path), "--errors", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert len(output) == 2
+        assert all(e["event"] in ["error", "error_classified"] for e in output)
+
+    def test_workflow_option_filters_correctly(self, tmp_path):
+        """--workflow option should filter by workflow/session ID."""
+        from click.testing import CliRunner
+        from claude_agent.cli import logs
+
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "info", "event": "tool_call", "session_id": "workflow-123", "phase": ""},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "info", "event": "tool_call", "session_id": "workflow-456", "phase": ""},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        runner = CliRunner()
+        result = runner.invoke(logs, [str(tmp_path), "--workflow", "workflow-123", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        assert len(output) == 1
+        assert output[0]["session_id"] == "workflow-123"
+
+    def test_combined_filters_work(self, tmp_path):
+        """Multiple filter options should combine with AND logic (DR-017)."""
+        from click.testing import CliRunner
+        from claude_agent.cli import logs
+
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        entries = [
+            {"ts": "2024-01-15T10:00:00+00:00", "level": "error", "event": "error", "session_id": "abc", "phase": "coding"},
+            {"ts": "2024-01-15T10:01:00+00:00", "level": "error", "event": "error", "session_id": "abc", "phase": "validating"},
+            {"ts": "2024-01-15T10:02:00+00:00", "level": "info", "event": "tool_call", "session_id": "abc", "phase": "coding"},
+            {"ts": "2024-01-15T10:03:00+00:00", "level": "error", "event": "error", "session_id": "xyz", "phase": "coding"},
+        ]
+        log_file = log_dir / "agent.log"
+        log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+
+        runner = CliRunner()
+        # Combine --errors AND --phase AND --workflow (session)
+        result = runner.invoke(logs, [str(tmp_path), "--errors", "--phase", "coding", "--session", "abc", "--json"])
+
+        assert result.exit_code == 0
+        output = json.loads(result.output)
+        # Should only match the one entry that satisfies all conditions
+        assert len(output) == 1
+        assert output[0]["phase"] == "coding"
+        assert output[0]["session_id"] == "abc"
+        assert output[0]["event"] == "error"
