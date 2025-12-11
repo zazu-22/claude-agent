@@ -21,7 +21,11 @@ Key files:
 - `src/claude_agent/config.py` - Configuration loading and merging
 - `src/claude_agent/security.py` - Command allowlist security hooks
 - `src/claude_agent/progress.py` - Progress tracking utilities
+- `src/claude_agent/structured_errors.py` - Machine-processable error classification
+- `src/claude_agent/state.py` - XDG-compliant workflow state management
+- `src/claude_agent/hooks/` - Claude Code hooks for session detection
 - `src/claude_agent/prompts/*.md` - Agent prompt templates
+- `src/claude_agent/prompts/skills/` - Modular skill modules for prompt injection
 
 ## Build & Commands
 
@@ -74,6 +78,23 @@ uv run claude-agent status [DIR]
 # Reset agent files
 uv run claude-agent --reset
 ```
+
+### Hooks Commands
+
+```bash
+# Install Claude Code hooks to a project
+uv run claude-agent hooks install [DIR]
+
+# Uninstall Claude Code hooks from a project
+uv run claude-agent hooks uninstall [DIR]
+
+# Check hook installation status
+uv run claude-agent hooks status [DIR]
+```
+
+Hooks enable session detection for context injection:
+- **session-start.sh**: Injects workflow state into Claude Code context
+- **session-stop.sh**: Records session end for state tracking
 
 ### Testing
 
@@ -254,6 +275,106 @@ The agent creates these files in the project directory:
   - `schemas.yaml` - Data model definitions
   - `decisions.yaml` - Architectural decision records
 
+### XDG State Directory
+
+Operational state is stored in XDG-compliant directories (not in project directory):
+
+```
+~/.local/state/claude-agent/     # XDG_STATE_HOME fallback
+├── workflows/
+│   └── {project_hash}/          # 12-char SHA256 hash of project path
+│       └── workflow-state.json  # Current workflow state
+└── logs/
+    └── agent-{date}.log         # Agent execution logs
+```
+
+**Project Hash Isolation:**
+Each project gets an isolated workflow directory based on a 12-character SHA256 hash
+of the absolute project path. This ensures:
+- No collision between projects with same name
+- Stable paths across sessions
+- Clean separation of state from project files
+
+**Migration Behavior:**
+On first run, the agent automatically migrates legacy state files to XDG:
+- `validation-history.json` → `~/.local/state/claude-agent/workflows/{hash}/`
+- `drift-metrics.json` → `~/.local/state/claude-agent/workflows/{hash}/`
+- `.claude-agent/logs/` → `~/.local/state/claude-agent/logs/`
+
+Project-bound files remain in place: `feature_list.json`, `architecture/`, `app_spec.txt`, `claude-progress.txt`
+
+### Skill System
+
+Skills are modular prompt components that can be injected into agent prompts.
+
+**Skill Location:** `src/claude_agent/prompts/skills/`
+
+**Available Skills:**
+- `regression-testing` - Testing previous features for regressions
+- `error-recovery` - Common error handling patterns
+- `architecture-verification` - Lock file verification process
+- `browser-testing` - UI automation patterns
+
+**Injection Syntax:** Use `{{skill:name}}` in prompts:
+```markdown
+Before implementing, verify:
+{{skill:architecture-verification}}
+
+When testing:
+{{skill:browser-testing}}
+```
+
+**Adding New Skills:**
+1. Create `src/claude_agent/prompts/skills/{skill-name}.md`
+2. Include required sections: Purpose, When to Use, Pattern
+3. Keep each skill under 5KB
+4. Use `{{skill:skill-name}}` in prompts
+
+**Prompt Size Limits:**
+- Warning logged if assembled prompt exceeds 50KB
+- Target 4-5 skills per prompt maximum
+
+### StructuredError System
+
+Machine-processable errors for automated recovery:
+
+**ErrorType Values:**
+| Type | Behavior |
+|------|----------|
+| `RETRY` | Auto-retry up to 3 times |
+| `MANUAL` | Pause workflow, display guidance |
+| `FATAL` | Abort with clear message |
+| `TIMEOUT` | Log and escalate |
+
+**ErrorCategory Values:**
+| Category | Description |
+|----------|-------------|
+| `NETWORK` | API failures, connection refused |
+| `AUTH` | Permission denied, token expired |
+| `LOGIC` | Lint/type/test failures |
+| `CONFIG` | Invalid configuration values |
+| `RESOURCE` | Missing files, branches, dependencies |
+| `SECURITY` | Command blocked by security hook |
+| `VALIDATION` | Feature validation failures |
+
+**Factory Functions:**
+```python
+from claude_agent.structured_errors import (
+    error_security_block,     # For blocked commands
+    error_validation_failed,  # For feature validation failures
+    error_file_not_found,     # For missing files
+    error_git_operation,      # For git errors (retryable)
+    error_test_failure,       # For test failures
+    error_agent_timeout,      # For agent timeouts
+)
+```
+
+**Recovery Flow:**
+1. Error created with type, category, message, recovery_hint
+2. Persisted to workflow state as `last_error`
+3. Displayed in status command
+4. Cleared on successful recovery
+
 ## Directory Structure
 
 ```
@@ -271,7 +392,11 @@ claude-agent/
 │   ├── metrics.py         # Drift detection metrics tracking
 │   ├── progress.py        # Progress tracking
 │   ├── security.py        # Security hooks
+│   ├── state.py           # XDG workflow state management
+│   ├── structured_errors.py # Machine-processable error classification
 │   ├── wizard.py          # Interactive spec wizard
+│   ├── hooks/             # Claude Code hooks
+│   │   └── __init__.py    # Hook generation and installation
 │   └── prompts/           # Agent prompts
 │       ├── __init__.py
 │       ├── loader.py      # Prompt loading utilities
@@ -279,7 +404,13 @@ claude-agent/
 │       ├── coding.md      # Coding agent prompt
 │       ├── initializer.md # Initializer agent prompt
 │       ├── review.md      # Spec review prompt
-│       └── validator.md   # Validator agent prompt
+│       ├── validator.md   # Validator agent prompt
+│       └── skills/        # Modular skill modules
+│           ├── __init__.py
+│           ├── architecture-verification.md
+│           ├── browser-testing.md
+│           ├── error-recovery.md
+│           └── regression-testing.md
 ├── scripts/               # Automation scripts
 │   ├── github_api.py      # GitHub API wrapper (code-first pattern)
 │   └── github_tasks/      # Task YAML definitions

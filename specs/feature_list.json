@@ -1754,7 +1754,7 @@
       "Step 3: Display features completed/total",
       "Step 4: Display last error if present"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1766,7 +1766,7 @@
       "Step 3: Show iteration count",
       "Step 4: Show pause reason if paused"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1822,7 +1822,7 @@
       "Step 3: Add hooks/ to directory structure",
       "Step 4: Add skills/ to prompts directory"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1834,7 +1834,7 @@
       "Step 3: Add 'hooks status' to command list",
       "Step 4: Include usage examples"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1846,7 +1846,7 @@
       "Step 3: Explain project hash isolation",
       "Step 4: Document migration behavior"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1858,7 +1858,7 @@
       "Step 3: Document how to add new skills",
       "Step 4: Explain prompt size limits"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1870,7 +1870,7 @@
       "Step 3: Document factory functions",
       "Step 4: Explain recovery flow"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
