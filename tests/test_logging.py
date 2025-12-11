@@ -1650,7 +1650,7 @@ class TestXDGLogSupport:
         expected_hash = get_project_hash(project_dir)
 
         config = LoggingConfig(use_xdg_logs=True)
-        with patch("claude_agent.logging.get_logs_dir", return_value=xdg_logs):
+        with patch("claude_agent.state.get_logs_dir", return_value=xdg_logs):
             logger = AgentLogger(project_dir, config=config)
 
         # Filename should include project hash
@@ -1670,7 +1670,7 @@ class TestXDGLogSupport:
         expected_hash = get_project_hash(project_dir)
 
         config = LoggingConfig(use_xdg_logs=True)
-        with patch("claude_agent.logging.get_logs_dir", return_value=xdg_logs):
+        with patch("claude_agent.state.get_logs_dir", return_value=xdg_logs):
             logger = AgentLogger(project_dir, config=config)
 
         # Stats filename should include project hash
@@ -1690,7 +1690,7 @@ class TestXDGLogSupport:
         xdg_logs.mkdir()
 
         config = LoggingConfig(use_xdg_logs=True)
-        with patch("claude_agent.logging.get_logs_dir", return_value=xdg_logs):
+        with patch("claude_agent.state.get_logs_dir", return_value=xdg_logs):
             logger1 = AgentLogger(project1, config=config)
             logger2 = AgentLogger(project2, config=config)
 

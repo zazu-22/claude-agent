@@ -24,7 +24,6 @@ from typing import Optional, Any
 
 from claude_agent.progress import atomic_write
 from claude_agent import __version__ as SDK_VERSION
-from claude_agent.state import get_logs_dir, get_project_hash
 
 
 class LogLevel(str, Enum):
