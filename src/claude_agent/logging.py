@@ -805,8 +805,10 @@ class AgentLogger:
             # Clean up files older than retention_days
             self._cleanup_old_files()
 
-        except OSError:
-            pass  # Rotation failed - continue with current file
+        except OSError as e:
+            # Rotation failed - log warning but continue with current file
+            # Using stderr since we're in the logging module itself
+            print(f"Warning: Log rotation failed: {e}. Continuing with current file.", file=sys.stderr)
 
     def _cleanup_old_files(self) -> None:
         """Delete rotated log files older than retention_days."""

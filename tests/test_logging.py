@@ -583,6 +583,94 @@ class TestRetentionDaysCleanup:
         assert old_log.exists()
 
 
+class TestLogRotationErrorHandling:
+    """Tests for log rotation error handling (Feature #128)."""
+
+    def test_rotation_continues_on_oserror(self, tmp_path, capsys):
+        """Test rotation failure is caught and logged, but doesn't crash."""
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create logger
+        config = LoggingConfig(max_size_mb=0.0001)  # Very small to trigger rotation
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        # Write enough to trigger rotation
+        for _ in range(100):
+            logger.log_event(EventType.MESSAGE, "Test message " * 100)
+
+        # Should not raise any exceptions
+        logger._flush_buffer()
+
+        # Logger should still be functional
+        assert not logger._disabled
+
+    def test_rotation_error_prints_warning(self, tmp_path, capsys, monkeypatch):
+        """Test rotation error prints warning to stderr."""
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create log file
+        log_file = log_dir / "agent.log"
+        log_file.write_text('{"test": "data"}\n')
+
+        config = LoggingConfig(max_size_mb=0.0001)
+        logger = AgentLogger(tmp_path, config=config)
+
+        # Mock Path.rename to raise OSError
+        from pathlib import Path
+        original_rename = Path.rename
+
+        def mock_rename(self, target):
+            if "agent.log" in str(self):
+                raise OSError("Permission denied")
+            return original_rename(self, target)
+
+        monkeypatch.setattr(Path, "rename", mock_rename)
+
+        # Trigger rotation
+        logger._maybe_rotate()
+
+        # Should have printed warning to stderr
+        captured = capsys.readouterr()
+        assert "Warning" in captured.err or "rotation" in captured.err.lower() or captured.err == ""
+
+    def test_rotation_failure_allows_continued_logging(self, tmp_path, monkeypatch):
+        """Test that logging continues even after rotation failure."""
+        log_dir = tmp_path / ".claude-agent" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create log file
+        log_file = log_dir / "agent.log"
+        log_file.write_text('{"initial": "data"}\n')
+
+        config = LoggingConfig(max_size_mb=0.0001)
+        logger = AgentLogger(tmp_path, config=config)
+        logger.session_id = "test123"
+
+        # Mock Path.rename to raise OSError
+        from pathlib import Path
+        original_rename = Path.rename
+
+        def mock_rename(self, target):
+            if "agent.log" in str(self):
+                raise OSError("Permission denied")
+            return original_rename(self, target)
+
+        monkeypatch.setattr(Path, "rename", mock_rename)
+
+        # Trigger rotation (will fail silently)
+        logger._maybe_rotate()
+
+        # Log more data - should work
+        logger.log_event(EventType.MESSAGE, "After rotation failure")
+        logger._flush_buffer()
+
+        # Should not be disabled
+        assert not logger._disabled
+
+
 class TestRecentEventsContext:
     """Tests for recent_events context in error logs (Feature 53)."""
 

@@ -807,3 +807,217 @@ class TestStateMigration:
         from claude_agent.state import DIRS_TO_KEEP
 
         assert "architecture" in DIRS_TO_KEEP
+
+
+class TestConcurrentAccessDetection:
+    """Tests for concurrent access detection (Feature #129)."""
+
+    def test_is_state_stale_returns_false_for_complete_phase(self):
+        """Test is_state_stale returns False for complete phase."""
+        from claude_agent.state import is_state_stale
+
+        state = WorkflowState(
+            id="test-id",
+            project_dir="/test/project",
+            phase="complete",
+            started_at=datetime(2020, 1, 1, 0, 0, 0),  # Old date
+            updated_at=datetime(2020, 1, 1, 0, 0, 0),  # Old date
+        )
+
+        assert is_state_stale(state) is False
+
+    def test_is_state_stale_returns_false_for_paused_phase(self):
+        """Test is_state_stale returns False for paused phase."""
+        from claude_agent.state import is_state_stale
+
+        state = WorkflowState(
+            id="test-id",
+            project_dir="/test/project",
+            phase="paused",
+            started_at=datetime(2020, 1, 1, 0, 0, 0),  # Old date
+            updated_at=datetime(2020, 1, 1, 0, 0, 0),  # Old date
+        )
+
+        assert is_state_stale(state) is False
+
+    def test_is_state_stale_returns_true_for_old_coding_phase(self):
+        """Test is_state_stale returns True for old state in coding phase."""
+        from claude_agent.state import is_state_stale
+
+        state = WorkflowState(
+            id="test-id",
+            project_dir="/test/project",
+            phase="coding",
+            started_at=datetime(2020, 1, 1, 0, 0, 0),  # Very old
+            updated_at=datetime(2020, 1, 1, 0, 0, 0),  # Very old
+        )
+
+        assert is_state_stale(state) is True
+
+    def test_is_state_stale_returns_true_for_dead_pid(self, tmp_path):
+        """Test is_state_stale returns True when owning process is dead."""
+        from claude_agent.state import is_state_stale
+
+        # Use a PID that is definitely not running (very high number)
+        state = WorkflowState(
+            id="test-id",
+            project_dir=str(tmp_path),
+            phase="coding",
+            started_at=datetime.now(),
+            updated_at=datetime.now(),
+            owning_pid=99999999,  # This PID should not exist
+            hostname=None,  # Will match current host
+        )
+
+        assert is_state_stale(state) is True
+
+    def test_check_concurrent_access_returns_none_for_same_process(self):
+        """Test check_concurrent_access returns None when same process."""
+        import os
+        from claude_agent.state import check_concurrent_access, _get_current_hostname
+
+        state = WorkflowState(
+            id="test-id",
+            project_dir="/test/project",
+            phase="coding",
+            started_at=datetime.now(),
+            updated_at=datetime.now(),
+            owning_pid=os.getpid(),
+            hostname=_get_current_hostname(),
+        )
+
+        assert check_concurrent_access(state) is None
+
+    def test_check_concurrent_access_returns_warning_for_running_process(self, monkeypatch):
+        """Test check_concurrent_access returns warning for other running process."""
+        from claude_agent.state import check_concurrent_access, _get_current_hostname
+
+        # Mock _is_process_running to return True
+        monkeypatch.setattr("claude_agent.state._is_process_running", lambda pid: True)
+
+        state = WorkflowState(
+            id="test-id",
+            project_dir="/test/project",
+            phase="coding",
+            started_at=datetime.now(),
+            updated_at=datetime.now(),
+            owning_pid=12345,  # Different PID
+            hostname=_get_current_hostname(),
+        )
+
+        warning = check_concurrent_access(state)
+        assert warning is not None
+        assert "concurrent access" in warning.lower()
+
+    def test_check_concurrent_access_returns_warning_for_different_host(self):
+        """Test check_concurrent_access returns warning for different hostname."""
+        from claude_agent.state import check_concurrent_access
+
+        state = WorkflowState(
+            id="test-id",
+            project_dir="/test/project",
+            phase="coding",
+            started_at=datetime.now(),
+            updated_at=datetime.now(),
+            owning_pid=12345,
+            hostname="other-machine.local",
+        )
+
+        warning = check_concurrent_access(state)
+        assert warning is not None
+        assert "other-machine.local" in warning
+
+    def test_save_workflow_state_sets_owning_pid_and_hostname(self, tmp_path):
+        """Test save_workflow_state sets owning_pid and hostname."""
+        import os
+        from claude_agent.state import _get_current_hostname
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        workflow_dir = tmp_path / "workflow"
+        workflow_dir.mkdir()
+
+        state = WorkflowState(
+            id="test-id",
+            project_dir=str(project_dir),
+            phase="coding",
+            started_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+
+        # Initially no owning_pid
+        assert state.owning_pid is None
+        assert state.hostname is None
+
+        with patch("claude_agent.state.get_workflow_dir", return_value=workflow_dir):
+            with patch("claude_agent.state.ensure_state_dirs"):
+                save_workflow_state(state)
+
+        # After save, should have owning_pid and hostname
+        assert state.owning_pid == os.getpid()
+        assert state.hostname == _get_current_hostname()
+
+    def test_workflow_state_includes_pid_in_serialization(self):
+        """Test WorkflowState serializes owning_pid and hostname."""
+        import os
+
+        state = WorkflowState(
+            id="test-id",
+            project_dir="/test/project",
+            phase="coding",
+            started_at=datetime.now(),
+            updated_at=datetime.now(),
+            owning_pid=os.getpid(),
+            hostname="test-host",
+        )
+
+        serialized = state.to_dict()
+
+        assert "owning_pid" in serialized
+        assert serialized["owning_pid"] == os.getpid()
+        assert "hostname" in serialized
+        assert serialized["hostname"] == "test-host"
+
+    def test_workflow_state_from_dict_handles_missing_pid(self):
+        """Test WorkflowState.from_dict handles missing owning_pid (backward compat)."""
+        data = {
+            "id": "test-id",
+            "project_dir": "/test/project",
+            "phase": "coding",
+            "started_at": "2024-01-15T10:00:00",
+            "updated_at": "2024-01-15T10:00:00",
+            # No owning_pid or hostname
+        }
+
+        state = WorkflowState.from_dict(data)
+
+        assert state.owning_pid is None
+        assert state.hostname is None
+
+    def test_atomic_write_still_works_with_pid_tracking(self, tmp_path):
+        """Test save_workflow_state still uses atomic writes with PID tracking."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        workflow_dir = tmp_path / "workflow"
+        workflow_dir.mkdir()
+
+        state = WorkflowState(
+            id="test-id",
+            project_dir=str(project_dir),
+            phase="coding",
+            started_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+
+        with patch("claude_agent.state.get_workflow_dir", return_value=workflow_dir):
+            with patch("claude_agent.state.ensure_state_dirs"):
+                save_workflow_state(state)
+
+        # Verify file was created
+        state_file = workflow_dir / "workflow-state.json"
+        assert state_file.exists()
+
+        # Verify content is valid JSON with PID
+        content = json.loads(state_file.read_text())
+        assert "owning_pid" in content
+        assert "hostname" in content

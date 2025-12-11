@@ -1563,7 +1563,7 @@
       "Step 3: Continue session without hook context",
       "Step 4: Don't block agent operation"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1575,7 +1575,7 @@
       "Step 3: Leave placeholder in prompt for missing skills",
       "Step 4: Log warning about missing skill"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1587,7 +1587,7 @@
       "Step 3: Log warning about rotation failure",
       "Step 4: Don't crash agent"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1599,7 +1599,7 @@
       "Step 3: Detect stale state on load",
       "Step 4: Warn if concurrent access detected"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {

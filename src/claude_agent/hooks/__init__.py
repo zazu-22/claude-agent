@@ -45,12 +45,216 @@ Usage
 """
 
 import json
+import logging
 import os
 import stat
+import subprocess
 from pathlib import Path
 from typing import Optional
 
 from claude_agent.state import get_state_dir, get_workflow_dir
+
+
+# Module logger
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Hook Execution with Error Handling
+# =============================================================================
+
+
+class HookExecutionError(Exception):
+    """Exception raised when hook execution fails."""
+
+    def __init__(self, hook_name: str, message: str, original_error: Optional[Exception] = None):
+        self.hook_name = hook_name
+        self.message = message
+        self.original_error = original_error
+        super().__init__(f"Hook '{hook_name}' failed: {message}")
+
+
+def execute_hook_safely(
+    script_path: str | Path,
+    timeout_ms: int = 5000,
+    cwd: Optional[str | Path] = None,
+) -> tuple[bool, str, Optional[str]]:
+    """Execute a hook script safely with error handling.
+
+    This function catches all exceptions and ensures the agent can continue
+    even if the hook fails. Per DR-011, hook failures should not block
+    agent operation.
+
+    Args:
+        script_path: Path to the hook script to execute
+        timeout_ms: Timeout in milliseconds (default: 5000)
+        cwd: Working directory for script execution (default: current directory)
+
+    Returns:
+        Tuple of:
+        - success: bool - Whether the hook executed successfully
+        - output: str - Hook stdout output (or empty JSON "{}" on failure)
+        - error: Optional[str] - Error message if failed, None if successful
+
+    Example:
+        >>> success, output, error = execute_hook_safely("/path/to/hook.sh")
+        >>> if success:
+        ...     print(f"Hook output: {output}")
+        ... else:
+        ...     print(f"Hook failed: {error}")
+    """
+    script_path = Path(script_path)
+    hook_name = script_path.name
+
+    # Validate script exists and is executable
+    if not script_path.exists():
+        error_msg = f"Hook script not found: {script_path}"
+        logger.warning(f"Hook execution failed for '{hook_name}': {error_msg}")
+        return False, "{}", error_msg
+
+    if not os.access(script_path, os.X_OK):
+        error_msg = f"Hook script is not executable: {script_path}"
+        logger.warning(f"Hook execution failed for '{hook_name}': {error_msg}")
+        return False, "{}", error_msg
+
+    # Convert timeout from milliseconds to seconds
+    timeout_seconds = timeout_ms / 1000.0
+
+    try:
+        # Execute the hook script
+        result = subprocess.run(
+            [str(script_path)],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            cwd=str(cwd) if cwd else None,
+            shell=False,  # More secure - don't use shell
+        )
+
+        # Get stdout output
+        output = result.stdout.strip() if result.stdout else "{}"
+
+        # Validate output is valid JSON
+        try:
+            json.loads(output)
+        except json.JSONDecodeError:
+            logger.warning(
+                f"Hook '{hook_name}' produced invalid JSON output: {output[:100]}..."
+            )
+            output = "{}"  # Return empty JSON on invalid output
+
+        # Log if hook exited with non-zero status (unusual since hooks should exit 0)
+        if result.returncode != 0:
+            logger.warning(
+                f"Hook '{hook_name}' exited with code {result.returncode}. "
+                f"stderr: {result.stderr[:200] if result.stderr else 'none'}"
+            )
+            # Still return the output - hook may have output valid JSON before error
+            return True, output, None
+
+        logger.debug(f"Hook '{hook_name}' executed successfully")
+        return True, output, None
+
+    except subprocess.TimeoutExpired as e:
+        error_msg = f"Hook timed out after {timeout_ms}ms"
+        logger.warning(f"Hook execution failed for '{hook_name}': {error_msg}")
+        return False, "{}", error_msg
+
+    except subprocess.SubprocessError as e:
+        error_msg = f"Subprocess error: {str(e)}"
+        logger.warning(f"Hook execution failed for '{hook_name}': {error_msg}")
+        return False, "{}", error_msg
+
+    except PermissionError as e:
+        error_msg = f"Permission denied: {str(e)}"
+        logger.warning(f"Hook execution failed for '{hook_name}': {error_msg}")
+        return False, "{}", error_msg
+
+    except OSError as e:
+        error_msg = f"OS error: {str(e)}"
+        logger.warning(f"Hook execution failed for '{hook_name}': {error_msg}")
+        return False, "{}", error_msg
+
+    except Exception as e:
+        # Catch-all for any unexpected errors - never crash the agent
+        error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
+        logger.error(f"Hook execution failed for '{hook_name}': {error_msg}")
+        return False, "{}", error_msg
+
+
+def execute_session_start_hook(
+    project_dir: Optional[str | Path] = None,
+    timeout_ms: int = 5000,
+) -> dict:
+    """Execute the session-start hook and return its context.
+
+    This is a convenience function that executes the session-start.sh hook
+    and parses its output. On any failure, returns an empty dict rather
+    than raising an exception.
+
+    Args:
+        project_dir: Project directory (defaults to current directory)
+        timeout_ms: Timeout in milliseconds (default: 5000)
+
+    Returns:
+        Dictionary with additionalContext if hook succeeded, empty dict otherwise.
+
+    Example:
+        >>> context = execute_session_start_hook("/path/to/project")
+        >>> if "additionalContext" in context:
+        ...     print(context["additionalContext"])
+    """
+    if project_dir is None:
+        project_dir = os.getcwd()
+    project_path = Path(project_dir).resolve()
+
+    script_path = project_path / ".claude" / "hooks" / "session-start.sh"
+
+    success, output, error = execute_hook_safely(
+        script_path, timeout_ms=timeout_ms, cwd=project_path
+    )
+
+    if not success:
+        logger.debug(f"Session start hook returned empty context: {error}")
+        return {}
+
+    try:
+        return json.loads(output)
+    except json.JSONDecodeError:
+        logger.warning(f"Could not parse session-start hook output: {output[:100]}...")
+        return {}
+
+
+def execute_session_stop_hook(
+    project_dir: Optional[str | Path] = None,
+    timeout_ms: int = 5000,
+) -> bool:
+    """Execute the session-stop hook.
+
+    This is a convenience function that executes the session-stop.sh hook.
+    The hook output is always {} so this just returns success status.
+
+    Args:
+        project_dir: Project directory (defaults to current directory)
+        timeout_ms: Timeout in milliseconds (default: 5000)
+
+    Returns:
+        True if hook executed successfully, False otherwise.
+    """
+    if project_dir is None:
+        project_dir = os.getcwd()
+    project_path = Path(project_dir).resolve()
+
+    script_path = project_path / ".claude" / "hooks" / "session-stop.sh"
+
+    success, _, error = execute_hook_safely(
+        script_path, timeout_ms=timeout_ms, cwd=project_path
+    )
+
+    if not success:
+        logger.debug(f"Session stop hook failed: {error}")
+
+    return success
 
 
 # =============================================================================
@@ -436,9 +640,16 @@ def get_hooks_status(project_dir: Optional[str] = None) -> dict:
 
 # Module exports
 __all__ = [
+    # Hook execution with error handling
+    "HookExecutionError",
+    "execute_hook_safely",
+    "execute_session_start_hook",
+    "execute_session_stop_hook",
+    # Hook configuration and scripts
     "generate_hooks_config",
     "generate_session_start_script",
     "generate_session_stop_script",
+    # Hook installation and management
     "install_hooks",
     "uninstall_hooks",
     "get_hooks_status",

@@ -68,13 +68,19 @@ Usage Example
 
 import hashlib
 import json
+import logging
 import os
 import platform
+import sys
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+
+# Module logger
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -83,6 +89,9 @@ from typing import Optional
 
 # Valid phase values for WorkflowState
 VALID_PHASES = frozenset({"initializing", "coding", "validating", "complete", "paused"})
+
+# Stale state threshold in seconds (state older than this may be from crashed process)
+STALE_STATE_THRESHOLD_SECONDS = 3600  # 1 hour
 
 
 # =============================================================================
@@ -245,6 +254,9 @@ class WorkflowState:
     last_error: Optional[dict] = None
     pause_reason: Optional[str] = None
     recovery_steps: list[str] = field(default_factory=list)
+    # Process tracking for concurrent access detection
+    owning_pid: Optional[int] = None
+    hostname: Optional[str] = None
 
     def __post_init__(self):
         """Validate phase on creation."""
@@ -275,6 +287,8 @@ class WorkflowState:
             "last_error": self.last_error,
             "pause_reason": self.pause_reason,
             "recovery_steps": self.recovery_steps,
+            "owning_pid": self.owning_pid,
+            "hostname": self.hostname,
         }
 
     @classmethod
@@ -310,6 +324,8 @@ class WorkflowState:
             last_error=data.get("last_error"),
             pause_reason=data.get("pause_reason"),
             recovery_steps=data.get("recovery_steps", []),
+            owning_pid=data.get("owning_pid"),
+            hostname=data.get("hostname"),
         )
 
 
@@ -317,11 +333,127 @@ class WorkflowState:
 # State Persistence Functions
 # =============================================================================
 
-def load_workflow_state(project_dir: Path | str) -> Optional[WorkflowState]:
+
+def _is_process_running(pid: int) -> bool:
+    """Check if a process with the given PID is currently running.
+
+    Args:
+        pid: Process ID to check
+
+    Returns:
+        True if process exists, False otherwise
+    """
+    try:
+        # On Unix, signal 0 checks if process exists without sending signal
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+    except (TypeError, ValueError):
+        # Invalid PID value
+        return False
+
+
+def _get_current_hostname() -> str:
+    """Get the current machine's hostname."""
+    import socket
+    try:
+        return socket.gethostname()
+    except Exception:
+        return "unknown"
+
+
+def is_state_stale(state: WorkflowState) -> bool:
+    """Check if workflow state appears to be from a crashed or dead process.
+
+    State is considered stale if:
+    1. It has an owning_pid that is no longer running (on same host)
+    2. It was last updated more than STALE_STATE_THRESHOLD_SECONDS ago
+       and is not in 'complete' or 'paused' phase
+
+    Args:
+        state: WorkflowState to check
+
+    Returns:
+        True if state appears stale, False otherwise
+    """
+    # Completed or paused states are never considered stale
+    if state.phase in ("complete", "paused"):
+        return False
+
+    # Check if owning process is still running (same host only)
+    current_hostname = _get_current_hostname()
+    if state.owning_pid is not None:
+        if state.hostname == current_hostname or state.hostname is None:
+            if not _is_process_running(state.owning_pid):
+                return True
+
+    # Check if state is old (over threshold)
+    try:
+        now = datetime.now(timezone.utc)
+        # Make updated_at timezone-aware if it isn't
+        updated_at = state.updated_at
+        if updated_at.tzinfo is None:
+            updated_at = updated_at.replace(tzinfo=timezone.utc)
+        age_seconds = (now - updated_at).total_seconds()
+        if age_seconds > STALE_STATE_THRESHOLD_SECONDS:
+            return True
+    except Exception:
+        # If we can't determine age, don't consider it stale
+        pass
+
+    return False
+
+
+def check_concurrent_access(state: WorkflowState) -> Optional[str]:
+    """Check for potential concurrent access to workflow state.
+
+    This function detects if another process may be working on the same
+    project. Concurrent access is not supported (per DR-006).
+
+    Args:
+        state: WorkflowState to check
+
+    Returns:
+        Warning message if concurrent access detected, None otherwise
+    """
+    if state.owning_pid is None:
+        return None
+
+    current_pid = os.getpid()
+    current_hostname = _get_current_hostname()
+
+    # Same process - no conflict
+    if state.owning_pid == current_pid and state.hostname == current_hostname:
+        return None
+
+    # Check if the owning process is still running
+    if state.hostname == current_hostname or state.hostname is None:
+        if _is_process_running(state.owning_pid):
+            return (
+                f"Warning: Possible concurrent access detected. "
+                f"Another process (PID {state.owning_pid}) may be working on this project. "
+                f"Concurrent access to state files is not supported."
+            )
+
+    # Different host - can't check if process is running
+    if state.hostname is not None and state.hostname != current_hostname:
+        return (
+            f"Warning: State was last modified by a process on '{state.hostname}'. "
+            f"If that process is still running, concurrent access may cause issues."
+        )
+
+    return None
+
+
+def load_workflow_state(project_dir: Path | str, warn_on_issues: bool = True) -> Optional[WorkflowState]:
     """Load workflow state for a project.
+
+    Includes checks for stale state and concurrent access warnings.
 
     Args:
         project_dir: Path to the project directory
+        warn_on_issues: If True, log warnings for stale/concurrent issues
 
     Returns:
         WorkflowState if file exists and is valid, None otherwise.
@@ -336,9 +468,25 @@ def load_workflow_state(project_dir: Path | str) -> Optional[WorkflowState]:
     try:
         with open(state_file, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return WorkflowState.from_dict(data)
-    except (json.JSONDecodeError, KeyError, ValueError):
+        state = WorkflowState.from_dict(data)
+
+        if warn_on_issues:
+            # Check for stale state
+            if is_state_stale(state):
+                logger.warning(
+                    f"Loaded workflow state appears stale (last updated: {state.updated_at}, "
+                    f"owning PID: {state.owning_pid}). The previous process may have crashed."
+                )
+
+            # Check for concurrent access
+            concurrent_warning = check_concurrent_access(state)
+            if concurrent_warning:
+                logger.warning(concurrent_warning)
+
+        return state
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
         # Return None on parse errors - let caller decide how to handle
+        logger.debug(f"Failed to parse workflow state: {e}")
         return None
 
 
@@ -346,7 +494,7 @@ def save_workflow_state(state: WorkflowState) -> None:
     """Save workflow state with atomic write.
 
     Uses temp file + rename pattern to prevent corruption on crash.
-    Automatically updates the updated_at timestamp.
+    Automatically updates the updated_at timestamp and owning process info.
 
     Args:
         state: WorkflowState to save
@@ -357,8 +505,10 @@ def save_workflow_state(state: WorkflowState) -> None:
     # Ensure directory exists
     ensure_state_dirs(state.project_dir)
 
-    # Update timestamp
+    # Update timestamp and owning process info
     state.updated_at = datetime.now()
+    state.owning_pid = os.getpid()
+    state.hostname = _get_current_hostname()
 
     # Get target path
     workflow_dir = get_workflow_dir(state.project_dir)

@@ -514,3 +514,226 @@ class TestHooksEdgeCases:
 
         assert status["installed"]
         assert any("not executable" in e.lower() for e in status["errors"])
+
+
+# =============================================================================
+# Test Hook Execution with Error Handling
+# =============================================================================
+
+
+class TestExecuteHookSafely:
+    """Tests for execute_hook_safely function - Feature #126."""
+
+    def test_returns_false_for_nonexistent_script(self, tmp_path):
+        """Test returns failure for non-existent script."""
+        from claude_agent.hooks import execute_hook_safely
+
+        script_path = tmp_path / "does-not-exist.sh"
+        success, output, error = execute_hook_safely(script_path)
+
+        assert success is False
+        assert output == "{}"
+        assert error is not None
+        assert "not found" in error.lower()
+
+    def test_returns_false_for_non_executable_script(self, tmp_path):
+        """Test returns failure for non-executable script."""
+        from claude_agent.hooks import execute_hook_safely
+
+        # Create script without execute permission
+        script_path = tmp_path / "test-hook.sh"
+        script_path.write_text('#!/bin/sh\necho "{}"')
+
+        success, output, error = execute_hook_safely(script_path)
+
+        assert success is False
+        assert output == "{}"
+        assert error is not None
+        assert "not executable" in error.lower()
+
+    def test_executes_valid_script_successfully(self, tmp_path):
+        """Test successfully executes valid script."""
+        from claude_agent.hooks import execute_hook_safely
+
+        # Create valid executable script
+        script_path = tmp_path / "test-hook.sh"
+        script_path.write_text('#!/bin/sh\necho \'{"test": "value"}\'')
+        os.chmod(script_path, stat.S_IRWXU)
+
+        success, output, error = execute_hook_safely(script_path)
+
+        assert success is True
+        assert error is None
+        assert json.loads(output) == {"test": "value"}
+
+    def test_returns_empty_json_on_timeout(self, tmp_path):
+        """Test returns empty JSON on timeout."""
+        from claude_agent.hooks import execute_hook_safely
+
+        # Create script that sleeps too long
+        script_path = tmp_path / "slow-hook.sh"
+        script_path.write_text('#!/bin/sh\nsleep 10\necho "{}"')
+        os.chmod(script_path, stat.S_IRWXU)
+
+        # Use very short timeout (100ms)
+        success, output, error = execute_hook_safely(script_path, timeout_ms=100)
+
+        assert success is False
+        assert output == "{}"
+        assert error is not None
+        assert "timeout" in error.lower()
+
+    def test_returns_empty_json_on_invalid_output(self, tmp_path):
+        """Test returns empty JSON when script outputs invalid JSON."""
+        from claude_agent.hooks import execute_hook_safely
+
+        # Create script that outputs invalid JSON
+        script_path = tmp_path / "bad-json-hook.sh"
+        script_path.write_text('#!/bin/sh\necho "not valid json"')
+        os.chmod(script_path, stat.S_IRWXU)
+
+        success, output, error = execute_hook_safely(script_path)
+
+        # Success because script executed, but output normalized to {}
+        assert success is True
+        assert output == "{}"
+        assert error is None
+
+    def test_handles_script_with_nonzero_exit(self, tmp_path):
+        """Test handles script with non-zero exit code gracefully."""
+        from claude_agent.hooks import execute_hook_safely
+
+        # Create script that outputs JSON but exits with error
+        script_path = tmp_path / "error-hook.sh"
+        script_path.write_text('#!/bin/sh\necho "{}"\nexit 1')
+        os.chmod(script_path, stat.S_IRWXU)
+
+        success, output, error = execute_hook_safely(script_path)
+
+        # Still returns success=True because we got valid output
+        assert success is True
+        assert output == "{}"
+        assert error is None
+
+    def test_uses_custom_working_directory(self, tmp_path):
+        """Test uses custom working directory."""
+        from claude_agent.hooks import execute_hook_safely
+
+        # Create a script that prints the current directory
+        script_path = tmp_path / "pwd-hook.sh"
+        script_path.write_text('#!/bin/sh\necho "{\\"cwd\\": \\"$(pwd)\\"}"')
+        os.chmod(script_path, stat.S_IRWXU)
+
+        # Create a different working directory
+        work_dir = tmp_path / "work"
+        work_dir.mkdir()
+
+        success, output, error = execute_hook_safely(script_path, cwd=work_dir)
+
+        assert success is True
+        data = json.loads(output)
+        assert str(work_dir) in data["cwd"]
+
+    def test_doesnt_crash_on_any_exception(self, tmp_path, monkeypatch):
+        """Test never crashes on unexpected exceptions."""
+        from claude_agent.hooks import execute_hook_safely
+
+        # Create valid script
+        script_path = tmp_path / "test-hook.sh"
+        script_path.write_text('#!/bin/sh\necho "{}"')
+        os.chmod(script_path, stat.S_IRWXU)
+
+        # Mock subprocess.run to raise an unexpected exception
+        def raise_error(*args, **kwargs):
+            raise RuntimeError("Unexpected error!")
+
+        import subprocess
+        monkeypatch.setattr(subprocess, "run", raise_error)
+
+        # Should not raise, should return gracefully
+        success, output, error = execute_hook_safely(script_path)
+
+        assert success is False
+        assert output == "{}"
+        assert error is not None
+        assert "Unexpected error" in error
+
+
+class TestExecuteSessionStartHook:
+    """Tests for execute_session_start_hook convenience function."""
+
+    def test_returns_empty_dict_when_not_installed(self, tmp_project):
+        """Test returns empty dict when hooks not installed."""
+        from claude_agent.hooks import execute_session_start_hook
+
+        result = execute_session_start_hook(str(tmp_project))
+
+        assert result == {}
+
+    def test_returns_empty_dict_on_script_error(self, tmp_project):
+        """Test returns empty dict on script error."""
+        from claude_agent.hooks import execute_session_start_hook
+
+        # Install hooks then break the script
+        install_hooks(str(tmp_project))
+        script_path = tmp_project / ".claude" / "hooks" / "session-start.sh"
+        script_path.write_text("#!/bin/sh\nexit 1")
+
+        result = execute_session_start_hook(str(tmp_project))
+
+        # Should return empty dict, not crash
+        assert isinstance(result, dict)
+
+
+class TestExecuteSessionStopHook:
+    """Tests for execute_session_stop_hook convenience function."""
+
+    def test_returns_false_when_not_installed(self, tmp_project):
+        """Test returns False when hooks not installed."""
+        from claude_agent.hooks import execute_session_stop_hook
+
+        result = execute_session_stop_hook(str(tmp_project))
+
+        assert result is False
+
+    def test_returns_true_on_successful_execution(self, tmp_project):
+        """Test returns True on successful execution."""
+        from claude_agent.hooks import execute_session_stop_hook
+
+        install_hooks(str(tmp_project))
+
+        result = execute_session_stop_hook(str(tmp_project))
+
+        # May fail if python3 not available, but shouldn't crash
+        assert isinstance(result, bool)
+
+
+class TestHookExecutionError:
+    """Tests for HookExecutionError exception class."""
+
+    def test_exception_has_hook_name(self):
+        """Test exception includes hook name."""
+        from claude_agent.hooks import HookExecutionError
+
+        error = HookExecutionError("test-hook.sh", "Something failed")
+
+        assert error.hook_name == "test-hook.sh"
+        assert "test-hook.sh" in str(error)
+
+    def test_exception_has_message(self):
+        """Test exception includes message."""
+        from claude_agent.hooks import HookExecutionError
+
+        error = HookExecutionError("test-hook.sh", "Something failed")
+
+        assert error.message == "Something failed"
+        assert "Something failed" in str(error)
+
+    def test_exception_preserves_original_error(self):
+        """Test exception preserves original error."""
+        from claude_agent.hooks import HookExecutionError
+
+        original = ValueError("Original error")
+        error = HookExecutionError("test-hook.sh", "Wrapper message", original)
+
+        assert error.original_error is original
