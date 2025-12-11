@@ -117,6 +117,8 @@ class LoggingConfig:
     max_size_mb: int = 10  # Rotate when file exceeds this size
     max_files: int = 5  # Keep this many rotated files
     retention_days: int = 30  # Delete files older than this
+    # XDG directory option (DR-020)
+    use_xdg_logs: bool = True  # Store logs in XDG state directory when True
 
 
 @dataclass

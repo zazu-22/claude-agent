@@ -267,7 +267,7 @@ class AgentLogger:
         Initialize the logger.
 
         Args:
-            project_dir: Project directory (logs go to .claude-agent/logs/)
+            project_dir: Project directory (logs go to .claude-agent/logs/ or XDG)
             config: Logging configuration
             verbose: Enable real-time stderr output
         """
@@ -288,10 +288,20 @@ class AgentLogger:
         # Uses deque with maxlen for efficient O(1) operations
         self._recent_events: deque[str] = deque(maxlen=5)
 
-        # Log directory and file paths
-        self._log_dir = project_dir / ".claude-agent" / "logs"
-        self._log_file = self._log_dir / "agent.log"
-        self._stats_file = self._log_dir / "sessions.json"
+        # Log directory and file paths (DR-020: XDG support)
+        if self.config.use_xdg_logs:
+            # Use XDG state directory for logs
+            from claude_agent.state import get_logs_dir, get_project_hash
+            self._log_dir = get_logs_dir()
+            # Include project hash in filename for isolation
+            project_hash = get_project_hash(project_dir)
+            self._log_file = self._log_dir / f"agent-{project_hash}.log"
+            self._stats_file = self._log_dir / f"sessions-{project_hash}.json"
+        else:
+            # Fall back to project-local logs
+            self._log_dir = project_dir / ".claude-agent" / "logs"
+            self._log_file = self._log_dir / "agent.log"
+            self._stats_file = self._log_dir / "sessions.json"
 
         # Try to create log directory
         if self.config.enabled:

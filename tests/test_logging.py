@@ -1498,3 +1498,104 @@ class TestCLILogOptionsIntegration:
         assert output[0]["phase"] == "coding"
         assert output[0]["session_id"] == "abc"
         assert output[0]["event"] == "error"
+
+
+class TestXDGLogSupport:
+    """Tests for XDG log directory support (Features #127, #128, DR-020)."""
+
+    def test_use_xdg_logs_default_is_true(self):
+        """LoggingConfig.use_xdg_logs should default to True."""
+        config = LoggingConfig()
+        assert config.use_xdg_logs is True
+
+    def test_xdg_logs_disabled_uses_project_local(self, tmp_path):
+        """When use_xdg_logs is False, logs go to project-local directory."""
+        config = LoggingConfig(use_xdg_logs=False)
+        logger = AgentLogger(tmp_path, config=config)
+
+        # Log directory should be in project
+        assert ".claude-agent" in str(logger._log_dir)
+        assert str(tmp_path) in str(logger._log_dir)
+        assert logger._log_file.name == "agent.log"
+
+    def test_xdg_logs_enabled_uses_xdg_dir(self, tmp_path):
+        """When use_xdg_logs is True, logs go to XDG state directory."""
+        from unittest.mock import patch
+        from claude_agent.state import get_project_hash
+
+        # Mock the XDG state directory
+        xdg_state = tmp_path / "xdg_state"
+        xdg_state.mkdir()
+
+        config = LoggingConfig(use_xdg_logs=True)
+        with patch("claude_agent.logging.get_logs_dir", return_value=xdg_state / "logs"):
+            logger = AgentLogger(tmp_path / "project", config=config)
+
+        # Log directory should be in XDG state
+        assert str(xdg_state) in str(logger._log_dir)
+        # File should NOT be in project directory
+        assert ".claude-agent" not in str(logger._log_file)
+
+    def test_xdg_logs_includes_project_hash(self, tmp_path):
+        """Log filename should include project hash for isolation."""
+        from unittest.mock import patch
+        from claude_agent.state import get_project_hash
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        xdg_logs = tmp_path / "xdg_logs"
+        xdg_logs.mkdir()
+
+        expected_hash = get_project_hash(project_dir)
+
+        config = LoggingConfig(use_xdg_logs=True)
+        with patch("claude_agent.logging.get_logs_dir", return_value=xdg_logs):
+            logger = AgentLogger(project_dir, config=config)
+
+        # Filename should include project hash
+        assert expected_hash in logger._log_file.name
+        assert f"agent-{expected_hash}.log" == logger._log_file.name
+
+    def test_xdg_logs_stats_file_includes_hash(self, tmp_path):
+        """Stats filename should also include project hash."""
+        from unittest.mock import patch
+        from claude_agent.state import get_project_hash
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        xdg_logs = tmp_path / "xdg_logs"
+        xdg_logs.mkdir()
+
+        expected_hash = get_project_hash(project_dir)
+
+        config = LoggingConfig(use_xdg_logs=True)
+        with patch("claude_agent.logging.get_logs_dir", return_value=xdg_logs):
+            logger = AgentLogger(project_dir, config=config)
+
+        # Stats filename should include project hash
+        assert expected_hash in logger._stats_file.name
+        assert f"sessions-{expected_hash}.json" == logger._stats_file.name
+
+    def test_different_projects_get_different_log_files(self, tmp_path):
+        """Different projects should have isolated log files."""
+        from unittest.mock import patch
+        from claude_agent.state import get_project_hash
+
+        project1 = tmp_path / "project1"
+        project2 = tmp_path / "project2"
+        project1.mkdir()
+        project2.mkdir()
+        xdg_logs = tmp_path / "xdg_logs"
+        xdg_logs.mkdir()
+
+        config = LoggingConfig(use_xdg_logs=True)
+        with patch("claude_agent.logging.get_logs_dir", return_value=xdg_logs):
+            logger1 = AgentLogger(project1, config=config)
+            logger2 = AgentLogger(project2, config=config)
+
+        # Log files should be different
+        assert logger1._log_file != logger2._log_file
+        assert logger1._stats_file != logger2._stats_file
+
+        # But in the same directory
+        assert logger1._log_dir == logger2._log_dir
