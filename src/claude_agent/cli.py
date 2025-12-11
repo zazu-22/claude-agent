@@ -1000,10 +1000,17 @@ def spec_status(project_dir):
 @main.command()
 @click.option("-p", "--project-dir", type=click.Path(path_type=Path), default=".")
 @click.option("--session", "-s", type=str, help="Filter by session ID")
+@click.option("--workflow", "-w", type=str, help="Filter by workflow/session ID (alias for --session)")
 @click.option("--security", is_flag=True, help="Show only security events")
-@click.option("--errors", is_flag=True, help="Show only error events")
+@click.option("--errors", is_flag=True, help="Show only error events (ERROR and ERROR_CLASSIFIED)")
 @click.option("--features", is_flag=True, help="Show only feature events")
 @click.option("--tools", is_flag=True, help="Show only tool events")
+@click.option("--phase", type=str, help="Filter by phase name (e.g., 'coding', 'validating')")
+@click.option(
+    "--level", "-l",
+    type=click.Choice(["debug", "info", "gate", "warning", "error"], case_sensitive=False),
+    help="Minimum log level to show (default shows all)"
+)
 @click.option("--limit", "-n", type=int, default=50, help="Number of entries to show")
 @click.option("--since", type=str, help="Show entries since (e.g., '1h', '2d', '2024-01-15')")
 @click.option("--json", "output_json", is_flag=True, help="Output raw JSON")
@@ -1011,10 +1018,13 @@ def spec_status(project_dir):
 def logs(
     project_dir: Path,
     session: Optional[str],
+    workflow: Optional[str],
     security: bool,
     errors: bool,
     features: bool,
     tools: bool,
+    phase: Optional[str],
+    level: Optional[str],
     limit: int,
     since: Optional[str],
     output_json: bool,
@@ -1027,9 +1037,16 @@ def logs(
       claude-agent logs                  # Recent 50 entries
       claude-agent logs --security       # Security events only
       claude-agent logs --errors         # Error events only
+      claude-agent logs --phase coding   # Filter by phase
+      claude-agent logs --level gate     # Show GATE level and above
+      claude-agent logs --workflow abc   # Filter by workflow ID
       claude-agent logs --since 1h       # Last hour
       claude-agent logs --session abc123 # Specific session
       claude-agent logs --json           # Raw JSON output
+
+    \b
+    All filters combine with AND logic. For example:
+      claude-agent logs --phase coding --errors  # Errors during coding phase
     """
     import json
     import os
@@ -1038,6 +1055,7 @@ def logs(
         EventType,
         LogLevel,
         LogReader,
+        LOG_LEVEL_ORDER,
         parse_since_value,
     )
 
@@ -1046,16 +1064,22 @@ def logs(
 
     # Build event type filter
     event_types = None
-    if security or errors or features or tools:
+    # Note: --errors flag now uses errors_only parameter for proper ERROR + ERROR_CLASSIFIED filtering
+    if security or features or tools:
         event_types = []
         if security:
             event_types.extend([EventType.SECURITY_BLOCK, EventType.SECURITY_ALLOW])
-        if errors:
-            event_types.append(EventType.ERROR)
         if features:
             event_types.extend([EventType.FEATURE_COMPLETE, EventType.FEATURE_FAILED])
         if tools:
             event_types.extend([EventType.TOOL_CALL, EventType.TOOL_RESULT])
+
+    # Build level filter (minimum level and above)
+    levels = None
+    if level:
+        level_enum = LogLevel(level.lower())
+        level_idx = LOG_LEVEL_ORDER.index(level_enum)
+        levels = LOG_LEVEL_ORDER[level_idx:]
 
     # Parse since value
     since_dt = None
@@ -1071,11 +1095,15 @@ def logs(
             ))
             return
 
-    # Read entries
+    # Read entries with all filters (AND logic per DR-017)
     entries = reader.read_entries(
         session_id=session,
+        workflow_id=workflow,
         event_types=event_types,
+        levels=levels,
         since=since_dt,
+        phase=phase,
+        errors_only=errors,
         limit=limit,
     )
 
@@ -1090,13 +1118,14 @@ def logs(
 
     # Output format
     if output_json:
-        # Raw JSON array
+        # Raw JSON array (includes phase field per DR-016)
         output = [
             {
                 "ts": e.ts.isoformat(),
                 "level": e.level.value,
                 "event": e.event.value,
                 "session_id": e.session_id,
+                "phase": e.phase,
                 **e.data,
             }
             for e in entries
@@ -1112,10 +1141,11 @@ def logs(
             click.echo("(session in progress - log may be incomplete)")
         click.echo("-" * 70)
 
-        # Color codes
+        # Color codes (including GATE level per DR-015)
         colors = {
             LogLevel.DEBUG: "\033[90m" if use_color else "",
             LogLevel.INFO: "" if use_color else "",
+            LogLevel.GATE: "\033[36m" if use_color else "",  # Cyan for phase events
             LogLevel.WARNING: "\033[33m" if use_color else "",
             LogLevel.ERROR: "\033[31m" if use_color else "",
         }
@@ -1151,6 +1181,17 @@ def logs(
                     details = f"#{entry.data.get('index')}: {entry.data.get('reason', '')[:40]}"
                 elif entry.event == EventType.ERROR:
                     details = f"{entry.data.get('error_type')}: {entry.data.get('message', '')[:40]}"
+                # New event types for Milestone 5 (F5.1)
+                elif entry.event == EventType.PHASE_ENTER:
+                    details = f"-> {entry.data.get('phase', '')}"
+                elif entry.event == EventType.PHASE_EXIT:
+                    duration = entry.data.get('duration_seconds')
+                    duration_str = f" ({duration:.1f}s)" if duration else ""
+                    details = f"<- {entry.data.get('phase', '')}{duration_str}"
+                elif entry.event == EventType.ERROR_CLASSIFIED:
+                    details = f"[{entry.data.get('error_type', '')}:{entry.data.get('error_category', '')}] {entry.data.get('message', '')[:30]}"
+                elif entry.event == EventType.HOOK_FIRED:
+                    details = f"{entry.data.get('hook_name', '')}: {entry.data.get('result', '')[:30]}"
                 else:
                     details = str(entry.data)[:60]
 

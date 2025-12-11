@@ -971,6 +971,9 @@ class LogReader:
         since: Optional[datetime] = None,
         limit: int = 50,
         offset: int = 0,
+        phase: Optional[str] = None,
+        errors_only: bool = False,
+        workflow_id: Optional[str] = None,
     ) -> list[LogEntry]:
         """
         Read and filter log entries.
@@ -982,11 +985,20 @@ class LogReader:
             since: Only entries after this time
             limit: Maximum entries to return
             offset: Number of entries to skip
+            phase: Filter by phase name (F5.4, DR-017)
+            errors_only: When True, filter to ERROR and ERROR_CLASSIFIED events only (F5.4)
+            workflow_id: Filter by workflow/session ID (alias for session_id)
 
         Returns:
             List of matching LogEntry objects
+
+        Note:
+            All filters combine with AND logic (DR-017). Each filter narrows the result set.
         """
         entries: list[LogEntry] = []
+
+        # workflow_id is an alias for session_id
+        effective_session_id = workflow_id or session_id
 
         # Read from all log files (current + rotated)
         log_files = self._get_log_files()
@@ -1001,8 +1013,8 @@ class LogReader:
                         try:
                             entry = LogEntry.from_json(line.strip())
 
-                            # Apply filters
-                            if session_id and entry.session_id != session_id:
+                            # Apply filters (AND logic per DR-017)
+                            if effective_session_id and entry.session_id != effective_session_id:
                                 continue
                             if event_types and entry.event not in event_types:
                                 continue
@@ -1010,6 +1022,13 @@ class LogReader:
                                 continue
                             if since and entry.ts < since:
                                 continue
+                            # Phase filter (F5.4)
+                            if phase and entry.phase != phase:
+                                continue
+                            # Errors only filter (F5.4)
+                            if errors_only:
+                                if entry.level != LogLevel.ERROR and entry.event != EventType.ERROR_CLASSIFIED:
+                                    continue
 
                             entries.append(entry)
                         except (json.JSONDecodeError, ValueError, KeyError):

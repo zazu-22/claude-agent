@@ -3,11 +3,14 @@ Prompt Loading Utilities
 ========================
 
 Load and render prompt templates with variable substitution.
+Supports skill injection via {{skill:name}} placeholders.
 """
 
 import json
 from pathlib import Path
 from typing import Optional
+
+from claude_agent.prompts.skills import inject_skills
 
 
 PROMPTS_DIR = Path(__file__).parent
@@ -210,16 +213,19 @@ def get_coding_prompt(
     """
     Load and render the coding agent prompt.
 
+    Injects skills via {{skill:name}} placeholders after rendering template variables.
+    Skills included: regression-testing, error-recovery, architecture-verification
+
     Args:
         init_command: Command to install dependencies
         dev_command: Command to start development server
         specs_dir: Name of specs directory (default: "specs")
 
     Returns:
-        Rendered prompt string
+        Rendered prompt string with skills injected
     """
     template = load_prompt("coding")
-    return render_template(
+    rendered = render_template(
         template,
         {
             "init_command": init_command,
@@ -227,6 +233,8 @@ def get_coding_prompt(
             "specs_dir": specs_dir,
         },
     )
+    # Inject skills into the prompt (DR-012, DR-013)
+    return inject_skills(rendered)
 
 
 def get_review_prompt(spec_content: str) -> str:
@@ -256,16 +264,19 @@ def get_validator_prompt(
     """
     Load and render the validator agent prompt.
 
+    Injects skills via {{skill:name}} placeholders after rendering template variables.
+    Skills included: browser-testing, error-recovery
+
     Args:
         init_command: Command to install dependencies
         dev_command: Command to start development server
         specs_dir: Name of specs directory (default: "specs")
 
     Returns:
-        Rendered prompt string
+        Rendered prompt string with skills injected
     """
     template = load_prompt("validator")
-    return render_template(
+    rendered = render_template(
         template,
         {
             "init_command": init_command,
@@ -273,6 +284,8 @@ def get_validator_prompt(
             "specs_dir": specs_dir,
         },
     )
+    # Inject skills into the prompt (DR-012, DR-013)
+    return inject_skills(rendered)
 
 
 def write_spec_to_project(

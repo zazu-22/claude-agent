@@ -515,4 +515,20 @@ leave the code base in a clean state before terminating the session (Step 10).
 
 ---
 
+## SKILLS REFERENCE
+
+The following skills provide detailed guidance for common agent tasks.
+These are injected at runtime and contain patterns you should follow.
+
+### Regression Testing Skill
+{{skill:regression-testing}}
+
+### Error Recovery Skill
+{{skill:error-recovery}}
+
+### Architecture Verification Skill
+{{skill:architecture-verification}}
+
+---
+
 Begin by running Step 1 (Get Your Bearings).

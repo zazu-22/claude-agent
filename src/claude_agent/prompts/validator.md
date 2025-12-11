@@ -536,3 +536,16 @@ You MUST output a code block with the JSON verdict like this:
 **If you don't output this JSON block, your validation session will fail and need to be re-run.**
 
 Before ending your session, search your output for "```json" - if you don't see it, OUTPUT THE VERDICT NOW.
+
+---
+
+## SKILLS REFERENCE
+
+The following skills provide detailed guidance for common validation tasks.
+These are injected at runtime and contain patterns you should follow.
+
+### Browser Testing Skill
+{{skill:browser-testing}}
+
+### Error Recovery Skill
+{{skill:error-recovery}}
