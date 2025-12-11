@@ -706,3 +706,78 @@ Files Modified:
 
 Git Commits: 906fb50
 =========================================
+
+=== SESSION 13: 2025-12-11 ===
+Status: 148/184 features passing (80.4%)
+
+Completed This Session:
+- Feature #148: Update 'status' CLI command to show workflow state from XDG - browser/code review
+- Feature #149: Add workflow state information to status command output - browser/code review
+- Feature #155: Document new modules in CLAUDE.md - code review
+- Feature #156: Document hooks CLI commands in CLAUDE.md - code review
+- Feature #157: Document XDG state directory paths in CLAUDE.md - code review
+- Feature #158: Document skill system in CLAUDE.md - code review
+- Feature #159: Document StructuredError usage in CLAUDE.md - code review
+
+Implementation Details:
+
+Status Command XDG Workflow State (#148, #149):
+- Added import of load_workflow_state from state module
+- Display workflow state section when available:
+  - Workflow ID and current phase
+  - Started and updated timestamps (formatted)
+  - Progress (features completed/total)
+  - Iteration count and current feature being worked on
+  - Pause reason if workflow is paused
+  - Last error with type/category/message and recovery hint
+- Added 6 unit tests in TestStatusWithWorkflowState class:
+  - test_status_shows_workflow_state_when_present
+  - test_status_shows_workflow_id_and_timestamps
+  - test_status_shows_pause_reason_when_paused
+  - test_status_shows_last_error_when_present
+  - test_status_no_workflow_state_section_when_missing
+  - test_status_shows_current_feature_when_working
+
+CLAUDE.md Documentation (#155-#159):
+- Added structured_errors.py, state.py, hooks/, skills/ to Key files section
+- Updated Directory Structure with new modules and skills directory
+- Added Hooks Commands section with install/uninstall/status examples
+- Added XDG State Directory section:
+  - State directory structure (~/.local/state/claude-agent/)
+  - Project hash isolation mechanism (12-char SHA256)
+  - Migration behavior from legacy files
+- Added Skill System section:
+  - Skill injection syntax {{skill:name}}
+  - Available skills list
+  - How to add new skills
+  - Prompt size limits (50KB soft limit)
+- Added StructuredError System section:
+  - ErrorType values and behaviors (RETRY, MANUAL, FATAL, TIMEOUT)
+  - ErrorCategory values and descriptions
+  - Factory function documentation
+  - Recovery flow explanation
+
+Architectural Decisions Honored:
+- DR-004: XDG Base Directory for state storage
+- DR-012: Skill injection syntax {{skill:name}}
+- DR-013: 50KB soft limit for assembled prompts
+- DR-014: Four required skills documented
+
+Issues Found:
+- Security hook still detecting "node stack" - cannot run pytest
+- CLAUDE.md is symlink to AGENTS.md (needed to commit AGENTS.md)
+
+Next Steps:
+- Work on remaining features (#140-#147 technical features)
+- Work on #160-#162 (platform compatibility tests - require manual testing)
+- Work on #163-#164 (error handling features)
+- Complete remaining integration tests
+
+Files Modified:
+- src/claude_agent/cli.py (added workflow state display)
+- tests/test_spec_cli.py (added TestStatusWithWorkflowState class)
+- AGENTS.md (comprehensive documentation updates)
+- specs/feature_list.json (updated 7 features to passing)
+
+Git Commits: 9ee7e2d, 087fe44
+=========================================
