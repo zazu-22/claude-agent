@@ -27,16 +27,34 @@ from claude_agent import __version__ as SDK_VERSION
 
 
 class LogLevel(str, Enum):
-    """Log levels for event filtering."""
+    """Log levels for event filtering.
+
+    Level hierarchy: DEBUG < INFO < GATE < WARNING < ERROR
+
+    GATE is a new level for phase transition events (DR-015).
+    It's more significant than INFO but not a problem like WARNING.
+    """
 
     DEBUG = "debug"
     INFO = "info"
+    GATE = "gate"  # Phase transition events (DR-015)
     WARNING = "warning"
     ERROR = "error"
 
 
+# Log level hierarchy for filtering (DR-015: DEBUG < INFO < GATE < WARNING < ERROR)
+LOG_LEVEL_ORDER = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.GATE, LogLevel.WARNING, LogLevel.ERROR]
+
+
 class EventType(str, Enum):
-    """Types of events that can be logged."""
+    """Types of events that can be logged.
+
+    New event types added for Milestone 5 (F5.1):
+    - PHASE_ENTER: Agent enters new phase (GATE level)
+    - PHASE_EXIT: Agent exits phase (GATE level)
+    - ERROR_CLASSIFIED: Structured error logged (ERROR level)
+    - HOOK_FIRED: Hook executed (INFO level)
+    """
 
     SESSION_START = "session_start"
     SESSION_END = "session_end"
@@ -50,6 +68,11 @@ class EventType(str, Enum):
     VALIDATION_RESULT = "validation_result"
     ERROR = "error"
     LOG_MESSAGE = "log_message"
+    # New event types for phase tracking and hooks (F5.1)
+    PHASE_ENTER = "phase_enter"
+    PHASE_EXIT = "phase_exit"
+    ERROR_CLASSIFIED = "error_classified"
+    HOOK_FIRED = "hook_fired"
 
 
 # Map event types to their default log levels
@@ -66,18 +89,27 @@ EVENT_LEVELS: dict[EventType, LogLevel] = {
     EventType.VALIDATION_RESULT: LogLevel.INFO,
     EventType.ERROR: LogLevel.ERROR,
     EventType.LOG_MESSAGE: LogLevel.INFO,
+    # New event types with levels per DR-015
+    EventType.PHASE_ENTER: LogLevel.GATE,
+    EventType.PHASE_EXIT: LogLevel.GATE,
+    EventType.ERROR_CLASSIFIED: LogLevel.ERROR,
+    EventType.HOOK_FIRED: LogLevel.INFO,
 }
 
 
 @dataclass
 class LogEntry:
-    """A single log entry."""
+    """A single log entry.
+
+    Extended with phase field for phase tracking (DR-016).
+    """
 
     ts: datetime
     level: LogLevel
     event: EventType
     session_id: str
     data: dict[str, Any] = field(default_factory=dict)
+    phase: str = ""  # Current phase when entry was logged (DR-016)
 
     def to_json(self) -> str:
         """Serialize to JSON string for JSONL format."""
@@ -87,6 +119,7 @@ class LogEntry:
                 "level": self.level.value,
                 "event": self.event.value,
                 "session_id": self.session_id,
+                "phase": self.phase,  # Include phase in output (DR-016)
                 **self.data,
             },
             ensure_ascii=False,
@@ -94,13 +127,29 @@ class LogEntry:
 
     @classmethod
     def from_json(cls, json_str: str) -> "LogEntry":
-        """Deserialize from JSON string."""
+        """Deserialize from JSON string.
+
+        Backward compatible with existing logs (DR-019).
+        """
         data = json.loads(json_str)
         ts = datetime.fromisoformat(data.pop("ts"))
-        level = LogLevel(data.pop("level"))
-        event = EventType(data.pop("event"))
+        level_str = data.pop("level")
+        # Handle new GATE level and backward compatibility
+        try:
+            level = LogLevel(level_str)
+        except ValueError:
+            # Fall back to INFO for unknown levels (backward compatibility)
+            level = LogLevel.INFO
+        event_str = data.pop("event")
+        try:
+            event = EventType(event_str)
+        except ValueError:
+            # Fall back to LOG_MESSAGE for unknown event types
+            event = EventType.LOG_MESSAGE
         session_id = data.pop("session_id")
-        return cls(ts=ts, level=level, event=event, session_id=session_id, data=data)
+        # Handle missing phase field for old logs (DR-016, DR-019)
+        phase = data.pop("phase", "")
+        return cls(ts=ts, level=level, event=event, session_id=session_id, data=data, phase=phase)
 
 
 @dataclass
@@ -200,6 +249,12 @@ class AgentLogger:
     Main logger for agent sessions.
 
     Handles JSONL log file writing with rotation and buffering.
+
+    Extended for Milestone 5 with:
+    - Phase tracking (current_phase instance variable) per DR-016
+    - phase_enter() and phase_exit() methods
+    - log_error_classified() for StructuredError integration
+    - log_hook_fired() for hook execution tracking
     """
 
     def __init__(
@@ -224,6 +279,10 @@ class AgentLogger:
         self._buffer: list[str] = []
         self._buffer_size = 10
         self._last_flush = datetime.now(timezone.utc)
+
+        # Phase tracking (DR-016)
+        self.current_phase: str = ""
+        self._phase_start_time: Optional[datetime] = None
 
         # Circular buffer for recent events (for error context)
         # Uses deque with maxlen for efficient O(1) operations
@@ -342,9 +401,8 @@ class AgentLogger:
         if level is None:
             level = EVENT_LEVELS.get(event_type, LogLevel.INFO)
 
-        # Skip if below configured level
-        level_order = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARNING, LogLevel.ERROR]
-        if level_order.index(level) < level_order.index(self.config.level):
+        # Skip if below configured level (using updated LOG_LEVEL_ORDER with GATE)
+        if LOG_LEVEL_ORDER.index(level) < LOG_LEVEL_ORDER.index(self.config.level):
             return
 
         # Truncate long string fields
@@ -363,6 +421,7 @@ class AgentLogger:
             event=event_type,
             session_id=self.session_id or "unknown",
             data=truncated_data,
+            phase=self.current_phase,  # Include current phase (DR-016)
         )
 
         # Add to buffer
@@ -536,6 +595,94 @@ class AgentLogger:
             message=truncate_string(message, self.config.max_summary_length),
         )
 
+    # ==========================================================================
+    # Phase Tracking Methods (F5.1, DR-015, DR-016)
+    # ==========================================================================
+
+    def phase_enter(self, phase: str, **context: Any) -> None:
+        """
+        Log phase entry event and set current phase.
+
+        Args:
+            phase: Phase name (e.g., "initializing", "coding", "validating")
+            **context: Additional context to log with the event
+        """
+        self.current_phase = phase
+        self._phase_start_time = datetime.now(timezone.utc)
+
+        self.log_event(
+            EventType.PHASE_ENTER,
+            phase=phase,
+            **context,
+        )
+
+    def phase_exit(self, phase: str, **context: Any) -> None:
+        """
+        Log phase exit event with duration and clear current phase.
+
+        Args:
+            phase: Phase name being exited
+            **context: Additional context to log with the event
+        """
+        # Calculate duration if we have a start time
+        duration_seconds = None
+        if self._phase_start_time:
+            duration_seconds = (
+                datetime.now(timezone.utc) - self._phase_start_time
+            ).total_seconds()
+
+        self.log_event(
+            EventType.PHASE_EXIT,
+            phase=phase,
+            duration_seconds=duration_seconds,
+            **context,
+        )
+
+        # Clear phase tracking
+        self.current_phase = ""
+        self._phase_start_time = None
+
+    def log_error_classified(self, error: Any) -> None:
+        """
+        Log a classified/structured error.
+
+        Args:
+            error: A StructuredError instance (imported dynamically to avoid circular import)
+
+        Note:
+            This method expects an object with type, category, message, and recovery_hint
+            attributes. It's designed to work with StructuredError from structured_errors.py.
+        """
+        # Extract error attributes (duck-typed to avoid circular import)
+        error_type = getattr(error, "type", None)
+        error_category = getattr(error, "category", None)
+        message = getattr(error, "message", str(error))
+        recovery_hint = getattr(error, "recovery_hint", None)
+        error_context = getattr(error, "context", {})
+
+        self.log_event(
+            EventType.ERROR_CLASSIFIED,
+            error_type=error_type.value if hasattr(error_type, "value") else str(error_type),
+            error_category=error_category.value if hasattr(error_category, "value") else str(error_category),
+            message=truncate_string(message, self.config.max_summary_length),
+            recovery_hint=recovery_hint,
+            error_context=error_context,
+        )
+
+    def log_hook_fired(self, hook_name: str, result: str) -> None:
+        """
+        Log a hook execution event.
+
+        Args:
+            hook_name: Name of the hook (e.g., "session-start", "session-stop")
+            result: Result of the hook execution (e.g., "success", "error", "{}")
+        """
+        self.log_event(
+            EventType.HOOK_FIRED,
+            hook_name=hook_name,
+            result=truncate_string(result, self.config.max_summary_length),
+        )
+
     def _print_verbose(self, entry: LogEntry) -> None:
         """Print formatted log entry to stderr for verbose mode."""
         # Check NO_COLOR environment variable
@@ -544,10 +691,11 @@ class AgentLogger:
         timestamp = entry.ts.strftime("%H:%M:%S")
         event_name = entry.event.value.upper()
 
-        # Color codes
+        # Color codes (DR-015: GATE level added with cyan color)
         colors = {
             LogLevel.DEBUG: "\033[90m",  # Gray
             LogLevel.INFO: "\033[0m",  # Default
+            LogLevel.GATE: "\033[36m",  # Cyan for phase transitions
             LogLevel.WARNING: "\033[33m",  # Yellow
             LogLevel.ERROR: "\033[31m",  # Red
         }
@@ -576,6 +724,17 @@ class AgentLogger:
             details = f"turns={entry.data.get('turns_used')} status={entry.data.get('status')}"
         elif entry.event == EventType.LOG_MESSAGE:
             details = entry.data.get("message", "")[:60]
+        # New event types for Milestone 5 (F5.1)
+        elif entry.event == EventType.PHASE_ENTER:
+            details = f"-> {entry.data.get('phase', '')}"
+        elif entry.event == EventType.PHASE_EXIT:
+            duration = entry.data.get('duration_seconds')
+            duration_str = f" ({duration:.1f}s)" if duration else ""
+            details = f"<- {entry.data.get('phase', '')}{duration_str}"
+        elif entry.event == EventType.ERROR_CLASSIFIED:
+            details = f"[{entry.data.get('error_type', '')}:{entry.data.get('error_category', '')}] {entry.data.get('message', '')[:40]}"
+        elif entry.event == EventType.HOOK_FIRED:
+            details = f"{entry.data.get('hook_name', '')}: {entry.data.get('result', '')[:30]}"
         else:
             details = str(entry.data)[:60]
 
