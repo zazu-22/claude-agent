@@ -78,6 +78,13 @@ from claude_agent.security import (
     set_security_logger,
     ValidationResult,
 )
+from claude_agent.state import (
+    WorkflowState,
+    ensure_state_dirs,
+    load_workflow_state,
+    migrate_project_state,
+    save_workflow_state,
+)
 
 
 def is_architecture_locked(project_dir: Path, specs_dir: str = "specs") -> bool:
@@ -777,6 +784,89 @@ def _create_logging_config(config: Config) -> LoggingConfigClass:
     )
 
 
+def _create_workflow_state(
+    project_dir: Path,
+    phase: str = "initializing",
+    features_completed: int = 0,
+    features_total: int = 0,
+) -> WorkflowState:
+    """Create a new WorkflowState for the project.
+
+    Args:
+        project_dir: Project directory path
+        phase: Initial workflow phase (default: initializing)
+        features_completed: Number of completed features
+        features_total: Total number of features
+
+    Returns:
+        New WorkflowState instance
+    """
+    from datetime import datetime
+    import uuid
+
+    now = datetime.now()
+    return WorkflowState(
+        id=str(uuid.uuid4())[:8],  # Short UUID for readability
+        project_dir=str(project_dir.resolve()),
+        phase=phase,
+        started_at=now,
+        updated_at=now,
+        features_completed=features_completed,
+        features_total=features_total,
+    )
+
+
+def _update_workflow_state(
+    workflow_state: Optional[WorkflowState],
+    phase: Optional[str] = None,
+    features_completed: Optional[int] = None,
+    features_total: Optional[int] = None,
+    current_feature_index: Optional[int] = None,
+    iteration_count: Optional[int] = None,
+    last_error: Optional[dict] = None,
+    clear_error: bool = False,
+    logger: Optional[AgentLogger] = None,
+) -> None:
+    """Update and save workflow state.
+
+    Args:
+        workflow_state: WorkflowState to update (if None, does nothing)
+        phase: New phase value (optional)
+        features_completed: New completed count (optional)
+        features_total: New total count (optional)
+        current_feature_index: Current feature being worked on (optional)
+        iteration_count: Current iteration count (optional)
+        last_error: Error dict to persist (optional)
+        clear_error: If True, clear last_error field
+        logger: Optional logger for logging state changes
+    """
+    if workflow_state is None:
+        return
+
+    if phase is not None:
+        workflow_state.phase = phase
+    if features_completed is not None:
+        workflow_state.features_completed = features_completed
+    if features_total is not None:
+        workflow_state.features_total = features_total
+    if current_feature_index is not None:
+        workflow_state.current_feature_index = current_feature_index
+    if iteration_count is not None:
+        workflow_state.iteration_count = iteration_count
+    if last_error is not None:
+        workflow_state.last_error = last_error
+    if clear_error:
+        workflow_state.last_error = None
+
+    try:
+        save_workflow_state(workflow_state)
+        if logger:
+            logger.debug(f"Workflow state saved: phase={workflow_state.phase}")
+    except Exception as e:
+        if logger:
+            logger.warning(f"Failed to save workflow state: {e}")
+
+
 async def run_autonomous_agent(config: Config) -> None:
     """
     Run the autonomous agent loop.
@@ -806,6 +896,15 @@ async def run_autonomous_agent(config: Config) -> None:
     # Set up security logger for security decision logging
     set_security_logger(logger)
 
+    # Initialize XDG state directories and run migration if needed (DR-008)
+    try:
+        ensure_state_dirs(project_dir)
+        success, messages = migrate_project_state(project_dir)
+        for msg in messages:
+            logger.debug(f"Migration: {msg}")
+    except Exception as e:
+        logger.warning(f"State directory setup failed: {e}")
+
     # Print startup banner
     print_startup_banner(
         project_dir=project_dir,
@@ -821,6 +920,34 @@ async def run_autonomous_agent(config: Config) -> None:
     specs_dir = config.workflow.specs_dir
     tests_file = find_feature_list(project_dir, specs_dir)
     is_first_run = tests_file is None
+
+    # Load or create workflow state (F3 integration)
+    workflow_state = load_workflow_state(project_dir)
+    if workflow_state:
+        # Resuming existing workflow - log previous state
+        logger.info(
+            f"Resuming workflow: phase={workflow_state.phase}, "
+            f"progress={workflow_state.features_completed}/{workflow_state.features_total}"
+        )
+        if workflow_state.last_error:
+            # Display previous error for context
+            error_msg = workflow_state.last_error.get("message", "Unknown error")
+            error_hint = workflow_state.last_error.get("recovery_hint", "")
+            print(f"\n  Previous error: {error_msg}")
+            if error_hint:
+                print(f"  Recovery hint: {error_hint}")
+    else:
+        # First run - create new workflow state
+        passing, total = count_passing_tests(project_dir) if not is_first_run else (0, 0)
+        initial_phase = "initializing" if is_first_run else "coding"
+        workflow_state = _create_workflow_state(
+            project_dir=project_dir,
+            phase=initial_phase,
+            features_completed=passing,
+            features_total=total,
+        )
+        save_workflow_state(workflow_state)
+        logger.info(f"Created workflow state: id={workflow_state.id}, phase={initial_phase}")
 
     if is_first_run:
         # Validate we have spec content
@@ -961,10 +1088,24 @@ async def run_autonomous_agent(config: Config) -> None:
     while True:
         iteration += 1
 
+        # Update workflow state with iteration count
+        _update_workflow_state(
+            workflow_state,
+            iteration_count=iteration,
+            logger=logger,
+        )
+
         # Check max iterations
         if max_iterations and iteration > max_iterations:
             print(f"\nReached max iterations ({max_iterations})")
             print("To continue, run the command again without --max-iterations")
+            # Update state to paused
+            _update_workflow_state(
+                workflow_state,
+                phase="paused",
+                pause_reason=f"Max iterations ({max_iterations}) reached",
+                logger=logger,
+            )
             break
 
         # Check if validation should trigger BEFORE running coding session
@@ -999,6 +1140,16 @@ async def run_autonomous_agent(config: Config) -> None:
         else:
             # Run coding session
             print_session_header(iteration, is_first_run)
+
+            # Update workflow state to coding phase
+            _update_workflow_state(
+                workflow_state,
+                phase="coding",
+                features_completed=passing,
+                features_total=total,
+                clear_error=True,  # Clear any previous error on new session start
+                logger=logger,
+            )
 
             # Track features at session start for metrics
             features_at_start, _ = count_passing_tests(project_dir)
@@ -1193,7 +1344,23 @@ async def run_autonomous_agent(config: Config) -> None:
                 print(
                     "To continue, increase max_rejections in config or disable validation."
                 )
+                # Update state to paused
+                _update_workflow_state(
+                    workflow_state,
+                    phase="paused",
+                    pause_reason=f"Max validation rejections ({config.validator.max_rejections}) reached",
+                    logger=logger,
+                )
                 break
+
+            # Update workflow state to validating phase
+            _update_workflow_state(
+                workflow_state,
+                phase="validating",
+                features_completed=passing,
+                features_total=total,
+                logger=logger,
+            )
 
             # Run validation phase - may take multiple sessions
             validation_session = 0
@@ -1318,9 +1485,24 @@ async def run_autonomous_agent(config: Config) -> None:
             if result.verdict == "APPROVED":
                 # Clear any stale rework file on approval
                 clear_rework_file(project_dir)
+                # Update workflow state to complete
+                _update_workflow_state(
+                    workflow_state,
+                    phase="complete",
+                    features_completed=passing,
+                    features_total=total,
+                    logger=logger,
+                )
                 break  # Exit main loop - we're done!
 
             if result.verdict == "NEEDS_VERIFICATION":
+                # Update state to paused for manual verification
+                _update_workflow_state(
+                    workflow_state,
+                    phase="paused",
+                    pause_reason="Manual verification required",
+                    logger=logger,
+                )
                 break  # Exit main loop - manual review needed
 
             # Otherwise (REJECTED or ERROR), return to coding agent
@@ -1347,12 +1529,32 @@ async def run_autonomous_agent(config: Config) -> None:
         elif status == "error":
             print("\nSession encountered an error")
             print("Will retry with a fresh session...")
+            # Save error state for recovery context
+            _update_workflow_state(
+                workflow_state,
+                last_error={
+                    "message": "Session encountered an error",
+                    "recovery_hint": "Will retry with fresh session",
+                },
+                logger=logger,
+            )
             await asyncio.sleep(config.agent.auto_continue_delay)
 
         # Small delay between sessions
         if max_iterations is None or iteration < max_iterations:
             print("\nPreparing next session...\n")
             await asyncio.sleep(1)
+
+    # Final state update - save final progress
+    final_passing, final_total = count_passing_tests(project_dir)
+    if workflow_state and workflow_state.phase != "complete":
+        # Don't overwrite complete phase - preserve it
+        _update_workflow_state(
+            workflow_state,
+            features_completed=final_passing,
+            features_total=final_total,
+            logger=logger,
+        )
 
     # Final summary
     print("\n" + "=" * 70)
