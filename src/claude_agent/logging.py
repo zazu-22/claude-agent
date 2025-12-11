@@ -24,6 +24,7 @@ from typing import Optional, Any
 
 from claude_agent.progress import atomic_write
 from claude_agent import __version__ as SDK_VERSION
+from claude_agent.state import get_logs_dir, get_project_hash
 
 
 class LogLevel(str, Enum):
@@ -217,6 +218,8 @@ class LoggingConfig:
     max_size_mb: int = 10
     max_files: int = 5
     retention_days: int = 30
+    # XDG directory option (DR-020)
+    use_xdg_logs: bool = True  # Store logs in XDG state directory when True
 
 
 def generate_session_id() -> str:

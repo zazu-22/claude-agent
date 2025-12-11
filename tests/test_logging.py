@@ -108,12 +108,12 @@ class TestAgentLogger:
 
     def test_creates_log_directory(self, tmp_path):
         """AgentLogger should create log directory if it doesn't exist."""
-        logger = AgentLogger(tmp_path, LoggingConfig())
+        logger = AgentLogger(tmp_path, LoggingConfig(use_xdg_logs=False))
         assert (tmp_path / ".claude-agent" / "logs").exists()
 
     def test_start_session_returns_session_id(self, tmp_path):
         """start_session should return a session ID."""
-        logger = AgentLogger(tmp_path, LoggingConfig())
+        logger = AgentLogger(tmp_path, LoggingConfig(use_xdg_logs=False))
         session_id = logger.start_session(
             iteration=1,
             model="claude-opus",
@@ -126,7 +126,7 @@ class TestAgentLogger:
     def test_log_event_writes_to_file(self, tmp_path):
         """log_event should write to log file."""
         # Use DEBUG level to capture TOOL_CALL events
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config)
         logger.start_session(1, "claude-opus", "python", "coding")
         logger.log_event(EventType.TOOL_CALL, tool_name="Bash", input_summary="ls -la")
@@ -140,7 +140,7 @@ class TestAgentLogger:
 
     def test_log_security_block(self, tmp_path):
         """log_security_block should log with WARNING level."""
-        logger = AgentLogger(tmp_path, LoggingConfig())
+        logger = AgentLogger(tmp_path, LoggingConfig(use_xdg_logs=False))
         logger.start_session(1, "claude-opus", "python", "coding")
         logger.log_security_block("rm -rf /", "command not allowed", "python")
         logger._flush_buffer()
@@ -153,7 +153,7 @@ class TestAgentLogger:
 
     def test_end_session_flushes_buffer(self, tmp_path):
         """end_session should flush any buffered entries."""
-        logger = AgentLogger(tmp_path, LoggingConfig())
+        logger = AgentLogger(tmp_path, LoggingConfig(use_xdg_logs=False))
         logger.start_session(1, "claude-opus", "python", "coding")
         logger.log_event(EventType.TOOL_CALL, tool_name="Read")
         # Buffer should have entry
@@ -164,7 +164,7 @@ class TestAgentLogger:
 
     def test_disabled_logging(self, tmp_path):
         """Logging should not write files when disabled."""
-        config = LoggingConfig(enabled=False)
+        config = LoggingConfig(enabled=False, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config)
         logger.start_session(1, "claude-opus", "python", "coding")
         logger.log_event(EventType.TOOL_CALL, tool_name="Bash")
@@ -176,7 +176,7 @@ class TestAgentLogger:
 
     def test_log_level_filtering(self, tmp_path):
         """Events below configured level should not be logged."""
-        config = LoggingConfig(level=LogLevel.WARNING)
+        config = LoggingConfig(level=LogLevel.WARNING, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config)
         logger.start_session(1, "claude-opus", "python", "coding")
 
@@ -192,7 +192,7 @@ class TestAgentLogger:
 
     def test_truncates_long_strings(self, tmp_path):
         """Long string fields should be truncated."""
-        config = LoggingConfig(max_summary_length=50)
+        config = LoggingConfig(max_summary_length=50, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config)
         logger.start_session(1, "claude-opus", "python", "coding")
 
@@ -530,7 +530,7 @@ class TestRetentionDaysCleanup:
         os.utime(old_log, (old_time, old_time))
 
         # Create logger with 1 day retention
-        config = LoggingConfig(retention_days=1)
+        config = LoggingConfig(retention_days=1, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
 
         # Manually call cleanup
@@ -549,7 +549,7 @@ class TestRetentionDaysCleanup:
         recent_log.write_text('{"test": "recent data"}\n')
 
         # Create logger with 30 day retention
-        config = LoggingConfig(retention_days=30)
+        config = LoggingConfig(retention_days=30, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
 
         # Manually call cleanup
@@ -573,7 +573,7 @@ class TestRetentionDaysCleanup:
         os.utime(old_log, (old_time, old_time))
 
         # Create logger with 0 retention (disabled)
-        config = LoggingConfig(retention_days=0)
+        config = LoggingConfig(retention_days=0, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
 
         # Manually call cleanup
@@ -592,13 +592,13 @@ class TestLogRotationErrorHandling:
         log_dir.mkdir(parents=True, exist_ok=True)
 
         # Create logger
-        config = LoggingConfig(max_size_mb=0.0001)  # Very small to trigger rotation
+        config = LoggingConfig(max_size_mb=0.0001, use_xdg_logs=False)  # Very small to trigger rotation
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
         # Write enough to trigger rotation
         for _ in range(100):
-            logger.log_event(EventType.MESSAGE, "Test message " * 100)
+            logger.log_event(EventType.LOG_MESSAGE, message="Test message " * 100)
 
         # Should not raise any exceptions
         logger._flush_buffer()
@@ -615,7 +615,7 @@ class TestLogRotationErrorHandling:
         log_file = log_dir / "agent.log"
         log_file.write_text('{"test": "data"}\n')
 
-        config = LoggingConfig(max_size_mb=0.0001)
+        config = LoggingConfig(max_size_mb=0.0001, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
 
         # Mock Path.rename to raise OSError
@@ -645,7 +645,7 @@ class TestLogRotationErrorHandling:
         log_file = log_dir / "agent.log"
         log_file.write_text('{"initial": "data"}\n')
 
-        config = LoggingConfig(max_size_mb=0.0001)
+        config = LoggingConfig(max_size_mb=0.0001, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -664,7 +664,7 @@ class TestLogRotationErrorHandling:
         logger._maybe_rotate()
 
         # Log more data - should work
-        logger.log_event(EventType.MESSAGE, "After rotation failure")
+        logger.log_event(EventType.LOG_MESSAGE, message="After rotation failure")
         logger._flush_buffer()
 
         # Should not be disabled
@@ -676,7 +676,7 @@ class TestRecentEventsContext:
 
     def test_error_includes_recent_events(self, tmp_path):
         """log_error should include recent_events context."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -704,7 +704,7 @@ class TestRecentEventsContext:
 
     def test_recent_events_limited_to_5(self, tmp_path):
         """recent_events should be limited to 5 entries."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -729,7 +729,7 @@ class TestRecentEventsContext:
 
     def test_recent_events_excludes_errors(self, tmp_path):
         """recent_events should not include error events themselves."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -757,7 +757,7 @@ class TestEnvironmentInfo:
 
     def test_session_start_includes_environment(self, tmp_path):
         """session_start event should include environment info."""
-        logger = AgentLogger(tmp_path)
+        logger = AgentLogger(tmp_path, LoggingConfig(use_xdg_logs=False))
         session_id = logger.start_session(
             iteration=1,
             model="claude-opus",
@@ -845,7 +845,7 @@ class TestGateLogLevel:
 
     def test_gate_level_filtering(self, tmp_path):
         """Events below GATE level should be filtered when config.level=GATE."""
-        config = LoggingConfig(level=LogLevel.GATE)
+        config = LoggingConfig(level=LogLevel.GATE, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -1007,7 +1007,7 @@ class TestPhaseEnterExitMethods:
 
     def test_phase_enter_logs_phase_enter_event(self, tmp_path):
         """phase_enter should log a PHASE_ENTER event."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -1033,7 +1033,7 @@ class TestPhaseEnterExitMethods:
 
     def test_phase_exit_logs_phase_exit_event(self, tmp_path):
         """phase_exit should log a PHASE_EXIT event."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -1053,7 +1053,7 @@ class TestPhaseEnterExitMethods:
         """phase_exit should calculate duration if entry time available."""
         import time
 
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -1082,7 +1082,7 @@ class TestPhaseEnterExitMethods:
 
     def test_phase_enter_includes_context_kwargs(self, tmp_path):
         """phase_enter should include context kwargs in event data."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -1099,7 +1099,7 @@ class TestPhaseEnterExitMethods:
 
     def test_phase_exit_includes_context_kwargs(self, tmp_path):
         """phase_exit should include context kwargs in event data."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -1121,19 +1121,23 @@ class TestLogErrorClassified:
 
     def test_logs_error_classified_event(self, tmp_path):
         """log_error_classified should log ERROR_CLASSIFIED event."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
-        # Create a mock StructuredError-like object
-        class MockError:
-            type = type("MockType", (), {"value": "manual"})()
-            category = type("MockCategory", (), {"value": "security"})()
-            message = "Command blocked"
-            recovery_hint = "Add to allowlist"
-            context = {"command": "rm -rf /"}
+        # Create a mock StructuredError-like object using real StructuredError
+        from claude_agent.structured_errors import StructuredError, ErrorType, ErrorCategory
+        from datetime import datetime, timezone
+        mock_error = StructuredError(
+            type=ErrorType.MANUAL,
+            category=ErrorCategory.SECURITY,
+            message="Command blocked",
+            recovery_hint="Add to allowlist",
+            timestamp=datetime.now(timezone.utc),
+            context={"command": "rm -rf /"},
+        )
 
-        logger.log_error_classified(MockError())
+        logger.log_error_classified(mock_error)
         logger._flush_buffer()
 
         log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
@@ -1145,18 +1149,22 @@ class TestLogErrorClassified:
 
     def test_includes_error_type_and_category(self, tmp_path):
         """log_error_classified should include error type and category."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
-        class MockError:
-            type = type("MockType", (), {"value": "retry"})()
-            category = type("MockCategory", (), {"value": "network"})()
-            message = "Connection failed"
-            recovery_hint = "Check internet"
-            context = {}
+        from claude_agent.structured_errors import StructuredError, ErrorType, ErrorCategory
+        from datetime import datetime, timezone
+        mock_error = StructuredError(
+            type=ErrorType.RETRY,
+            category=ErrorCategory.NETWORK,
+            message="Connection failed",
+            recovery_hint="Check internet",
+            timestamp=datetime.now(timezone.utc),
+            context={},
+        )
 
-        logger.log_error_classified(MockError())
+        logger.log_error_classified(mock_error)
         logger._flush_buffer()
 
         log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
@@ -1169,18 +1177,22 @@ class TestLogErrorClassified:
 
     def test_includes_recovery_hint(self, tmp_path):
         """log_error_classified should include recovery_hint."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
-        class MockError:
-            type = type("MockType", (), {"value": "manual"})()
-            category = type("MockCategory", (), {"value": "config"})()
-            message = "Invalid config"
-            recovery_hint = "Check .claude-agent.yaml"
-            context = {}
+        from claude_agent.structured_errors import StructuredError, ErrorType, ErrorCategory
+        from datetime import datetime, timezone
+        mock_error = StructuredError(
+            type=ErrorType.MANUAL,
+            category=ErrorCategory.CONFIG,
+            message="Invalid config",
+            recovery_hint="Check .claude-agent.yaml",
+            timestamp=datetime.now(timezone.utc),
+            context={},
+        )
 
-        logger.log_error_classified(MockError())
+        logger.log_error_classified(mock_error)
         logger._flush_buffer()
 
         log_file = tmp_path / ".claude-agent" / "logs" / "agent.log"
@@ -1196,7 +1208,7 @@ class TestLogHookFired:
 
     def test_logs_hook_fired_event(self, tmp_path):
         """log_hook_fired should log HOOK_FIRED event."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -1212,7 +1224,7 @@ class TestLogHookFired:
 
     def test_includes_hook_name(self, tmp_path):
         """log_hook_fired should include hook name."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -1228,7 +1240,7 @@ class TestLogHookFired:
 
     def test_includes_result(self, tmp_path):
         """log_hook_fired should include result."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -1297,7 +1309,7 @@ class TestPhaseFieldInLogEntry:
 
     def test_log_event_includes_current_phase(self, tmp_path):
         """log_event should include current_phase in entries."""
-        config = LoggingConfig(level=LogLevel.DEBUG)
+        config = LoggingConfig(level=LogLevel.DEBUG, use_xdg_logs=False)
         logger = AgentLogger(tmp_path, config=config)
         logger.session_id = "test123"
 
@@ -1479,7 +1491,7 @@ class TestCLILogOptionsIntegration:
         log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
         runner = CliRunner()
-        result = runner.invoke(logs, [str(tmp_path), "--phase", "coding", "--json"])
+        result = runner.invoke(logs, ["--project-dir", str(tmp_path), "--phase", "coding", "--json"])
 
         assert result.exit_code == 0
         output = json.loads(result.output)
@@ -1503,7 +1515,7 @@ class TestCLILogOptionsIntegration:
         log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
         runner = CliRunner()
-        result = runner.invoke(logs, [str(tmp_path), "--level", "gate", "--json"])
+        result = runner.invoke(logs, ["--project-dir", str(tmp_path), "--level", "gate", "--json"])
 
         assert result.exit_code == 0
         output = json.loads(result.output)
@@ -1528,7 +1540,7 @@ class TestCLILogOptionsIntegration:
         log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
         runner = CliRunner()
-        result = runner.invoke(logs, [str(tmp_path), "--errors", "--json"])
+        result = runner.invoke(logs, ["--project-dir", str(tmp_path), "--errors", "--json"])
 
         assert result.exit_code == 0
         output = json.loads(result.output)
@@ -1551,7 +1563,7 @@ class TestCLILogOptionsIntegration:
         log_file.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
 
         runner = CliRunner()
-        result = runner.invoke(logs, [str(tmp_path), "--workflow", "workflow-123", "--json"])
+        result = runner.invoke(logs, ["--project-dir", str(tmp_path), "--workflow", "workflow-123", "--json"])
 
         assert result.exit_code == 0
         output = json.loads(result.output)
@@ -1577,7 +1589,7 @@ class TestCLILogOptionsIntegration:
 
         runner = CliRunner()
         # Combine --errors AND --phase AND --workflow (session)
-        result = runner.invoke(logs, [str(tmp_path), "--errors", "--phase", "coding", "--session", "abc", "--json"])
+        result = runner.invoke(logs, ["--project-dir", str(tmp_path), "--errors", "--phase", "coding", "--session", "abc", "--json"])
 
         assert result.exit_code == 0
         output = json.loads(result.output)
@@ -1616,7 +1628,8 @@ class TestXDGLogSupport:
         xdg_state.mkdir()
 
         config = LoggingConfig(use_xdg_logs=True)
-        with patch("claude_agent.logging.get_logs_dir", return_value=xdg_state / "logs"):
+        # Patch the state module since imports happen there during __init__
+        with patch("claude_agent.state.get_logs_dir", return_value=xdg_state / "logs"):
             logger = AgentLogger(tmp_path / "project", config=config)
 
         # Log directory should be in XDG state
