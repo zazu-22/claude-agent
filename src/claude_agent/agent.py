@@ -929,6 +929,8 @@ async def run_autonomous_agent(config: Config) -> None:
             f"Resuming workflow: phase={workflow_state.phase}, "
             f"progress={workflow_state.features_completed}/{workflow_state.features_total}"
         )
+        # Log phase entry when resuming (we're re-entering the workflow)
+        logger.phase_enter(workflow_state.phase, workflow_id=workflow_state.id, resumed=True)
         if workflow_state.last_error:
             # Display previous error for context
             error_msg = workflow_state.last_error.get("message", "Unknown error")
@@ -948,6 +950,8 @@ async def run_autonomous_agent(config: Config) -> None:
         )
         save_workflow_state(workflow_state)
         logger.info(f"Created workflow state: id={workflow_state.id}, phase={initial_phase}")
+        # Log phase entry for new workflows
+        logger.phase_enter(initial_phase, workflow_id=workflow_state.id)
 
     if is_first_run:
         # Validate we have spec content
@@ -1099,6 +1103,9 @@ async def run_autonomous_agent(config: Config) -> None:
         if max_iterations and iteration > max_iterations:
             print(f"\nReached max iterations ({max_iterations})")
             print("To continue, run the command again without --max-iterations")
+            # Log phase transition to paused
+            current_phase = workflow_state.phase if workflow_state else "coding"
+            logger.phase_exit(current_phase, reason="max_iterations")
             # Update state to paused
             _update_workflow_state(
                 workflow_state,
@@ -1106,6 +1113,7 @@ async def run_autonomous_agent(config: Config) -> None:
                 pause_reason=f"Max iterations ({max_iterations}) reached",
                 logger=logger,
             )
+            logger.phase_enter("paused", reason="max_iterations")
             break
 
         # Check if validation should trigger BEFORE running coding session
@@ -1141,6 +1149,11 @@ async def run_autonomous_agent(config: Config) -> None:
             # Run coding session
             print_session_header(iteration, is_first_run)
 
+            # Log phase transition: exit previous phase if changing to coding
+            previous_phase = workflow_state.phase if workflow_state else None
+            if previous_phase and previous_phase != "coding":
+                logger.phase_exit(previous_phase, iteration=iteration)
+
             # Update workflow state to coding phase
             _update_workflow_state(
                 workflow_state,
@@ -1150,6 +1163,9 @@ async def run_autonomous_agent(config: Config) -> None:
                 clear_error=True,  # Clear any previous error on new session start
                 logger=logger,
             )
+
+            # Log phase entry for coding
+            logger.phase_enter("coding", iteration=iteration, features_remaining=total - passing)
 
             # Track features at session start for metrics
             features_at_start, _ = count_passing_tests(project_dir)
@@ -1344,6 +1360,8 @@ async def run_autonomous_agent(config: Config) -> None:
                 print(
                     "To continue, increase max_rejections in config or disable validation."
                 )
+                # Log phase transition to paused
+                logger.phase_exit("coding", reason="max_validation_rejections")
                 # Update state to paused
                 _update_workflow_state(
                     workflow_state,
@@ -1351,7 +1369,11 @@ async def run_autonomous_agent(config: Config) -> None:
                     pause_reason=f"Max validation rejections ({config.validator.max_rejections}) reached",
                     logger=logger,
                 )
+                logger.phase_enter("paused", reason="max_validation_rejections")
                 break
+
+            # Log phase transition from coding to validating
+            logger.phase_exit("coding", features_completed=passing, features_total=total)
 
             # Update workflow state to validating phase
             _update_workflow_state(
@@ -1361,6 +1383,9 @@ async def run_autonomous_agent(config: Config) -> None:
                 features_total=total,
                 logger=logger,
             )
+
+            # Log entry into validating phase
+            logger.phase_enter("validating", features_completed=passing, features_total=total)
 
             # Run validation phase - may take multiple sessions
             validation_session = 0
@@ -1485,6 +1510,8 @@ async def run_autonomous_agent(config: Config) -> None:
             if result.verdict == "APPROVED":
                 # Clear any stale rework file on approval
                 clear_rework_file(project_dir)
+                # Log phase transition: validating -> complete
+                logger.phase_exit("validating", verdict="approved")
                 # Update workflow state to complete
                 _update_workflow_state(
                     workflow_state,
@@ -1493,9 +1520,12 @@ async def run_autonomous_agent(config: Config) -> None:
                     features_total=total,
                     logger=logger,
                 )
+                logger.phase_enter("complete", features_completed=passing, features_total=total)
                 break  # Exit main loop - we're done!
 
             if result.verdict == "NEEDS_VERIFICATION":
+                # Log phase transition: validating -> paused
+                logger.phase_exit("validating", verdict="needs_verification")
                 # Update state to paused for manual verification
                 _update_workflow_state(
                     workflow_state,
@@ -1503,9 +1533,12 @@ async def run_autonomous_agent(config: Config) -> None:
                     pause_reason="Manual verification required",
                     logger=logger,
                 )
+                logger.phase_enter("paused", reason="manual_verification_required")
                 break  # Exit main loop - manual review needed
 
             # Otherwise (REJECTED or ERROR), return to coding agent
+            # Log phase transition: validating -> coding
+            logger.phase_exit("validating", verdict=result.verdict.lower())
             print("\n" + "-" * 70)
             print("WORKFLOW CHECK:")
             print(f"  Validation result: {result.verdict}")
