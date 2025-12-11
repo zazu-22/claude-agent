@@ -1528,7 +1528,7 @@
       "Step 2: Log warning and fall back to project-local storage",
       "Step 3: Continue operation without crashing"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1611,7 +1611,7 @@
       "Step 3: Test import hooks succeeds",
       "Step 4: Test import skills succeeds"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1623,7 +1623,7 @@
       "Step 3: Add WorkflowState to exports",
       "Step 4: Verify imports work from package level"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1634,7 +1634,7 @@
       "Step 2: Test new fields have defaults for old entries",
       "Step 3: Verify no crashes on legacy log files"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1645,7 +1645,7 @@
       "Step 2: Verify defaults applied for missing fields",
       "Step 3: Test migration adds new fields correctly"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
