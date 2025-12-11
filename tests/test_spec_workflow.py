@@ -1343,8 +1343,8 @@ class TestStackDetection:
         # Create Python project markers
         (tmp_path / "pyproject.toml").write_text("[project]")
 
-        stack = detect_stack(tmp_path)
-        assert stack == "python"
+        result = detect_stack(tmp_path)
+        assert result.stack == "python"
 
     def test_spec_workflow_detects_nodejs_stack(self, tmp_path):
         """
@@ -1356,8 +1356,8 @@ class TestStackDetection:
         # Create Node.js project markers
         (tmp_path / "package.json").write_text("{}")
 
-        stack = detect_stack(tmp_path)
-        assert stack == "node"  # Internal name is "node" not "nodejs"
+        result = detect_stack(tmp_path)
+        assert result.stack == "node"  # Internal name is "node" not "nodejs"
 
 
 class TestGoalHandling:

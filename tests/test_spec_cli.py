@@ -467,7 +467,7 @@ class TestStatusWithWorkflowState:
             pause_reason = None
             last_error = None
 
-        with patch("claude_agent.cli.load_workflow_state", return_value=MockWorkflowState()):
+        with patch("claude_agent.state.load_workflow_state", return_value=MockWorkflowState()):
             result = runner.invoke(main, ["status", str(tmp_path)])
 
             assert result.exit_code == 0
@@ -502,7 +502,7 @@ class TestStatusWithWorkflowState:
             pause_reason = None
             last_error = None
 
-        with patch("claude_agent.cli.load_workflow_state", return_value=MockWorkflowState()):
+        with patch("claude_agent.state.load_workflow_state", return_value=MockWorkflowState()):
             result = runner.invoke(main, ["status", str(tmp_path)])
 
             assert result.exit_code == 0
@@ -535,7 +535,7 @@ class TestStatusWithWorkflowState:
             pause_reason = "max_iterations reached"
             last_error = None
 
-        with patch("claude_agent.cli.load_workflow_state", return_value=MockWorkflowState()):
+        with patch("claude_agent.state.load_workflow_state", return_value=MockWorkflowState()):
             result = runner.invoke(main, ["status", str(tmp_path)])
 
             assert result.exit_code == 0
@@ -572,7 +572,7 @@ class TestStatusWithWorkflowState:
                 "recovery_hint": "Check the selector and ensure the button exists"
             }
 
-        with patch("claude_agent.cli.load_workflow_state", return_value=MockWorkflowState()):
+        with patch("claude_agent.state.load_workflow_state", return_value=MockWorkflowState()):
             result = runner.invoke(main, ["status", str(tmp_path)])
 
             assert result.exit_code == 0
@@ -591,7 +591,7 @@ class TestStatusWithWorkflowState:
         feature_list = tmp_path / "feature_list.json"
         feature_list.write_text('[{"description": "test", "passes": false}]')
 
-        with patch("claude_agent.cli.load_workflow_state", return_value=None):
+        with patch("claude_agent.state.load_workflow_state", return_value=None):
             result = runner.invoke(main, ["status", str(tmp_path)])
 
             assert result.exit_code == 0
@@ -621,7 +621,7 @@ class TestStatusWithWorkflowState:
             pause_reason = None
             last_error = None
 
-        with patch("claude_agent.cli.load_workflow_state", return_value=MockWorkflowState()):
+        with patch("claude_agent.state.load_workflow_state", return_value=MockWorkflowState()):
             result = runner.invoke(main, ["status", str(tmp_path)])
 
             assert result.exit_code == 0
