@@ -888,7 +888,7 @@ def run_doctor_checks(
 
     # Auto-detect stack if not provided
     if stack is None:
-        stack = detect_stack(project_dir)
+        stack = detect_stack(project_dir).stack
 
     # Run checks in order with dependency handling
     # 1. Authentication

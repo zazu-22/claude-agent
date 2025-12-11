@@ -20,7 +20,7 @@ from claude_agent.config import (
     generate_config_template,
     merge_config,
 )
-from claude_agent.detection import detect_stack, get_available_stacks
+from claude_agent.detection import StackDetectionResult, detect_stack, get_available_stacks
 from claude_agent.errors import ActionableError, ConfigParseError, print_error
 from claude_agent.metrics import (
     ARCH_DEVIATION_CRITICAL,
@@ -354,9 +354,15 @@ def status(project_dir: Path, metrics: bool):
 
     click.echo(f"\nProject: {project_dir}")
 
-    # Detect stack
-    stack = detect_stack(project_dir)
-    click.echo(f"Stack:   {stack}")
+    # Detect stack with details
+    detection = detect_stack(project_dir)
+    stack = detection.stack
+    if detection.is_default:
+        click.echo(f"Stack:   {stack} " + click.style("(defaulted - no markers found)", fg="yellow"))
+    elif detection.detected_at and detection.detected_at != project_dir:
+        click.echo(f"Stack:   {stack} (from {detection.marker_found} in {detection.detected_at})")
+    else:
+        click.echo(f"Stack:   {stack}")
 
     # Get session state with descriptive output
     state = get_session_state(project_dir)

@@ -39,7 +39,7 @@ def analyze_existing_codebase(project_dir: Path) -> dict:
     """
     info = {
         "file_count": 0,
-        "detected_stack": detect_stack(project_dir),
+        "detected_stack": detect_stack(project_dir).stack,
         "has_tests": False,
         "main_dirs": [],
         "has_readme": False,
