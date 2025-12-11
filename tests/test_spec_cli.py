@@ -428,3 +428,202 @@ class TestSpecAutoExitCodes:
 
             assert result.exit_code == 1
             mock_workflow.assert_called_once()
+
+
+class TestStatusWithWorkflowState:
+    """Test status command workflow state integration from XDG.
+
+    Tests Features #148 and #149:
+    - Update 'status' CLI command to show workflow state from XDG
+    - Add workflow state information to status command output
+    """
+
+    @pytest.fixture
+    def runner(self):
+        return CliRunner()
+
+    def test_status_shows_workflow_state_when_present(self, runner, tmp_path):
+        """
+        Purpose: Verify status command displays XDG workflow state when available.
+        Tests Feature #148: Update 'status' CLI command to show workflow state from XDG
+        """
+        from unittest.mock import patch
+        from datetime import datetime
+
+        # Create a feature_list.json for project detection
+        feature_list = tmp_path / "feature_list.json"
+        feature_list.write_text('[{"description": "test", "passes": false}]')
+
+        # Mock WorkflowState
+        class MockWorkflowState:
+            id = "wf-123abc"
+            phase = "coding"
+            started_at = datetime(2025, 1, 15, 10, 0, 0)
+            updated_at = datetime(2025, 1, 15, 14, 30, 0)
+            features_completed = 25
+            features_total = 50
+            iteration_count = 3
+            current_feature_index = 26
+            pause_reason = None
+            last_error = None
+
+        with patch("claude_agent.cli.load_workflow_state", return_value=MockWorkflowState()):
+            result = runner.invoke(main, ["status", str(tmp_path)])
+
+            assert result.exit_code == 0
+            assert "Workflow State (XDG):" in result.output
+            assert "wf-123abc" in result.output
+            assert "coding" in result.output
+            assert "25/50 features" in result.output
+            assert "Iteration:" in result.output
+            assert "3" in result.output
+
+    def test_status_shows_workflow_id_and_timestamps(self, runner, tmp_path):
+        """
+        Purpose: Verify status shows workflow ID, started_at, and updated_at timestamps.
+        Tests Feature #149: Add workflow state information to status command output
+        """
+        from unittest.mock import patch
+        from datetime import datetime
+
+        # Create a feature_list.json for project detection
+        feature_list = tmp_path / "feature_list.json"
+        feature_list.write_text('[{"description": "test", "passes": false}]')
+
+        class MockWorkflowState:
+            id = "workflow-abc123def456"
+            phase = "validating"
+            started_at = datetime(2025, 1, 15, 10, 0, 0)
+            updated_at = datetime(2025, 1, 15, 15, 45, 30)
+            features_completed = 48
+            features_total = 50
+            iteration_count = 5
+            current_feature_index = None
+            pause_reason = None
+            last_error = None
+
+        with patch("claude_agent.cli.load_workflow_state", return_value=MockWorkflowState()):
+            result = runner.invoke(main, ["status", str(tmp_path)])
+
+            assert result.exit_code == 0
+            assert "workflow-abc123def456" in result.output
+            assert "Started:" in result.output
+            assert "Updated:" in result.output
+            assert "2025-01-15" in result.output
+
+    def test_status_shows_pause_reason_when_paused(self, runner, tmp_path):
+        """
+        Purpose: Verify status shows pause reason when workflow is paused.
+        Tests Feature #149: Show pause reason if paused
+        """
+        from unittest.mock import patch
+        from datetime import datetime
+
+        # Create a feature_list.json for project detection
+        feature_list = tmp_path / "feature_list.json"
+        feature_list.write_text('[{"description": "test", "passes": false}]')
+
+        class MockWorkflowState:
+            id = "wf-paused"
+            phase = "paused"
+            started_at = datetime(2025, 1, 15, 10, 0, 0)
+            updated_at = datetime(2025, 1, 15, 12, 0, 0)
+            features_completed = 30
+            features_total = 50
+            iteration_count = 10
+            current_feature_index = 31
+            pause_reason = "max_iterations reached"
+            last_error = None
+
+        with patch("claude_agent.cli.load_workflow_state", return_value=MockWorkflowState()):
+            result = runner.invoke(main, ["status", str(tmp_path)])
+
+            assert result.exit_code == 0
+            assert "paused" in result.output
+            assert "Pause Reason:" in result.output
+            assert "max_iterations reached" in result.output
+
+    def test_status_shows_last_error_when_present(self, runner, tmp_path):
+        """
+        Purpose: Verify status shows last error information when an error is persisted.
+        Tests Feature #148: Display last error if present
+        """
+        from unittest.mock import patch
+        from datetime import datetime
+
+        # Create a feature_list.json for project detection
+        feature_list = tmp_path / "feature_list.json"
+        feature_list.write_text('[{"description": "test", "passes": false}]')
+
+        class MockWorkflowState:
+            id = "wf-error"
+            phase = "coding"
+            started_at = datetime(2025, 1, 15, 10, 0, 0)
+            updated_at = datetime(2025, 1, 15, 11, 30, 0)
+            features_completed = 10
+            features_total = 50
+            iteration_count = 2
+            current_feature_index = 11
+            pause_reason = None
+            last_error = {
+                "type": "manual",
+                "category": "validation",
+                "message": "Feature 11 validation failed: Button not found",
+                "recovery_hint": "Check the selector and ensure the button exists"
+            }
+
+        with patch("claude_agent.cli.load_workflow_state", return_value=MockWorkflowState()):
+            result = runner.invoke(main, ["status", str(tmp_path)])
+
+            assert result.exit_code == 0
+            assert "Last Error:" in result.output
+            assert "manual" in result.output
+            assert "validation" in result.output
+            assert "Recovery:" in result.output
+
+    def test_status_no_workflow_state_section_when_missing(self, runner, tmp_path):
+        """
+        Purpose: Verify status doesn't show workflow state section when no state exists.
+        """
+        from unittest.mock import patch
+
+        # Create a feature_list.json for project detection
+        feature_list = tmp_path / "feature_list.json"
+        feature_list.write_text('[{"description": "test", "passes": false}]')
+
+        with patch("claude_agent.cli.load_workflow_state", return_value=None):
+            result = runner.invoke(main, ["status", str(tmp_path)])
+
+            assert result.exit_code == 0
+            assert "Workflow State (XDG):" not in result.output
+
+    def test_status_shows_current_feature_when_working(self, runner, tmp_path):
+        """
+        Purpose: Verify status shows current feature index when actively working.
+        Tests Feature #148: Display current feature being worked on
+        """
+        from unittest.mock import patch
+        from datetime import datetime
+
+        # Create a feature_list.json for project detection
+        feature_list = tmp_path / "feature_list.json"
+        feature_list.write_text('[{"description": "test", "passes": false}]')
+
+        class MockWorkflowState:
+            id = "wf-working"
+            phase = "coding"
+            started_at = datetime(2025, 1, 15, 10, 0, 0)
+            updated_at = datetime(2025, 1, 15, 10, 30, 0)
+            features_completed = 5
+            features_total = 50
+            iteration_count = 1
+            current_feature_index = 6
+            pause_reason = None
+            last_error = None
+
+        with patch("claude_agent.cli.load_workflow_state", return_value=MockWorkflowState()):
+            result = runner.invoke(main, ["status", str(tmp_path)])
+
+            assert result.exit_code == 0
+            assert "Working On:" in result.output
+            assert "Feature #6" in result.output

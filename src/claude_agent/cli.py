@@ -348,6 +348,7 @@ def status(project_dir: Path, metrics: bool):
     PROJECT_DIR is the project to check (default: current directory).
     """
     from claude_agent.progress import count_tests_by_type, get_latest_session_entry
+    from claude_agent.state import load_workflow_state
 
     project_dir = Path(project_dir).resolve()
 
@@ -377,6 +378,29 @@ def status(project_dir: Path, metrics: bool):
 
     # Show progress
     print_progress_summary(project_dir)
+
+    # Show XDG workflow state if available
+    workflow_state = load_workflow_state(project_dir, warn_on_issues=False)
+    if workflow_state:
+        click.echo("\nWorkflow State (XDG):")
+        click.echo(f"  Workflow ID:  {workflow_state.id}")
+        click.echo(f"  Phase:        {workflow_state.phase}")
+        click.echo(f"  Started:      {workflow_state.started_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        click.echo(f"  Updated:      {workflow_state.updated_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        click.echo(f"  Progress:     {workflow_state.features_completed}/{workflow_state.features_total} features")
+        click.echo(f"  Iteration:    {workflow_state.iteration_count}")
+        if workflow_state.current_feature_index is not None:
+            click.echo(f"  Working On:   Feature #{workflow_state.current_feature_index}")
+        if workflow_state.pause_reason:
+            click.echo(f"  Pause Reason: {workflow_state.pause_reason}")
+        if workflow_state.last_error:
+            error_type = workflow_state.last_error.get("type", "unknown")
+            error_category = workflow_state.last_error.get("category", "unknown")
+            error_msg = workflow_state.last_error.get("message", "No message")
+            click.echo(f"  Last Error:   [{error_type}/{error_category}] {error_msg[:50]}...")
+            recovery_hint = workflow_state.last_error.get("recovery_hint")
+            if recovery_hint:
+                click.echo(f"  Recovery:     {recovery_hint[:60]}...")
 
     # Show structured progress summary from progress notes
     latest_entry = get_latest_session_entry(project_dir)
