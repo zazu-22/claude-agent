@@ -1369,5 +1369,162 @@ def doctor(project_dir: Path, output_json: bool, verbose: bool, fix: bool):
     sys.exit(0 if report.is_healthy else 1)
 
 
+# =============================================================================
+# Hooks Command Group
+# =============================================================================
+
+
+@main.group()
+def hooks():
+    """Claude Code hooks management commands.
+
+    \b
+    Install and manage Claude Code hooks for automatic workflow context
+    injection. Hooks detect active claude-agent workflows and display
+    context when starting a new Claude Code session.
+
+    \b
+    Architecture Decisions:
+      - DR-009: Hooks require explicit installation (not auto-installed)
+      - DR-010: Scripts are POSIX sh-compatible for cross-platform support
+      - DR-011: Output format matches Claude Code hooks specification
+    """
+    pass
+
+
+@hooks.command("install")
+@click.argument("project_dir", type=click.Path(path_type=Path), default=".", required=False)
+@click.option("--timeout", type=int, default=5000, help="Hook timeout in milliseconds (default: 5000)")
+def hooks_install(project_dir: Path, timeout: int):
+    """Install Claude Code hooks to a project directory.
+
+    Creates .claude/hooks/ directory with hook configuration and scripts
+    for automatic workflow detection and context injection.
+
+    \b
+    Files created:
+      - .claude/hooks/hooks.json      - Hook configuration
+      - .claude/hooks/session-start.sh - Workflow context injection
+      - .claude/hooks/session-stop.sh  - Incomplete workflow logging
+
+    \b
+    Examples:
+      claude-agent hooks install              # Install to current directory
+      claude-agent hooks install ./my-project # Install to specific project
+      claude-agent hooks install --timeout 10000  # Custom timeout
+
+    \b
+    Note: Hooks are NOT installed automatically. This explicit installation
+    is required because hooks modify the project's .claude/ directory which
+    may be git-tracked.
+    """
+    from claude_agent.hooks import install_hooks as do_install_hooks
+
+    # Resolve project directory (supports relative and absolute paths)
+    project_dir = Path(project_dir).resolve()
+
+    success, message = do_install_hooks(str(project_dir))
+
+    if success:
+        click.echo(click.style("✓ ", fg="green") + message)
+        click.echo("")
+        click.echo("Hooks are now active. When you start a Claude Code session")
+        click.echo("in this project, workflow context will be automatically injected.")
+        click.echo("")
+        click.echo("To remove hooks: claude-agent hooks uninstall")
+        click.echo("To check status: claude-agent hooks status")
+    else:
+        click.echo(click.style("✗ ", fg="red") + message, err=True)
+        sys.exit(1)
+
+
+@hooks.command("uninstall")
+@click.argument("project_dir", type=click.Path(path_type=Path), default=".", required=False)
+def hooks_uninstall(project_dir: Path):
+    """Remove Claude Code hooks from a project directory.
+
+    Removes the entire .claude/hooks/ directory including all hook scripts
+    and configuration.
+
+    \b
+    Examples:
+      claude-agent hooks uninstall              # Remove from current directory
+      claude-agent hooks uninstall ./my-project # Remove from specific project
+
+    \b
+    Note: This only removes the hooks directory. Other .claude/ files
+    (like settings) are preserved.
+    """
+    from claude_agent.hooks import uninstall_hooks as do_uninstall_hooks
+
+    # Resolve project directory (supports relative and absolute paths)
+    project_dir = Path(project_dir).resolve()
+
+    success, message = do_uninstall_hooks(str(project_dir))
+
+    if success:
+        click.echo(click.style("✓ ", fg="green") + message)
+    else:
+        click.echo(click.style("✗ ", fg="red") + message, err=True)
+        sys.exit(1)
+
+
+@hooks.command("status")
+@click.argument("project_dir", type=click.Path(path_type=Path), default=".", required=False)
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def hooks_status(project_dir: Path, output_json: bool):
+    """Show installed hooks status for a project.
+
+    Displays whether hooks are installed and lists all hook files
+    with their paths. Also reports any issues found (missing files,
+    incorrect permissions).
+
+    \b
+    Examples:
+      claude-agent hooks status              # Check current directory
+      claude-agent hooks status ./my-project # Check specific project
+      claude-agent hooks status --json       # Machine-readable output
+    """
+    from claude_agent.hooks import get_hooks_status as do_get_hooks_status
+
+    # Resolve project directory (supports relative and absolute paths)
+    project_dir = Path(project_dir).resolve()
+
+    status = do_get_hooks_status(str(project_dir))
+
+    if output_json:
+        click.echo(json.dumps(status, indent=2))
+        return
+
+    click.echo(f"\nHooks Status for {project_dir.name}")
+    click.echo("=" * 50)
+
+    if status["installed"]:
+        click.echo(click.style("\n✓ Hooks installed", fg="green"))
+        click.echo(f"  Directory: {status['hooks_dir']}")
+
+        if status["files"]:
+            click.echo("\n  Files:")
+            for filepath in status["files"]:
+                click.echo(f"    - {filepath}")
+
+        if status["errors"]:
+            click.echo(click.style("\n  Issues:", fg="yellow"))
+            for error in status["errors"]:
+                click.echo(f"    ! {error}")
+    else:
+        click.echo(click.style("\n✗ Hooks not installed", fg="yellow"))
+        click.echo(f"  Expected at: {status['hooks_dir']}")
+        click.echo("")
+        click.echo("  To install: claude-agent hooks install")
+
+        if status["errors"]:
+            click.echo(click.style("\n  Errors:", fg="red"))
+            for error in status["errors"]:
+                click.echo(f"    ! {error}")
+
+    click.echo("")
+
+
 if __name__ == "__main__":
     main()
