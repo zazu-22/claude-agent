@@ -12,11 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import click
 from claude_code_sdk import ClaudeSDKClient
 
 from claude_agent.client import create_client
 from claude_agent.config import Config
 from claude_agent.detection import (
+    StackDetectionResult,
     detect_stack,
     get_stack_dev_command,
     get_stack_init_command,
@@ -825,6 +827,7 @@ def _update_workflow_state(
     iteration_count: Optional[int] = None,
     last_error: Optional[dict] = None,
     clear_error: bool = False,
+    pause_reason: Optional[str] = None,
     logger: Optional[AgentLogger] = None,
 ) -> None:
     """Update and save workflow state.
@@ -838,6 +841,7 @@ def _update_workflow_state(
         iteration_count: Current iteration count (optional)
         last_error: Error dict to persist (optional)
         clear_error: If True, clear last_error field
+        pause_reason: Reason for pausing the workflow (optional)
         logger: Optional logger for logging state changes
     """
     if workflow_state is None:
@@ -857,6 +861,8 @@ def _update_workflow_state(
         workflow_state.last_error = last_error
     if clear_error:
         workflow_state.last_error = None
+    if pause_reason is not None:
+        workflow_state.pause_reason = pause_reason
 
     try:
         save_workflow_state(workflow_state)
@@ -865,6 +871,65 @@ def _update_workflow_state(
     except Exception as e:
         if logger:
             logger.warning(f"Failed to save workflow state: {e}")
+
+
+def _detect_and_configure_stack(
+    config: Config,
+    project_dir: Path,
+    logger: Optional["AgentLogger"] = None,
+) -> str:
+    """
+    Detect stack and configure security, with logging.
+
+    Args:
+        config: Configuration object
+        project_dir: Project directory path
+        logger: Optional logger for warnings
+
+    Returns:
+        Detected or configured stack name
+    """
+    if config.stack:
+        # Explicit config takes precedence
+        stack = config.stack
+        if logger:
+            logger.debug(f"Using configured stack: {stack}")
+    else:
+        # Auto-detect
+        detection = detect_stack(project_dir)
+        stack = detection.stack
+
+        if detection.is_default:
+            # No markers found - warn user
+            msg = (
+                f"⚠️  No stack markers found in {project_dir}. "
+                f"Defaulting to '{stack}'. "
+                "Set 'stack:' in .claude-agent.yaml to silence this warning."
+            )
+            if logger:
+                logger.warning(msg)
+            else:
+                click.echo(click.style(msg, fg="yellow"), err=True)
+        elif detection.detected_at and detection.detected_at != project_dir:
+            # Found in parent directory
+            if logger:
+                logger.info(
+                    f"Stack '{stack}' detected from {detection.marker_found} "
+                    f"in {detection.detected_at}"
+                )
+        else:
+            if logger:
+                logger.debug(
+                    f"Stack '{stack}' detected from {detection.marker_found}"
+                )
+
+    # Configure security for this stack
+    configure_security(
+        stack=stack,
+        extra_commands=config.security.extra_commands or None,
+    )
+
+    return stack
 
 
 async def run_autonomous_agent(config: Config) -> None:
@@ -876,22 +941,16 @@ async def run_autonomous_agent(config: Config) -> None:
     """
     project_dir = config.project_dir
 
-    # Detect or use configured stack
-    stack = config.stack or detect_stack(project_dir)
-
-    # Configure security for this stack
-    configure_security(
-        stack=stack,
-        extra_commands=config.security.extra_commands or None,
-    )
-
-    # Initialize logging
+    # Initialize logging first so we can use it for stack detection
     logging_config = _create_logging_config(config)
     logger = AgentLogger(
         project_dir=project_dir,
         config=logging_config,
         verbose=config.verbose,
     )
+
+    # Detect or use configured stack (with logging)
+    stack = _detect_and_configure_stack(config, project_dir, logger)
 
     # Set up security logger for security decision logging
     set_security_logger(logger)
@@ -1629,10 +1688,6 @@ async def run_spec_create_session(
         (status, spec_path) where status is "complete" or "error"
     """
     project_dir = config.project_dir
-    stack = config.stack or detect_stack(project_dir)
-
-    # Configure security
-    configure_security(stack=stack, extra_commands=config.security.extra_commands)
 
     # Initialize logging
     logging_config = _create_logging_config(config)
@@ -1641,6 +1696,9 @@ async def run_spec_create_session(
         config=logging_config,
         verbose=config.verbose,
     )
+
+    # Detect or use configured stack (with logging)
+    stack = _detect_and_configure_stack(config, project_dir, logger)
     set_security_logger(logger)
 
     # Start logging session
@@ -1741,9 +1799,6 @@ async def run_spec_validate_session(
         (status, passed) where passed indicates if validation succeeded
     """
     project_dir = config.project_dir
-    stack = config.stack or detect_stack(project_dir)
-
-    configure_security(stack=stack, extra_commands=config.security.extra_commands)
 
     # Initialize logging
     logging_config = _create_logging_config(config)
@@ -1752,6 +1807,9 @@ async def run_spec_validate_session(
         config=logging_config,
         verbose=config.verbose,
     )
+
+    # Detect or use configured stack (with logging)
+    stack = _detect_and_configure_stack(config, project_dir, logger)
     set_security_logger(logger)
 
     # Start logging session
@@ -1870,9 +1928,6 @@ async def run_spec_decompose_session(
         (status, feature_list_path)
     """
     project_dir = config.project_dir
-    stack = config.stack or detect_stack(project_dir)
-
-    configure_security(stack=stack, extra_commands=config.security.extra_commands)
 
     # Initialize logging
     logging_config = _create_logging_config(config)
@@ -1881,6 +1936,9 @@ async def run_spec_decompose_session(
         config=logging_config,
         verbose=config.verbose,
     )
+
+    # Detect or use configured stack (with logging)
+    stack = _detect_and_configure_stack(config, project_dir, logger)
     set_security_logger(logger)
 
     # Start logging session
