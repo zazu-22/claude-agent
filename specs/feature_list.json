@@ -1,0 +1,2164 @@
+[
+  {
+    "category": "technical",
+    "description": "Create src/claude_agent/structured_errors.py module file with module docstring explaining the purpose of structured error classification for intelligent recovery",
+    "steps": [
+      "Step 1: Verify src/claude_agent/ directory exists",
+      "Step 2: Create structured_errors.py with module docstring",
+      "Step 3: Verify file is created with proper structure"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Define ErrorType enum with RETRY, MANUAL, FATAL, TIMEOUT values in structured_errors.py",
+    "steps": [
+      "Step 1: Import Enum from enum module",
+      "Step 2: Create ErrorType(str, Enum) with four values",
+      "Step 3: Verify enum values: ErrorType.RETRY, ErrorType.MANUAL, ErrorType.FATAL, ErrorType.TIMEOUT"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Define ErrorCategory enum with NETWORK, AUTH, LOGIC, CONFIG, RESOURCE, SECURITY, VALIDATION values in structured_errors.py",
+    "steps": [
+      "Step 1: Create ErrorCategory(str, Enum) with seven values",
+      "Step 2: Verify all categories exist: NETWORK, AUTH, LOGIC, CONFIG, RESOURCE, SECURITY, VALIDATION",
+      "Step 3: Verify string representation works correctly"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create StructuredError dataclass with type, category, message, recovery_hint, timestamp, and context fields",
+    "steps": [
+      "Step 1: Import dataclass, field, datetime",
+      "Step 2: Create StructuredError dataclass with all required fields",
+      "Step 3: Verify recovery_hint defaults to None",
+      "Step 4: Verify context defaults to empty dict",
+      "Step 5: Verify timestamp is datetime type"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement StructuredError.to_dict() method for JSON serialization",
+    "steps": [
+      "Step 1: Add to_dict() method to StructuredError",
+      "Step 2: Serialize all fields including enum values as strings",
+      "Step 3: Convert timestamp to ISO format string",
+      "Step 4: Test serialization produces valid JSON-compatible dict"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement StructuredError.from_dict() class method for deserialization",
+    "steps": [
+      "Step 1: Add from_dict(data: dict) classmethod",
+      "Step 2: Parse enum values from strings",
+      "Step 3: Parse timestamp from ISO format",
+      "Step 4: Handle missing optional fields gracefully",
+      "Step 5: Test roundtrip: to_dict() -> from_dict() preserves data"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement StructuredError.is_retryable() helper method returning True for RETRY type",
+    "steps": [
+      "Step 1: Add is_retryable() method",
+      "Step 2: Return True if self.type == ErrorType.RETRY",
+      "Step 3: Return False for other error types",
+      "Step 4: Verify MANUAL, FATAL, TIMEOUT return False"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement StructuredError.requires_human() helper method returning True for MANUAL type",
+    "steps": [
+      "Step 1: Add requires_human() method",
+      "Step 2: Return True if self.type == ErrorType.MANUAL",
+      "Step 3: Return False for RETRY, FATAL, TIMEOUT types"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create error_security_block(command, reason) factory function returning StructuredError",
+    "steps": [
+      "Step 1: Define function with command and reason parameters",
+      "Step 2: Return StructuredError with type=MANUAL, category=SECURITY",
+      "Step 3: Include config path hint in recovery_hint",
+      "Step 4: Include command in context dict"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create error_validation_failed(feature_index, reason) factory function returning StructuredError",
+    "steps": [
+      "Step 1: Define function with feature_index and reason parameters",
+      "Step 2: Return StructuredError with type=MANUAL, category=VALIDATION",
+      "Step 3: Include feature index in context",
+      "Step 4: Provide actionable recovery hint"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create error_file_not_found(path) factory function returning StructuredError",
+    "steps": [
+      "Step 1: Define function with path parameter",
+      "Step 2: Return StructuredError with type=MANUAL, category=RESOURCE",
+      "Step 3: Include file path in context",
+      "Step 4: Suggest checking path existence in recovery_hint"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create error_git_operation(operation, details) factory function returning StructuredError",
+    "steps": [
+      "Step 1: Define function with operation and details parameters",
+      "Step 2: Return StructuredError with type=RETRY, category=RESOURCE",
+      "Step 3: Include operation name in context",
+      "Step 4: Suggest git status check in recovery_hint"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create error_test_failure(test_type, details) factory function for lint/type/test failures",
+    "steps": [
+      "Step 1: Define function with test_type and details parameters",
+      "Step 2: Return StructuredError with type=MANUAL, category=LOGIC",
+      "Step 3: Include test type in context",
+      "Step 4: Suggest reviewing test output in recovery_hint"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create error_agent_timeout(agent_type, duration_seconds) factory function",
+    "steps": [
+      "Step 1: Define function with agent_type and duration_seconds parameters",
+      "Step 2: Return StructuredError with type=TIMEOUT, category=RESOURCE",
+      "Step 3: Include agent type and duration in context",
+      "Step 4: Suggest increasing timeout or simplifying task in recovery_hint"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement StructuredError.to_actionable_error() method for CLI display bridge",
+    "steps": [
+      "Step 1: Import ActionableError from claude_agent.errors",
+      "Step 2: Map StructuredError message to ActionableError message",
+      "Step 3: Map recovery_hint to context field",
+      "Step 4: Map category to help_command based on error type",
+      "Step 5: Verify ActionableError output is human-readable"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Create tests/test_structured_errors.py test file with test class structure",
+    "steps": [
+      "Step 1: Create test file with pytest imports",
+      "Step 2: Add test classes for ErrorType, ErrorCategory, StructuredError",
+      "Step 3: Verify test file structure follows existing patterns"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for ErrorType enum values and string representation",
+    "steps": [
+      "Step 1: Test all four enum values exist",
+      "Step 2: Test string representation is lowercase",
+      "Step 3: Test enum comparison works correctly"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for ErrorCategory enum values",
+    "steps": [
+      "Step 1: Test all seven category values exist",
+      "Step 2: Test string representation matches expected format",
+      "Step 3: Test enum iteration covers all categories"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for StructuredError dataclass creation and defaults",
+    "steps": [
+      "Step 1: Test creation with required fields only",
+      "Step 2: Test default values for optional fields",
+      "Step 3: Test creation with all fields specified"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for StructuredError serialization roundtrip",
+    "steps": [
+      "Step 1: Create StructuredError with all fields",
+      "Step 2: Call to_dict() and verify JSON-serializable",
+      "Step 3: Call from_dict() and verify equality",
+      "Step 4: Test handling of missing optional fields"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for StructuredError helper methods is_retryable() and requires_human()",
+    "steps": [
+      "Step 1: Test is_retryable() returns True only for RETRY type",
+      "Step 2: Test requires_human() returns True only for MANUAL type",
+      "Step 3: Test both methods with all error types"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for all six error factory functions",
+    "steps": [
+      "Step 1: Test error_security_block returns correct type and category",
+      "Step 2: Test error_validation_failed includes feature_index in context",
+      "Step 3: Test error_file_not_found includes path in context",
+      "Step 4: Test error_git_operation returns RETRY type",
+      "Step 5: Test error_test_failure returns LOGIC category",
+      "Step 6: Test error_agent_timeout returns TIMEOUT type"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for to_actionable_error() bridge method",
+    "steps": [
+      "Step 1: Test message mapping is correct",
+      "Step 2: Test recovery_hint becomes context",
+      "Step 3: Test output is valid ActionableError instance"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Create src/claude_agent/state.py module file for XDG state management",
+    "steps": [
+      "Step 1: Create state.py with module docstring explaining XDG state separation",
+      "Step 2: Import required modules (os, pathlib, json, hashlib)",
+      "Step 3: Verify file is created with proper structure"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement get_state_dir() function returning XDG-compliant state directory path",
+    "steps": [
+      "Step 1: Check XDG_STATE_HOME environment variable",
+      "Step 2: Fall back to ~/.local/state if not set",
+      "Step 3: Return path with /claude-agent/ suffix",
+      "Step 4: Verify path is absolute"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement get_project_hash(project_dir) function returning 12-char SHA256 hash",
+    "steps": [
+      "Step 1: Convert project_dir to absolute path string",
+      "Step 2: Compute SHA256 hash of path",
+      "Step 3: Return first 12 characters of hexdigest",
+      "Step 4: Verify hash is stable across calls with same path"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement get_workflow_dir(project_dir) function returning workflow state directory",
+    "steps": [
+      "Step 1: Call get_state_dir() for base path",
+      "Step 2: Call get_project_hash() for project identifier",
+      "Step 3: Return path: {state_dir}/workflows/{hash}/",
+      "Step 4: Verify returned path structure is correct"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement get_logs_dir() function returning XDG logs directory",
+    "steps": [
+      "Step 1: Call get_state_dir() for base path",
+      "Step 2: Return path: {state_dir}/logs/",
+      "Step 3: Verify path is under XDG state directory"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement ensure_state_dirs() function that creates directories with 0o700 permissions",
+    "steps": [
+      "Step 1: Create state dir, workflows dir, and logs dir",
+      "Step 2: Set permissions to 0o700 (user-only access)",
+      "Step 3: Handle existing directories gracefully",
+      "Step 4: Verify directories are created with correct permissions"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create WorkflowState dataclass with all required fields",
+    "steps": [
+      "Step 1: Define dataclass with id, project_dir, phase, started_at, updated_at fields",
+      "Step 2: Add features_completed, features_total, current_feature_index fields",
+      "Step 3: Add iteration_count, last_error, pause_reason, recovery_steps fields",
+      "Step 4: Set appropriate default values",
+      "Step 5: Verify all fields have correct types"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add phase validation to WorkflowState ensuring only valid phase values",
+    "steps": [
+      "Step 1: Define VALID_PHASES = {'initializing', 'coding', 'validating', 'complete', 'paused'}",
+      "Step 2: Add __post_init__ validation for phase field",
+      "Step 3: Raise ValueError for invalid phase values",
+      "Step 4: Test with all valid and invalid phase values"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement WorkflowState.to_dict() method for JSON serialization",
+    "steps": [
+      "Step 1: Serialize all fields to JSON-compatible dict",
+      "Step 2: Convert datetime fields to ISO format strings",
+      "Step 3: Handle None values appropriately",
+      "Step 4: Verify output is JSON-serializable"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement WorkflowState.from_dict() classmethod for deserialization",
+    "steps": [
+      "Step 1: Parse datetime fields from ISO format",
+      "Step 2: Handle missing optional fields with defaults",
+      "Step 3: Validate phase value",
+      "Step 4: Test roundtrip serialization preserves data"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement load_workflow_state(project_dir) function returning WorkflowState or None",
+    "steps": [
+      "Step 1: Compute workflow directory for project",
+      "Step 2: Check for workflow-state.json file",
+      "Step 3: Return None if file doesn't exist",
+      "Step 4: Parse JSON and return WorkflowState.from_dict()",
+      "Step 5: Handle JSON parse errors gracefully (return None)"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement save_workflow_state(state) function with atomic write",
+    "steps": [
+      "Step 1: Compute workflow directory from state.project_dir",
+      "Step 2: Update state.updated_at to current time",
+      "Step 3: Write to temp file first",
+      "Step 4: Rename temp file to workflow-state.json (atomic)",
+      "Step 5: Verify file contains correct JSON"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement clear_workflow_state(project_dir) function deleting state file",
+    "steps": [
+      "Step 1: Compute workflow directory for project",
+      "Step 2: Delete workflow-state.json if exists",
+      "Step 3: Return True if file existed and was deleted",
+      "Step 4: Return True if file didn't exist (idempotent)",
+      "Step 5: Handle permission errors gracefully"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Create tests/test_state.py test file with test class structure",
+    "steps": [
+      "Step 1: Create test file with pytest imports",
+      "Step 2: Add test classes for path functions and WorkflowState",
+      "Step 3: Use tmp_path fixture for file system tests"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for get_state_dir() function",
+    "steps": [
+      "Step 1: Test returns path under ~/.local/state by default",
+      "Step 2: Test respects XDG_STATE_HOME environment variable",
+      "Step 3: Test path ends with /claude-agent/"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for get_project_hash() stability and format",
+    "steps": [
+      "Step 1: Test hash is exactly 12 characters",
+      "Step 2: Test hash is stable (same input = same output)",
+      "Step 3: Test different paths produce different hashes",
+      "Step 4: Test hash is hexadecimal"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for WorkflowState dataclass creation and validation",
+    "steps": [
+      "Step 1: Test creation with valid phase values",
+      "Step 2: Test ValueError raised for invalid phase",
+      "Step 3: Test default values are applied correctly"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for WorkflowState serialization roundtrip",
+    "steps": [
+      "Step 1: Create WorkflowState with all fields",
+      "Step 2: Serialize with to_dict()",
+      "Step 3: Deserialize with from_dict()",
+      "Step 4: Verify equality of all fields"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for load_workflow_state() and save_workflow_state() functions",
+    "steps": [
+      "Step 1: Test load returns None for non-existent file",
+      "Step 2: Test save creates file with correct content",
+      "Step 3: Test load returns correct WorkflowState after save",
+      "Step 4: Test save updates updated_at timestamp"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for clear_workflow_state() function",
+    "steps": [
+      "Step 1: Test returns True when file exists and is deleted",
+      "Step 2: Test returns True when file doesn't exist (idempotent)",
+      "Step 3: Verify file is actually removed from filesystem"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add last_error field integration to WorkflowState for StructuredError persistence",
+    "steps": [
+      "Step 1: Ensure last_error field accepts dict (from StructuredError.to_dict())",
+      "Step 2: Test serialization includes last_error when set",
+      "Step 3: Test deserialization restores last_error dict",
+      "Step 4: Verify StructuredError can be reconstructed from last_error"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement state migration function to move existing files to XDG",
+    "steps": [
+      "Step 1: Define FILES_TO_MIGRATE list (validation-history.json, drift-metrics.json)",
+      "Step 2: Check for files in project directory",
+      "Step 3: Copy files to XDG workflow directory",
+      "Step 4: Verify migration preserves file content"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement migrate_project_state(project_dir) function for automatic migration",
+    "steps": [
+      "Step 1: Check if migration already done (marker file)",
+      "Step 2: Move validation-history.json to XDG if exists",
+      "Step 3: Move drift-metrics.json to XDG if exists",
+      "Step 4: Create migration marker file",
+      "Step 5: Log migration actions"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement log migration from .claude-agent/logs/ to XDG logs directory",
+    "steps": [
+      "Step 1: Check for .claude-agent/logs/ in project directory",
+      "Step 2: Copy log files to XDG logs directory",
+      "Step 3: Preserve file modification times",
+      "Step 4: Keep original files until migration verified"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for state migration function",
+    "steps": [
+      "Step 1: Test migration moves files correctly",
+      "Step 2: Test migration is idempotent (safe to run twice)",
+      "Step 3: Test migration preserves file contents",
+      "Step 4: Test migration handles missing files gracefully"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Update security.py bash_security_hook to return StructuredError instead of string",
+    "steps": [
+      "Step 1: Import StructuredError and error_security_block from structured_errors",
+      "Step 2: Replace string error returns with StructuredError",
+      "Step 3: Include command and reason in error context",
+      "Step 4: Verify existing tests still pass"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add recovery hint to security block errors suggesting config file edit",
+    "steps": [
+      "Step 1: Update error_security_block to include config path in hint",
+      "Step 2: Mention extra_commands config option",
+      "Step 3: Verify hint is actionable and specific"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Ensure security block StructuredError is logged with structured error event",
+    "steps": [
+      "Step 1: Call logger.log_security_block with StructuredError details",
+      "Step 2: Include error type and category in log",
+      "Step 3: Verify log entries contain structured error info"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Update security tests to verify StructuredError return type",
+    "steps": [
+      "Step 1: Update test assertions for blocked commands",
+      "Step 2: Verify error type is MANUAL",
+      "Step 3: Verify error category is SECURITY",
+      "Step 4: Verify recovery_hint contains config path"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Create src/claude_agent/hooks/ directory for Claude Code hook files",
+    "steps": [
+      "Step 1: Create hooks/ directory in src/claude_agent/",
+      "Step 2: Create __init__.py with module docstring",
+      "Step 3: Verify directory structure is correct"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create hooks configuration generator for hooks.json format",
+    "steps": [
+      "Step 1: Define generate_hooks_config() function",
+      "Step 2: Return dict matching Claude Code hooks.json schema",
+      "Step 3: Include SessionStart and Stop events",
+      "Step 4: Set timeout to 5000ms for both hooks"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement hooks.json schema with custom timeout support",
+    "steps": [
+      "Step 1: Define hook entry structure: event, script, timeout",
+      "Step 2: Support custom timeout per hook",
+      "Step 3: Validate output matches Claude Code specification"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create session-start.sh script template that detects active workflows",
+    "steps": [
+      "Step 1: Create POSIX sh-compatible script",
+      "Step 2: Read workflow-state.json from XDG state directory",
+      "Step 3: Check if phase != 'complete'",
+      "Step 4: Output JSON with additionalContext if active workflow found",
+      "Step 5: Output empty {} if no active workflow"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement context formatting in session-start.sh as markdown table",
+    "steps": [
+      "Step 1: Format project path, phase, and progress as markdown table",
+      "Step 2: Include features completed count",
+      "Step 3: Include last error summary if present",
+      "Step 4: Verify markdown renders correctly"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add graceful handling in session-start.sh for missing state file",
+    "steps": [
+      "Step 1: Check if workflow-state.json exists",
+      "Step 2: Output empty {} if file not found",
+      "Step 3: Don't error or write to stderr",
+      "Step 4: Ensure exit code is 0"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement session-start.sh execution time under 5000ms timeout",
+    "steps": [
+      "Step 1: Minimize file I/O operations",
+      "Step 2: Use efficient JSON parsing (jq if available, fallback to python)",
+      "Step 3: Verify script completes within timeout"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create session-stop.sh script template for incomplete workflow logging",
+    "steps": [
+      "Step 1: Create POSIX sh-compatible script",
+      "Step 2: Read workflow-state.json from XDG state directory",
+      "Step 3: Check if phase != 'complete'",
+      "Step 4: Append warning to hooks.log if incomplete",
+      "Step 5: Always output empty {}"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement hooks.log format with timestamp, level, and hook identifier",
+    "steps": [
+      "Step 1: Define log format: [TIMESTAMP] [LEVEL] [HOOK] message",
+      "Step 2: Use ISO timestamp format",
+      "Step 3: Write to $XDG_STATE_HOME/claude-agent/logs/hooks.log",
+      "Step 4: Ensure log file is created if doesn't exist"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add graceful handling in session-stop.sh for missing state file",
+    "steps": [
+      "Step 1: Check if workflow-state.json exists",
+      "Step 2: Skip logging if file not found",
+      "Step 3: Don't error or write to stderr",
+      "Step 4: Output empty {} regardless"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement CLI command 'hooks install' to install hooks to project",
+    "steps": [
+      "Step 1: Add 'hooks' command group to cli.py",
+      "Step 2: Add 'install' subcommand with project_dir argument",
+      "Step 3: Create .claude/hooks/ directory in project",
+      "Step 4: Write hooks.json, session-start.sh, session-stop.sh",
+      "Step 5: Set executable permissions on scripts"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Set executable permission (0o755) on hook scripts during installation",
+    "steps": [
+      "Step 1: Use os.chmod after writing script files",
+      "Step 2: Set permission to 0o755 (rwxr-xr-x)",
+      "Step 3: Verify scripts are executable",
+      "Step 4: Handle Windows gracefully (no chmod needed)"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement CLI command 'hooks uninstall' to remove hooks from project",
+    "steps": [
+      "Step 1: Add 'uninstall' subcommand",
+      "Step 2: Remove .claude/hooks/ directory entirely",
+      "Step 3: Handle missing directory gracefully",
+      "Step 4: Confirm successful removal"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement CLI command 'hooks status' to show installed hooks",
+    "steps": [
+      "Step 1: Add 'status' subcommand",
+      "Step 2: Check for .claude/hooks/ directory",
+      "Step 3: List installed hook scripts and their paths",
+      "Step 4: Show 'not installed' if directory doesn't exist"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add --help text to all hooks CLI commands with usage examples",
+    "steps": [
+      "Step 1: Add help text to 'hooks install' command",
+      "Step 2: Add help text to 'hooks uninstall' command",
+      "Step 3: Add help text to 'hooks status' command",
+      "Step 4: Include usage examples in docstrings"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Support both relative and absolute paths in hooks CLI commands",
+    "steps": [
+      "Step 1: Resolve relative paths to absolute",
+      "Step 2: Handle '.' for current directory",
+      "Step 3: Verify commands work with both path types"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Create tests/test_hooks.py test file with test class structure",
+    "steps": [
+      "Step 1: Create test file with pytest imports",
+      "Step 2: Add test classes for hook generation and installation",
+      "Step 3: Use tmp_path fixture for file system tests"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for hooks.json generation",
+    "steps": [
+      "Step 1: Test output matches expected JSON schema",
+      "Step 2: Test timeout values are correct",
+      "Step 3: Test both hooks are included"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for session-start.sh script content",
+    "steps": [
+      "Step 1: Test script is POSIX sh-compatible",
+      "Step 2: Test script handles missing state file",
+      "Step 3: Test output format matches expected JSON"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for session-stop.sh script content",
+    "steps": [
+      "Step 1: Test script is POSIX sh-compatible",
+      "Step 2: Test script handles missing state file",
+      "Step 3: Test output is empty JSON object"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for hooks install CLI command",
+    "steps": [
+      "Step 1: Test creates .claude/hooks/ directory",
+      "Step 2: Test writes all required files",
+      "Step 3: Test sets correct permissions",
+      "Step 4: Test handles existing installation"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for hooks uninstall CLI command",
+    "steps": [
+      "Step 1: Test removes hooks directory",
+      "Step 2: Test handles missing directory gracefully",
+      "Step 3: Verify complete removal"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for hooks status CLI command",
+    "steps": [
+      "Step 1: Test shows installed status when hooks exist",
+      "Step 2: Test shows not installed when missing",
+      "Step 3: Test lists all hook files"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write integration test for hook installation and execution flow",
+    "steps": [
+      "Step 1: Install hooks to test project",
+      "Step 2: Create workflow state file",
+      "Step 3: Execute session-start.sh and verify output",
+      "Step 4: Clean up test files"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Create src/claude_agent/prompts/skills/ directory for skill modules",
+    "steps": [
+      "Step 1: Create skills/ subdirectory in prompts/",
+      "Step 2: Create __init__.py with module docstring",
+      "Step 3: Verify directory structure is correct"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement load_skill(skill_name) function returning skill content or None",
+    "steps": [
+      "Step 1: Define function in prompts/skills/__init__.py",
+      "Step 2: Look for {skill_name}.md in skills directory",
+      "Step 3: Return file content if found",
+      "Step 4: Return None if file doesn't exist"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement get_available_skills() function listing all skill names",
+    "steps": [
+      "Step 1: List all .md files in skills directory",
+      "Step 2: Return list of skill names (without .md extension)",
+      "Step 3: Sort alphabetically",
+      "Step 4: Return empty list if no skills found"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement inject_skills(prompt, skill_names) function for placeholder replacement",
+    "steps": [
+      "Step 1: Define placeholder syntax: {{skill:name}}",
+      "Step 2: Find all skill placeholders in prompt",
+      "Step 3: Replace each with loaded skill content",
+      "Step 4: Leave missing skills as-is (no crash)",
+      "Step 5: Return modified prompt string"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add prompt size warning when assembled prompt exceeds 50KB",
+    "steps": [
+      "Step 1: Calculate assembled prompt size in bytes",
+      "Step 2: Log warning if size > 50KB (51200 bytes)",
+      "Step 3: Include prompt name and size in warning",
+      "Step 4: Continue without error (soft limit)"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create regression-testing.md skill file with testing patterns",
+    "steps": [
+      "Step 1: Create file in skills/ directory",
+      "Step 2: Add Purpose section explaining skill",
+      "Step 3: Add When to Use section",
+      "Step 4: Add Pattern section with specific steps",
+      "Step 5: Add Escalation guidance"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create error-recovery.md skill file with error handling patterns",
+    "steps": [
+      "Step 1: Create file in skills/ directory",
+      "Step 2: Add categories of common errors",
+      "Step 3: Add recovery steps for each category",
+      "Step 4: Include when to escalate to human"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create architecture-verification.md skill file with lock file checks",
+    "steps": [
+      "Step 1: Create file in skills/ directory",
+      "Step 2: Add contract verification steps",
+      "Step 3: Add schema verification steps",
+      "Step 4: Add decision record checking"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Create browser-testing.md skill file with UI automation patterns",
+    "steps": [
+      "Step 1: Create file in skills/ directory",
+      "Step 2: Add wait strategy patterns",
+      "Step 3: Add selector best practices",
+      "Step 4: Add screenshot verification guidance"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Update coding.md prompt to use skill injection placeholders",
+    "steps": [
+      "Step 1: Add ## SKILLS REFERENCE section to coding.md",
+      "Step 2: Add {{skill:regression-testing}} placeholder",
+      "Step 3: Add {{skill:error-recovery}} placeholder",
+      "Step 4: Add {{skill:architecture-verification}} placeholder"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Update validator.md prompt to use skill injection placeholders",
+    "steps": [
+      "Step 1: Add ## SKILLS REFERENCE section to validator.md",
+      "Step 2: Add {{skill:browser-testing}} placeholder",
+      "Step 3: Add {{skill:error-recovery}} placeholder"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Update prompt loader to process skill injection before returning prompt",
+    "steps": [
+      "Step 1: Modify get_coding_prompt() to inject skills",
+      "Step 2: Modify get_validator_prompt() to inject skills",
+      "Step 3: Verify skills are correctly injected",
+      "Step 4: Check prompt size after injection"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Create tests/test_skills.py test file with test class structure",
+    "steps": [
+      "Step 1: Create test file with pytest imports",
+      "Step 2: Add test classes for skill loading and injection",
+      "Step 3: Use tmp_path fixture for file system tests"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for load_skill() function",
+    "steps": [
+      "Step 1: Test returns content for existing skill",
+      "Step 2: Test returns None for non-existent skill",
+      "Step 3: Test handles file read errors gracefully"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for get_available_skills() function",
+    "steps": [
+      "Step 1: Test returns list of skill names",
+      "Step 2: Test list is sorted alphabetically",
+      "Step 3: Test excludes non-.md files"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for inject_skills() function",
+    "steps": [
+      "Step 1: Test replaces single placeholder",
+      "Step 2: Test replaces multiple placeholders",
+      "Step 3: Test leaves missing skills as-is",
+      "Step 4: Test handles prompt with no placeholders"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for prompt size warning",
+    "steps": [
+      "Step 1: Test warning logged when prompt exceeds 50KB",
+      "Step 2: Test no warning for smaller prompts",
+      "Step 3: Test prompt is still returned despite warning"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Verify all four initial skill files have correct structure",
+    "steps": [
+      "Step 1: Check regression-testing.md has Purpose section",
+      "Step 2: Check error-recovery.md has categories",
+      "Step 3: Check architecture-verification.md has verification steps",
+      "Step 4: Check browser-testing.md has patterns"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add GATE log level to LogLevel enum in logging.py",
+    "steps": [
+      "Step 1: Add GATE = 'gate' to LogLevel enum",
+      "Step 2: Position between INFO and WARNING in level hierarchy",
+      "Step 3: Verify enum value is correct string"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add PHASE_ENTER event type to EventType enum",
+    "steps": [
+      "Step 1: Add PHASE_ENTER = 'phase_enter' to EventType",
+      "Step 2: Add to EVENT_LEVELS mapping with GATE level",
+      "Step 3: Verify event type serializes correctly"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add PHASE_EXIT event type to EventType enum",
+    "steps": [
+      "Step 1: Add PHASE_EXIT = 'phase_exit' to EventType",
+      "Step 2: Add to EVENT_LEVELS mapping with GATE level",
+      "Step 3: Verify event type serializes correctly"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add ERROR_CLASSIFIED event type to EventType enum",
+    "steps": [
+      "Step 1: Add ERROR_CLASSIFIED = 'error_classified' to EventType",
+      "Step 2: Add to EVENT_LEVELS mapping with ERROR level",
+      "Step 3: Verify event type serializes correctly"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add HOOK_FIRED event type to EventType enum",
+    "steps": [
+      "Step 1: Add HOOK_FIRED = 'hook_fired' to EventType",
+      "Step 2: Add to EVENT_LEVELS mapping with INFO level",
+      "Step 3: Verify event type serializes correctly"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add phase field to LogEntry dataclass for current phase tracking",
+    "steps": [
+      "Step 1: Add phase: str field to LogEntry dataclass",
+      "Step 2: Default to empty string",
+      "Step 3: Include in to_json() serialization",
+      "Step 4: Parse in from_json() deserialization"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement AgentLogger.phase_enter(phase, **context) method",
+    "steps": [
+      "Step 1: Add phase_enter method to AgentLogger",
+      "Step 2: Store current_phase as instance variable",
+      "Step 3: Log PHASE_ENTER event with phase name",
+      "Step 4: Include context kwargs in event data"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement AgentLogger.phase_exit(phase, **context) method",
+    "steps": [
+      "Step 1: Add phase_exit method to AgentLogger",
+      "Step 2: Calculate duration if entry time available",
+      "Step 3: Log PHASE_EXIT event with phase and duration",
+      "Step 4: Clear current_phase after logging"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement AgentLogger.log_error_classified(error) method for StructuredError",
+    "steps": [
+      "Step 1: Add log_error_classified method accepting StructuredError",
+      "Step 2: Log ERROR_CLASSIFIED event",
+      "Step 3: Include error.type and error.category in data",
+      "Step 4: Include recovery_hint in data"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Implement AgentLogger.log_hook_fired(hook_name, result) method",
+    "steps": [
+      "Step 1: Add log_hook_fired method",
+      "Step 2: Log HOOK_FIRED event",
+      "Step 3: Include hook name and result in data",
+      "Step 4: Set level to INFO"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Update log_event to include current phase in all entries",
+    "steps": [
+      "Step 1: Check for current_phase instance variable",
+      "Step 2: Include phase in LogEntry if set",
+      "Step 3: Ensure phase appears in JSON output"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add phase filter parameter to LogReader.read_entries()",
+    "steps": [
+      "Step 1: Add phase: Optional[str] parameter",
+      "Step 2: Filter entries by phase value",
+      "Step 3: Support filtering on phase field in LogEntry"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add errors_only filter parameter to LogReader.read_entries()",
+    "steps": [
+      "Step 1: Add errors_only: bool parameter (default False)",
+      "Step 2: When True, filter to ERROR and ERROR_CLASSIFIED events only",
+      "Step 3: Combine with existing filters"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add --phase option to 'logs' CLI command for phase filtering",
+    "steps": [
+      "Step 1: Add --phase option with type str",
+      "Step 2: Pass to read_entries() call",
+      "Step 3: Add help text explaining usage"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Update --level option in 'logs' CLI to accept GATE level",
+    "steps": [
+      "Step 1: Add GATE to level choices",
+      "Step 2: Update help text",
+      "Step 3: Verify filtering works correctly"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add --errors shorthand option to 'logs' CLI command",
+    "steps": [
+      "Step 1: Add --errors flag option",
+      "Step 2: Set errors_only=True when flag is present",
+      "Step 3: Document as shorthand for --level ERROR"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add --workflow option to 'logs' CLI command for workflow ID filtering",
+    "steps": [
+      "Step 1: Add --workflow option with type str",
+      "Step 2: Filter entries by workflow/session ID",
+      "Step 3: Add help text explaining usage"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Ensure all new CLI options are combinable for complex queries",
+    "steps": [
+      "Step 1: Test --phase with --errors",
+      "Step 2: Test --workflow with --level",
+      "Step 3: Test multiple filters together",
+      "Step 4: Verify AND logic between filters"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for GATE log level in level hierarchy",
+    "steps": [
+      "Step 1: Test GATE is between INFO and WARNING",
+      "Step 2: Test level filtering includes GATE appropriately",
+      "Step 3: Test serialization/deserialization"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for new event types (PHASE_ENTER, PHASE_EXIT, ERROR_CLASSIFIED, HOOK_FIRED)",
+    "steps": [
+      "Step 1: Test all new event types exist in enum",
+      "Step 2: Test serialization to JSON",
+      "Step 3: Test deserialization from JSON",
+      "Step 4: Test default log levels are correct"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for phase_enter and phase_exit methods",
+    "steps": [
+      "Step 1: Test phase_enter logs PHASE_ENTER event",
+      "Step 2: Test phase_exit logs PHASE_EXIT event",
+      "Step 3: Test duration is calculated when available",
+      "Step 4: Test context kwargs are included"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for log_error_classified method",
+    "steps": [
+      "Step 1: Test logs ERROR_CLASSIFIED event",
+      "Step 2: Test includes error type and category",
+      "Step 3: Test includes recovery_hint"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for log_hook_fired method",
+    "steps": [
+      "Step 1: Test logs HOOK_FIRED event",
+      "Step 2: Test includes hook name",
+      "Step 3: Test includes result"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for phase field in LogEntry",
+    "steps": [
+      "Step 1: Test phase field serializes to JSON",
+      "Step 2: Test phase field deserializes from JSON",
+      "Step 3: Test default value is empty string"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for phase filter in LogReader",
+    "steps": [
+      "Step 1: Test filtering returns only matching phase entries",
+      "Step 2: Test None phase returns all entries",
+      "Step 3: Test combines with other filters"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write unit tests for errors_only filter in LogReader",
+    "steps": [
+      "Step 1: Test True returns only error events",
+      "Step 2: Test False returns all events",
+      "Step 3: Test combines with other filters"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Write integration tests for new CLI log options",
+    "steps": [
+      "Step 1: Test --phase option filters correctly",
+      "Step 2: Test --level GATE works",
+      "Step 3: Test --errors shorthand works",
+      "Step 4: Test --workflow option filters correctly"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Integrate state module with agent.py for workflow state tracking",
+    "steps": [
+      "Step 1: Import state functions in agent.py",
+      "Step 2: Create workflow state on agent start",
+      "Step 3: Update state on phase transitions",
+      "Step 4: Save state on session end"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Update agent.py to call phase_enter/phase_exit during workflow",
+    "steps": [
+      "Step 1: Call phase_enter when entering initializing phase",
+      "Step 2: Call phase_enter when entering coding phase",
+      "Step 3: Call phase_enter when entering validating phase",
+      "Step 4: Call phase_exit on phase completion",
+      "Step 5: Verify phase events appear in logs"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Persist StructuredError to workflow state on error occurrence",
+    "steps": [
+      "Step 1: Update last_error field in WorkflowState",
+      "Step 2: Call save_workflow_state after error",
+      "Step 3: Verify error persists across sessions"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Clear last_error from workflow state on successful recovery",
+    "steps": [
+      "Step 1: Detect when error condition is resolved",
+      "Step 2: Set last_error to None",
+      "Step 3: Save updated state",
+      "Step 4: Verify error cleared in state file"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Display previous error on session resume via hook context injection",
+    "steps": [
+      "Step 1: Read last_error from workflow state in hook",
+      "Step 2: Include error summary in additionalContext",
+      "Step 3: Verify error appears in session start output"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Call state migration on first run for existing projects",
+    "steps": [
+      "Step 1: Check migration status at agent start",
+      "Step 2: Call migrate_project_state if not migrated",
+      "Step 3: Log migration status",
+      "Step 4: Continue with normal operation"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Update config.py LoggingConfig to support XDG log directory",
+    "steps": [
+      "Step 1: Add use_xdg_logs option to LoggingConfig",
+      "Step 2: Default to True for new installations",
+      "Step 3: Use XDG logs dir when enabled",
+      "Step 4: Fall back to project-local when disabled"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Update AgentLogger to write to XDG logs directory",
+    "steps": [
+      "Step 1: Check LoggingConfig for XDG option",
+      "Step 2: Use get_logs_dir() when XDG enabled",
+      "Step 3: Include project hash in log filename for isolation",
+      "Step 4: Apply existing retention_days and max_files settings"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "error-handling",
+    "description": "Handle missing XDG_STATE_HOME gracefully with fallback",
+    "steps": [
+      "Step 1: Check for XDG_STATE_HOME environment variable",
+      "Step 2: Fall back to ~/.local/state",
+      "Step 3: Verify fallback works on all supported platforms"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "error-handling",
+    "description": "Handle permission errors when creating state directories",
+    "steps": [
+      "Step 1: Catch OSError during directory creation",
+      "Step 2: Log warning and fall back to project-local storage",
+      "Step 3: Continue operation without crashing"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "error-handling",
+    "description": "Handle JSON parse errors in workflow state file",
+    "steps": [
+      "Step 1: Catch JSONDecodeError in load_workflow_state",
+      "Step 2: Log warning about corrupted state",
+      "Step 3: Return None to indicate no valid state",
+      "Step 4: Suggest recovery steps"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "error-handling",
+    "description": "Handle missing workflow state file gracefully",
+    "steps": [
+      "Step 1: Check file existence before reading",
+      "Step 2: Return None for non-existent file",
+      "Step 3: Don't log error (expected case for new projects)"
+    ],
+    "passes": true,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "error-handling",
+    "description": "Handle hook script execution failures gracefully",
+    "steps": [
+      "Step 1: Catch exceptions from hook scripts",
+      "Step 2: Log error with hook name",
+      "Step 3: Continue session without hook context",
+      "Step 4: Don't block agent operation"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "error-handling",
+    "description": "Handle skill loading errors gracefully",
+    "steps": [
+      "Step 1: Catch FileNotFoundError in load_skill",
+      "Step 2: Return None for missing skills",
+      "Step 3: Leave placeholder in prompt for missing skills",
+      "Step 4: Log warning about missing skill"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "error-handling",
+    "description": "Handle log file rotation errors gracefully",
+    "steps": [
+      "Step 1: Catch OSError during rotation",
+      "Step 2: Continue writing to current file",
+      "Step 3: Log warning about rotation failure",
+      "Step 4: Don't crash agent"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "error-handling",
+    "description": "Handle concurrent access to state files safely",
+    "steps": [
+      "Step 1: Document single-process assumption",
+      "Step 2: Use atomic writes for state saves",
+      "Step 3: Detect stale state on load",
+      "Step 4: Warn if concurrent access detected"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Verify all new modules are importable from claude_agent package",
+    "steps": [
+      "Step 1: Test import structured_errors succeeds",
+      "Step 2: Test import state succeeds",
+      "Step 3: Test import hooks succeeds",
+      "Step 4: Test import skills succeeds"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Update __init__.py exports for new modules",
+    "steps": [
+      "Step 1: Add StructuredError to exports",
+      "Step 2: Add ErrorType, ErrorCategory to exports",
+      "Step 3: Add WorkflowState to exports",
+      "Step 4: Verify imports work from package level"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Ensure backward compatibility with existing log files",
+    "steps": [
+      "Step 1: Test LogReader parses old format logs",
+      "Step 2: Test new fields have defaults for old entries",
+      "Step 3: Verify no crashes on legacy log files"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Ensure backward compatibility with existing workflow state",
+    "steps": [
+      "Step 1: Test loading state without new fields",
+      "Step 2: Verify defaults applied for missing fields",
+      "Step 3: Test migration adds new fields correctly"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Run full test suite and verify all tests pass",
+    "steps": [
+      "Step 1: Run pytest on entire tests/ directory",
+      "Step 2: Verify no test failures",
+      "Step 3: Check test coverage for new modules",
+      "Step 4: Address any failures or warnings"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Run linter (ruff) on all new code and fix issues",
+    "steps": [
+      "Step 1: Run ruff check on src/claude_agent/",
+      "Step 2: Fix any linting errors",
+      "Step 3: Run ruff format for consistent formatting",
+      "Step 4: Verify no linting issues remain"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Run type checker (mypy) on new code if configured",
+    "steps": [
+      "Step 1: Run mypy on src/claude_agent/",
+      "Step 2: Fix any type errors",
+      "Step 3: Verify all new code has type hints",
+      "Step 4: Address any type warnings"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Test end-to-end workflow: session start with hook context injection",
+    "steps": [
+      "Step 1: Install hooks to test project",
+      "Step 2: Create workflow state with active phase",
+      "Step 3: Simulate session start",
+      "Step 4: Verify hook output contains workflow context"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Test end-to-end workflow: error persistence and recovery",
+    "steps": [
+      "Step 1: Trigger error that creates StructuredError",
+      "Step 2: End session with error persisted",
+      "Step 3: Start new session",
+      "Step 4: Verify error is displayed in context",
+      "Step 5: Clear error on recovery"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Test end-to-end workflow: state migration from project to XDG",
+    "steps": [
+      "Step 1: Create project with old-style state files",
+      "Step 2: Run agent (triggers migration)",
+      "Step 3: Verify files moved to XDG directory",
+      "Step 4: Verify project-bound files remain in project"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Test end-to-end workflow: skill injection in coding agent prompt",
+    "steps": [
+      "Step 1: Load coding prompt with skill placeholders",
+      "Step 2: Verify skills are injected",
+      "Step 3: Verify prompt size is within limit",
+      "Step 4: Verify all placeholders are replaced"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Test end-to-end workflow: phase tracking in logs",
+    "steps": [
+      "Step 1: Run agent through multiple phases",
+      "Step 2: Query logs with --phase filter",
+      "Step 3: Verify PHASE_ENTER and PHASE_EXIT events",
+      "Step 4: Verify phase field in all entries"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Update 'status' CLI command to show workflow state from XDG",
+    "steps": [
+      "Step 1: Load workflow state using state module",
+      "Step 2: Display current phase",
+      "Step 3: Display features completed/total",
+      "Step 4: Display last error if present"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Add workflow state information to status command output",
+    "steps": [
+      "Step 1: Show workflow ID if active",
+      "Step 2: Show started_at timestamp",
+      "Step 3: Show iteration count",
+      "Step 4: Show pause reason if paused"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify hook execution completes within 500ms for session detection",
+    "steps": [
+      "Step 1: Measure hook execution time",
+      "Step 2: Verify under 500ms with typical state files",
+      "Step 3: Optimize if needed for larger state files"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify state load completes within 100ms",
+    "steps": [
+      "Step 1: Measure load_workflow_state execution time",
+      "Step 2: Verify under 100ms with typical state files",
+      "Step 3: Optimize if needed"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify log append completes within 10ms",
+    "steps": [
+      "Step 1: Measure log_event execution time",
+      "Step 2: Verify under 10ms for typical events",
+      "Step 3: Test with buffering enabled"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify log query for 1000 entries completes within 500ms",
+    "steps": [
+      "Step 1: Generate test log with 1000+ entries",
+      "Step 2: Measure read_entries execution time",
+      "Step 3: Verify under 500ms with filtering"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Document new modules in CLAUDE.md",
+    "steps": [
+      "Step 1: Add structured_errors.py to module list",
+      "Step 2: Add state.py to module list",
+      "Step 3: Add hooks/ to directory structure",
+      "Step 4: Add skills/ to prompts directory"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Document hooks CLI commands in CLAUDE.md",
+    "steps": [
+      "Step 1: Add 'hooks install' to command list",
+      "Step 2: Add 'hooks uninstall' to command list",
+      "Step 3: Add 'hooks status' to command list",
+      "Step 4: Include usage examples"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Document XDG state directory paths in CLAUDE.md",
+    "steps": [
+      "Step 1: Add XDG state directory explanation",
+      "Step 2: Document ~/.local/state/claude-agent/ structure",
+      "Step 3: Explain project hash isolation",
+      "Step 4: Document migration behavior"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Document skill system in CLAUDE.md",
+    "steps": [
+      "Step 1: Explain skill injection syntax",
+      "Step 2: List available skills",
+      "Step 3: Document how to add new skills",
+      "Step 4: Explain prompt size limits"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Document StructuredError usage in CLAUDE.md",
+    "steps": [
+      "Step 1: Explain ErrorType values and meanings",
+      "Step 2: Explain ErrorCategory values",
+      "Step 3: Document factory functions",
+      "Step 4: Explain recovery flow"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "integration",
+    "description": "Test Windows compatibility for XDG path fallback",
+    "steps": [
+      "Step 1: Test on Windows with %LOCALAPPDATA%",
+      "Step 2: Verify path construction works",
+      "Step 3: Verify directory creation works",
+      "Step 4: Document Windows-specific behavior"
+    ],
+    "passes": false,
+    "requires_manual_testing": true
+  },
+  {
+    "category": "integration",
+    "description": "Test macOS compatibility for XDG state",
+    "steps": [
+      "Step 1: Test on macOS with default paths",
+      "Step 2: Verify ~/.local/state works",
+      "Step 3: Verify permissions are correct",
+      "Step 4: Test with custom XDG_STATE_HOME"
+    ],
+    "passes": false,
+    "requires_manual_testing": true
+  },
+  {
+    "category": "integration",
+    "description": "Test Linux compatibility for XDG state",
+    "steps": [
+      "Step 1: Test on Linux with XDG_STATE_HOME set",
+      "Step 2: Test fallback when not set",
+      "Step 3: Verify permissions are 0o700",
+      "Step 4: Test with various distributions"
+    ],
+    "passes": false,
+    "requires_manual_testing": true
+  },
+  {
+    "category": "error-handling",
+    "description": "Test recovery from corrupted workflow state",
+    "steps": [
+      "Step 1: Create corrupted JSON in state file",
+      "Step 2: Attempt to load state",
+      "Step 3: Verify graceful failure (returns None)",
+      "Step 4: Verify agent continues without state"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "error-handling",
+    "description": "Test recovery from missing hook scripts",
+    "steps": [
+      "Step 1: Delete hook script after installation",
+      "Step 2: Trigger hook event",
+      "Step 3: Verify graceful failure",
+      "Step 4: Verify agent continues"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "error-handling",
+    "description": "Test recovery from invalid skill file",
+    "steps": [
+      "Step 1: Create skill with invalid content",
+      "Step 2: Attempt skill injection",
+      "Step 3: Verify placeholder left as-is",
+      "Step 4: Verify prompt is still usable"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify project-bound files remain in project directory after migration",
+    "steps": [
+      "Step 1: Verify feature_list.json stays in project",
+      "Step 2: Verify architecture/ stays in project",
+      "Step 3: Verify app_spec.txt stays in project",
+      "Step 4: Verify claude-progress.txt stays in project"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify operational files migrate to XDG directory",
+    "steps": [
+      "Step 1: Verify validation-history.json moves to XDG",
+      "Step 2: Verify drift-metrics.json moves to XDG",
+      "Step 3: Verify logs move to XDG",
+      "Step 4: Verify workflow state in XDG"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Ensure at least 4 skills are extracted and working",
+    "steps": [
+      "Step 1: Verify regression-testing.md exists and loads",
+      "Step 2: Verify error-recovery.md exists and loads",
+      "Step 3: Verify architecture-verification.md exists and loads",
+      "Step 4: Verify browser-testing.md exists and loads"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify skills reference via {{skill:name}} syntax works in prompts",
+    "steps": [
+      "Step 1: Add placeholder to test prompt",
+      "Step 2: Call inject_skills function",
+      "Step 3: Verify placeholder is replaced with content",
+      "Step 4: Verify content is correct"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Test RETRY error type triggers automatic retry behavior",
+    "steps": [
+      "Step 1: Create StructuredError with type=RETRY",
+      "Step 2: Verify is_retryable() returns True",
+      "Step 3: Verify error flow allows retry",
+      "Step 4: Verify retry count is tracked"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Test MANUAL error type pauses workflow for human intervention",
+    "steps": [
+      "Step 1: Create StructuredError with type=MANUAL",
+      "Step 2: Verify requires_human() returns True",
+      "Step 3: Verify workflow pauses",
+      "Step 4: Verify guidance is displayed"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Test FATAL error type aborts workflow with clear message",
+    "steps": [
+      "Step 1: Create StructuredError with type=FATAL",
+      "Step 2: Verify is_retryable() returns False",
+      "Step 3: Verify requires_human() returns False",
+      "Step 4: Verify workflow aborts cleanly"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Test TIMEOUT error type logs and escalates appropriately",
+    "steps": [
+      "Step 1: Create StructuredError with type=TIMEOUT",
+      "Step 2: Verify error is logged",
+      "Step 3: Verify escalation path is clear",
+      "Step 4: Verify recovery hint suggests action"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Verify existing retention_days and max_files settings apply to XDG logs",
+    "steps": [
+      "Step 1: Set retention_days in LoggingConfig",
+      "Step 2: Set max_files in LoggingConfig",
+      "Step 3: Generate logs exceeding limits",
+      "Step 4: Verify rotation and cleanup in XDG directory"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "technical",
+    "description": "Create create-error.md skill file documenting error creation patterns",
+    "steps": [
+      "Step 1: Create file in skills/ directory",
+      "Step 2: Document when to use each error factory",
+      "Step 3: Include examples for common scenarios",
+      "Step 4: Add escalation guidance"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify session-start.sh is POSIX sh-compatible for cross-platform use",
+    "steps": [
+      "Step 1: Check script uses only POSIX shell features",
+      "Step 2: Avoid bash-specific syntax",
+      "Step 3: Test on macOS and Linux shells",
+      "Step 4: Verify shebang is #!/bin/sh"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify session-stop.sh is POSIX sh-compatible for cross-platform use",
+    "steps": [
+      "Step 1: Check script uses only POSIX shell features",
+      "Step 2: Avoid bash-specific syntax",
+      "Step 3: Test on macOS and Linux shells",
+      "Step 4: Verify shebang is #!/bin/sh"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify hooks.json matches Claude Code hooks specification",
+    "steps": [
+      "Step 1: Check JSON structure matches spec",
+      "Step 2: Verify event names are valid",
+      "Step 3: Verify timeout is in milliseconds",
+      "Step 4: Test with actual Claude Code"
+    ],
+    "passes": false,
+    "requires_manual_testing": true
+  },
+  {
+    "category": "integration",
+    "description": "Test CI/CD compatibility with --verbose flag for stdout logging",
+    "steps": [
+      "Step 1: Run agent with --verbose in CI-like environment",
+      "Step 2: Verify logs go to stdout",
+      "Step 3: Verify no file dependencies for logging",
+      "Step 4: Test log output is parseable"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "error-handling",
+    "description": "Verify atomic writes prevent state corruption on crash",
+    "steps": [
+      "Step 1: Simulate write interruption",
+      "Step 2: Verify temp file is left (not partial target)",
+      "Step 3: Verify next load recovers cleanly",
+      "Step 4: Verify data integrity"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify no secrets are logged in state or log files",
+    "steps": [
+      "Step 1: Check command truncation in logs",
+      "Step 2: Verify no API keys in state",
+      "Step 3: Check error contexts for sensitive data",
+      "Step 4: Audit log output format"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify state files created with user-only permissions (0o700)",
+    "steps": [
+      "Step 1: Create state directory",
+      "Step 2: Check directory permissions",
+      "Step 3: Verify files inherit directory security",
+      "Step 4: Test on Unix systems"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  },
+  {
+    "category": "functional",
+    "description": "Verify hook scripts executable only by owner (0o755)",
+    "steps": [
+      "Step 1: Install hooks",
+      "Step 2: Check script permissions",
+      "Step 3: Verify owner can execute",
+      "Step 4: Test on Unix systems"
+    ],
+    "passes": false,
+    "requires_manual_testing": false
+  }
+]
