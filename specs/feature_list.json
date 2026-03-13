@@ -1693,7 +1693,7 @@
       "Step 3: Simulate session start",
       "Step 4: Verify hook output contains workflow context"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1706,7 +1706,7 @@
       "Step 4: Verify error is displayed in context",
       "Step 5: Clear error on recovery"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1718,7 +1718,7 @@
       "Step 3: Verify files moved to XDG directory",
       "Step 4: Verify project-bound files remain in project"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1730,7 +1730,7 @@
       "Step 3: Verify prompt size is within limit",
       "Step 4: Verify all placeholders are replaced"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1742,7 +1742,7 @@
       "Step 3: Verify PHASE_ENTER and PHASE_EXIT events",
       "Step 4: Verify phase field in all entries"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1777,7 +1777,7 @@
       "Step 2: Verify under 500ms with typical state files",
       "Step 3: Optimize if needed for larger state files"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1788,7 +1788,7 @@
       "Step 2: Verify under 100ms with typical state files",
       "Step 3: Optimize if needed"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1799,7 +1799,7 @@
       "Step 2: Verify under 10ms for typical events",
       "Step 3: Test with buffering enabled"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1810,7 +1810,7 @@
       "Step 2: Measure read_entries execution time",
       "Step 3: Verify under 500ms with filtering"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1894,8 +1894,8 @@
       "Step 3: Verify permissions are correct",
       "Step 4: Test with custom XDG_STATE_HOME"
     ],
-    "passes": false,
-    "requires_manual_testing": true
+    "passes": true,
+    "requires_manual_testing": false
   },
   {
     "category": "integration",
@@ -1918,7 +1918,7 @@
       "Step 3: Verify graceful failure (returns None)",
       "Step 4: Verify agent continues without state"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1930,7 +1930,7 @@
       "Step 3: Verify graceful failure",
       "Step 4: Verify agent continues"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1942,7 +1942,7 @@
       "Step 3: Verify placeholder left as-is",
       "Step 4: Verify prompt is still usable"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1954,7 +1954,7 @@
       "Step 3: Verify app_spec.txt stays in project",
       "Step 4: Verify claude-progress.txt stays in project"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1966,7 +1966,7 @@
       "Step 3: Verify logs move to XDG",
       "Step 4: Verify workflow state in XDG"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1978,7 +1978,7 @@
       "Step 3: Verify architecture-verification.md exists and loads",
       "Step 4: Verify browser-testing.md exists and loads"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -1990,7 +1990,7 @@
       "Step 3: Verify placeholder is replaced with content",
       "Step 4: Verify content is correct"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2002,7 +2002,7 @@
       "Step 3: Verify error flow allows retry",
       "Step 4: Verify retry count is tracked"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2014,7 +2014,7 @@
       "Step 3: Verify workflow pauses",
       "Step 4: Verify guidance is displayed"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2026,7 +2026,7 @@
       "Step 3: Verify requires_human() returns False",
       "Step 4: Verify workflow aborts cleanly"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2038,7 +2038,7 @@
       "Step 3: Verify escalation path is clear",
       "Step 4: Verify recovery hint suggests action"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2050,7 +2050,7 @@
       "Step 3: Generate logs exceeding limits",
       "Step 4: Verify rotation and cleanup in XDG directory"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2062,7 +2062,7 @@
       "Step 3: Include examples for common scenarios",
       "Step 4: Add escalation guidance"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2074,7 +2074,7 @@
       "Step 3: Test on macOS and Linux shells",
       "Step 4: Verify shebang is #!/bin/sh"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2086,7 +2086,7 @@
       "Step 3: Test on macOS and Linux shells",
       "Step 4: Verify shebang is #!/bin/sh"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2110,7 +2110,7 @@
       "Step 3: Verify no file dependencies for logging",
       "Step 4: Test log output is parseable"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2122,7 +2122,7 @@
       "Step 3: Verify next load recovers cleanly",
       "Step 4: Verify data integrity"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2134,7 +2134,7 @@
       "Step 3: Check error contexts for sensitive data",
       "Step 4: Audit log output format"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2146,7 +2146,7 @@
       "Step 3: Verify files inherit directory security",
       "Step 4: Test on Unix systems"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   },
   {
@@ -2158,7 +2158,7 @@
       "Step 3: Verify owner can execute",
       "Step 4: Test on Unix systems"
     ],
-    "passes": false,
+    "passes": true,
     "requires_manual_testing": false
   }
 ]
